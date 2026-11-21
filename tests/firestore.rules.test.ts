@@ -926,3 +926,23 @@ describe('usage and credits', () => {
     await assertFails(setDoc(doc(db(OWNER), 'credits', OWNER, 'ledger', 'e1'), { amount: 5 }))
   })
 })
+
+describe('nested folders', () => {
+  it('accepts a parentId and rejects a folder parented to itself', async () => {
+    await seedFolder('f1')
+    await assertSucceeds(setDoc(doc(db(OWNER), 'folders', 'f2'), folderDoc({ parentId: 'f1' })))
+    await assertSucceeds(setDoc(doc(db(OWNER), 'folders', 'f3'), folderDoc({ parentId: null })))
+    await assertFails(setDoc(doc(db(OWNER), 'folders', 'f4'), folderDoc({ parentId: 'f4' })))
+  })
+
+  it('rejects a non-string parentId', async () => {
+    await assertFails(setDoc(doc(db(OWNER), 'folders', 'f5'), folderDoc({ parentId: 42 })))
+  })
+
+  it('a child folder keeps its own ACL (no implicit inheritance)', async () => {
+    await seedFolder('parent', everyRole)
+    await seedFolder('child', { parentId: 'parent' })
+    await assertSucceeds(getDoc(doc(db(VIEWER), 'folders', 'parent')))
+    await assertFails(getDoc(doc(db(VIEWER), 'folders', 'child')))
+  })
+})

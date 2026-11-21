@@ -1,5 +1,6 @@
 import { ChevronRight, Folder, FolderPlus, Link2, MoreHorizontal, PanelLeftClose, Plus, User } from 'lucide-react'
 import type { Folder as FolderType, Note } from '../lib/notes'
+import { buildFolderTree, type FolderNode } from '../lib/folders'
 import type { TagNode } from '../lib/tags'
 
 interface SidebarProps {
@@ -64,6 +65,7 @@ export function Sidebar({
 }: SidebarProps) {
   const rootNotes = notes.filter((n) => !n.folderId)
   const notesOf = (folderId: string) => notes.filter((n) => n.folderId === folderId)
+  const tree = buildFolderTree(folders)
 
   const noteButton = (note: Note, indented: boolean) => {
     const shared = note.memberIds.length > 1 || note.access !== 'restricted'
@@ -147,23 +149,28 @@ export function Sidebar({
           <p className="hint" style={{ padding: '10px 8px' }}>Sin notas todavía.</p>
         )}
 
-        {folders.map((folder) => {
-          const children = notesOf(folder.id)
-          const isOpenFolder = expanded.has(folder.id)
-          const shared = folder.memberIds.length > 1 || folder.access !== 'restricted'
+        {(() => {
+          const renderNode = (node: FolderNode): React.ReactNode => {
+            const folder = node.folder
+            const children = notesOf(folder.id)
+            const isOpenFolder = expanded.has(folder.id)
+            const shared = folder.memberIds.length > 1 || folder.access !== 'restricted'
 
-          return (
-            <div key={folder.id}>
-              <div className="folder-row">
+            return (
+              <div key={folder.id}>
+                <div className="folder-row">
                 <button
                   className="folder-toggle"
                   onClick={() => onToggleFolder(folder.id)}
                   aria-expanded={isOpenFolder}
-                  aria-label={`${folder.name}: ${isOpenFolder ? 'ocultar' : 'mostrar'} notas`}
+                  aria-label={`${node.path}: ${isOpenFolder ? 'ocultar' : 'mostrar'} contenido`}
+                  style={{ paddingLeft: 6 + node.depth * 12 }}
                 >
                   <ChevronRight size={12} className={`chev${isOpenFolder ? ' open' : ''}`} />
                   <Folder size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
-                  <span className="folder-name">{folder.name}</span>
+                  <span className="folder-name" title={node.path}>
+                    {folder.name}
+                  </span>
                   {shared && <Link2 size={10} style={{ opacity: 0.55, flexShrink: 0 }} />}
                   {folder.tags.length > 0 && (
                     <span className="folder-count" title={folder.tags.map((t) => `#${t}`).join(' ')}>
@@ -186,18 +193,21 @@ export function Sidebar({
                 </button>
               </div>
 
-              {isOpenFolder && (
-                <div className="tree-notes">
-                  {children.length === 0 ? (
-                    <p className="tree-empty">Sin notas</p>
-                  ) : (
-                    children.map((note) => noteButton(note, true))
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
+                {isOpenFolder && (
+                  <div className="tree-notes" style={{ paddingLeft: 12 + node.depth * 12 }}>
+                    {node.children.length === 0 && children.length === 0 && (
+                      <p className="tree-empty">Vacía</p>
+                    )}
+                    {node.children.map((child) => renderNode(child))}
+                    {children.map((note) => noteButton(note, true))}
+                  </div>
+                )}
+              </div>
+            )
+          }
+
+          return tree.map((node) => renderNode(node))
+        })()}
 
         {rootNotes.length > 0 && folders.length > 0 && (
           <div className="sidebar-section">

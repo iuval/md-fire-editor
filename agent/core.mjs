@@ -170,8 +170,12 @@ export async function resolveFolder(db, ref) {
     limit: 300,
   })
   const wanted = String(ref).toLowerCase()
+  const names = await folderNames(db)
   const matches = docs.filter(
-    (doc) => doc.id.startsWith(wanted) || String(doc.data.name ?? '').toLowerCase() === wanted
+    (doc) =>
+      doc.id.startsWith(wanted) ||
+      String(doc.data.name ?? '').toLowerCase() === wanted ||
+      String(names.get(doc.id) ?? '').toLowerCase() === wanted
   )
   if (matches.length === 1) return db.get('folders', matches[0].id)
   if (matches.length === 0) throw new AgentError(`no encontré la carpeta ${ref}`, 'E_NOT_FOUND')
@@ -224,14 +228,38 @@ function fieldFilter(fieldPath, op, value) {
   return { fieldFilter: { field: { fieldPath }, op, value } }
 }
 
+/** id → full path (`GUIONES/V3`), walking parentId like the app does. */
 export async function folderNames(db) {
   const docs = await db.query('folders', {
     where: memberFilter(db),
-    select: { fields: [{ fieldPath: 'name' }, { fieldPath: 'memberIds' }] },
+    select: {
+      fields: [
+        { fieldPath: 'name' },
+        { fieldPath: 'parentId' },
+        { fieldPath: 'memberIds' },
+      ],
+    },
     limit: 300,
   })
+
+  const byId = new Map(docs.map((doc) => [doc.id, doc.data]))
+  const cache = new Map()
+  const pathOf = (id) => {
+    if (cache.has(id)) return cache.get(id)
+    const chain = []
+    let cursor = byId.get(id)
+    let guard = 0
+    while (cursor && guard++ < 32) {
+      chain.unshift(cursor.name || 'Carpeta')
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined
+    }
+    const path = chain.join('/')
+    cache.set(id, path)
+    return path
+  }
+
   const map = new Map()
-  docs.forEach((doc) => map.set(doc.id, doc.data.name || 'Carpeta'))
+  docs.forEach((doc) => map.set(doc.id, pathOf(doc.id)))
   return map
 }
 

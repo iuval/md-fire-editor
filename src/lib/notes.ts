@@ -39,6 +39,7 @@ export interface Folder extends Acl {
   id: string
   ownerId: string
   name: string
+  parentId: string | null
   tags: string[]
   createdAt?: Timestampish | null
   updatedAt?: Timestampish | null
@@ -83,6 +84,7 @@ export function toFolder(id: string, data: Record<string, unknown>): Folder {
     id,
     ownerId: (data.ownerId as string) ?? '',
     name: (data.name as string) ?? '',
+    parentId: (data.parentId as string | null) ?? null,
     tags: (data.tags as string[]) ?? [],
     ...aclFrom(data),
     createdAt: (data.createdAt as Timestampish) ?? null,
@@ -239,7 +241,12 @@ export async function deleteNote(noteId: string): Promise<void> {
 
 // ---------- folders ----------
 
-export async function createFolder(uid: string, name: string, tags: string[] = []): Promise<Folder> {
+export async function createFolder(
+  uid: string,
+  name: string,
+  parentId: string | null = null,
+  tags: string[] = []
+): Promise<Folder> {
   if (!db) throw new Error('Firebase no está configurado')
   const ref = doc(collection(db, 'folders'))
   const now = serverTimestamp()
@@ -247,6 +254,7 @@ export async function createFolder(uid: string, name: string, tags: string[] = [
   await setDoc(ref, {
     ownerId: uid,
     name: clean,
+    parentId,
     tags,
     memberIds: [uid],
     roles: { [uid]: 'owner' },
@@ -258,11 +266,17 @@ export async function createFolder(uid: string, name: string, tags: string[] = [
     id: ref.id,
     ownerId: uid,
     name: clean,
+    parentId,
     tags,
     memberIds: [uid],
     roles: { [uid]: 'owner' },
     access: 'restricted',
   }
+}
+
+export async function moveFolder(folderId: string, parentId: string | null): Promise<void> {
+  if (!db) return
+  await updateDoc(doc(db, 'folders', folderId), { parentId, updatedAt: serverTimestamp() })
 }
 
 export async function updateFolderTags(folderId: string, tags: string[]): Promise<void> {
@@ -301,6 +315,18 @@ export async function deleteFolder(folderId: string): Promise<void> {
     })
   })
   await batch.commit()
+
+  // Nested folders are re-attached to the deleted folder's parent.
+  const childSnap = await getDocs(query(collection(db, 'folders'), where('parentId', '==', folderId)))
+  if (!childSnap.empty) {
+    const parentId = (await getDoc(doc(db, 'folders', folderId))).data()?.parentId ?? null
+    const reparent = writeBatch(db)
+    childSnap.forEach((child) => {
+      reparent.update(child.ref, { parentId, updatedAt: serverTimestamp() })
+    })
+    await reparent.commit()
+  }
+
   await deleteDoc(doc(db, 'folders', folderId))
 }
 

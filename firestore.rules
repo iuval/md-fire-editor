@@ -140,13 +140,19 @@ service cloud.firestore {
       return !d.keys().hasAny(['tags']) || (d.tags is list && d.tags.size() <= 30);
     }
 
-    function validFolder(d) {
+    function validFolder(d, folderId) {
       return d.keys().hasOnly([
-          'ownerId', 'name', 'tags', 'memberIds', 'roles', 'access', 'createdAt', 'updatedAt'
+          'ownerId', 'name', 'parentId', 'tags', 'memberIds', 'roles', 'access', 'createdAt', 'updatedAt'
         ])
         && isString(d.ownerId)
         && isString(d.name)
         && d.name.size() <= 120
+        // Nested folders: a folder may sit inside another, never inside itself.
+        // Cycles across several levels cannot be walked here, so the client
+        // validates the chain (depth cap + no cycles) before writing.
+        && (!d.keys().hasAny(['parentId'])
+          || d.parentId == null
+          || (isString(d.parentId) && d.parentId != folderId))
         && validTags(d)
         && validAcl(d);
     }
@@ -159,13 +165,13 @@ service cloud.firestore {
       allow list: if signedIn() && uid() in resource.data.memberIds;
 
       allow create: if signedIn()
-        && validFolder(request.resource.data)
+        && validFolder(request.resource.data, folderId)
         && request.resource.data.ownerId == uid()
         && selfOwnedAcl(request.resource.data)
         && request.resource.data.createdAt == request.resource.data.updatedAt;
 
       allow update: if resource != null
-        && validFolder(request.resource.data)
+        && validFolder(request.resource.data, folderId)
         && (
           (isAclOwner(resource.data)
             && aclUpdateValid(resource.data, request.resource.data)

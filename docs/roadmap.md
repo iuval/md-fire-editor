@@ -36,6 +36,13 @@ independientes, para no confundir con la ACL). ¿Los tags entran en la búsqueda
 
 **Tamaño**: M · **Depende de**: nada.
 
+**Carpetas anidadas** (implementado 21-nov-2026): `folders.parentId` con árbol en el sidebar,
+"Nueva subcarpeta…" en el menú de carpeta, mover carpeta con control de ciclos
+(`canMoveFolder`), tope de profundidad 6, borrar una carpeta re-cuelga sus hijas del padre, y
+el import/export reconstruye la jerarquía real. **Cada carpeta mantiene su propia ACL**: no hay
+herencia entre carpetas (las reglas no pueden recorrer una cadena), así que compartir un padre
+no comparte hijas — documentado y cubierto por tests.
+
 **Paridad con Obsidian**: resaltado inline en el editor (`TagHighlight`, decoración de
 ProseMirror), mayúsculas conservadas con agrupación case-insensitive (`tagKey`), árbol de
 etiquetas en el sidebar con conteos de descendientes, filtro múltiple con semántica **AND** y

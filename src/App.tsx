@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
@@ -16,7 +16,9 @@ import { download, noteToMarkdown, safeFileName } from './lib/export'
 import { buildVault, readVault } from './lib/vault'
 import { track } from './lib/analytics'
 import { buildTagTree, extractTags, matchesTagFilter, parseTagInput } from './lib/tags'
+import { flattenFolders, folderPath } from './lib/folders'
 import { parseProperties, setProperty } from './lib/properties'
+import { MAX_FOLDER_DEPTH } from './lib/folders'
 import { NotePanels, type PropertyChange } from './components/NotePanels'
 import { RenameTagDialog } from './components/RenameTagDialog'
 import { isPaid, subscribeEntitlement } from './lib/entitlements'
@@ -56,7 +58,7 @@ type Dialog =
   | { kind: 'share-note' }
   | { kind: 'share-folder'; folderId: string }
   | { kind: 'move' }
-  | { kind: 'new-folder' }
+  | { kind: 'new-folder'; parentId: string | null }
   | { kind: 'rename-folder'; folderId: string }
   | { kind: 'folder-tags'; folderId: string }
   | { kind: 'agents' }
@@ -298,9 +300,16 @@ function App() {
       // during this import, so the cache is the source of truth (this used to
       // create one folder per note).
       const normalizeKey = (name: string) => name.normalize('NFC').trim().toLowerCase()
-      const folderCache = new Map<string, Folder>(
-        folders.map((folder) => [normalizeKey(folder.name), folder])
-      )
+      const folderCache = new Map<string, Folder>()
+      for (const folder of folders) {
+        const parentChain: string[] = []
+        let cursor: Folder | undefined = folder
+        while (cursor) {
+          parentChain.unshift(normalizeKey(cursor.name))
+          cursor = cursor.parentId ? folders.find((f) => f.id === cursor!.parentId) : undefined
+        }
+        folderCache.set(`/${parentChain.join('/')}`, folder)
+      }
       let first: string | null = null
       let imported = 0
       let skippedAttachments = 0
@@ -310,11 +319,18 @@ function App() {
       const pushNote = async (title: string, markdown: string, folderName: string | null) => {
         let folder: Folder | undefined
         if (folderName) {
-          const key = normalizeKey(folderName)
-          folder = folderCache.get(key)
-          if (!folder) {
-            folder = (await addFolder(folderName)) ?? undefined
-            if (folder) folderCache.set(key, folder)
+          // `GUIONES/V3` becomes V3 inside GUIONES, one folder per segment.
+          const segments = folderName.split('/').filter(Boolean).slice(0, MAX_FOLDER_DEPTH)
+          let parentId: string | null = null
+          for (const segment of segments) {
+            const key = `${parentId ?? ''}/${normalizeKey(segment)}`
+            folder = folderCache.get(key)
+            if (!folder) {
+              folder = (await addFolder(segment, parentId)) ?? undefined
+              if (folder) folderCache.set(key, folder)
+            }
+            if (!folder) break
+            parentId = folder.id
           }
         }
         const note = await addNote(folder)
@@ -449,9 +465,13 @@ function App() {
   )
 
   const handleNewFolder = useCallback(
-    async (name: string) => {
-      const folder = await addFolder(name)
-      if (folder) setExpanded((prev) => new Set(prev).add(folder.id))
+    async (name: string, parentId: string | null = null) => {
+      const folder = await addFolder(name, parentId)
+      if (folder) {
+        setExpanded((prev) => new Set(prev).add(folder.id))
+        if (parentId) setExpanded((prev) => new Set(prev).add(parentId))
+      }
+      return folder
     },
     [addFolder]
   )
@@ -550,6 +570,11 @@ function App() {
           onSelect: () => void handleNewNote(folderMenu.folder),
         },
         {
+          label: 'Nueva subcarpeta…',
+          icon: <FolderPlus size={14} />,
+          onSelect: () => setDialog({ kind: 'new-folder', parentId: folderMenu!.folder.id }),
+        },
+        {
           label: 'Renombrar…',
           icon: <Pencil size={14} />,
           onSelect: () => setDialog({ kind: 'rename-folder', folderId: folderMenu.folder.id }),
@@ -587,6 +612,7 @@ function App() {
 
   const userName = user?.displayName || user?.email?.split('@')[0] || ''
 
+  const foldersById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders])
   const tagTree = buildTagTree(notes)
   const visibleNotes = selectedTags.length
     ? notes.filter((note) => matchesTagFilter(note.tags, selectedTags))
@@ -623,7 +649,7 @@ function App() {
           setSidebarOpen(false)
         }}
         onNewNote={(folder) => void handleNewNote(folder)}
-        onNewFolder={() => setDialog({ kind: 'new-folder' })}
+        onNewFolder={() => setDialog({ kind: 'new-folder', parentId: null })}
         onFolderMenu={(folder, pos) => setFolderMenu({ folder, ...pos })}
         expanded={expanded}
         onToggleFolder={toggleFolder}
@@ -713,7 +739,7 @@ function App() {
               />
               {sharedFolder && (
                 <p className="readonly-note">
-                  En la carpeta «{sharedFolder.name}» · permisos heredados de la carpeta
+                  En «{folderPath(sharedFolder.id, foldersById)}» · permisos heredados de la carpeta
                 </p>
               )}
               <CollaborativeEditor
@@ -850,7 +876,10 @@ function App() {
       {dialog.kind === 'move' && activeNote && (
         <MoveDialog
           noteTitle={activeNote.title}
-          folders={folders}
+          folders={flattenFolders(folders).map((node) => ({
+            ...node.folder,
+            name: `${'\u00a0\u00a0'.repeat(node.depth)}${node.folder.name}`,
+          }))}
           currentFolderId={activeNote.folderId}
           onMove={(folder) => void moveNoteTo(activeNote, folder)}
           onClose={() => setDialog({ kind: 'none' })}
@@ -906,10 +935,14 @@ function App() {
 
       {dialog.kind === 'new-folder' && (
         <InputDialog
-          title="Nueva carpeta"
+          title={
+            dialog.parentId
+              ? `Nueva subcarpeta en «${folderPath(dialog.parentId, foldersById)}»`
+              : 'Nueva carpeta'
+          }
           label="Nombre"
           confirmLabel="Crear"
-          onConfirm={(name) => void handleNewFolder(name)}
+          onConfirm={(name) => void handleNewFolder(name, dialog.parentId)}
           onClose={() => setDialog({ kind: 'none' })}
         />
       )}
