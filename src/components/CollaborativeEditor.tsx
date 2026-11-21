@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Collaboration from '@tiptap/extension-collaboration'
-import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
-import Placeholder from '@tiptap/extension-placeholder'
-import { Markdown } from 'tiptap-markdown'
-import { TagHighlight } from './extensions/tagHighlight'
 import * as Y from 'yjs'
 import { Loader2 } from 'lucide-react'
 import { FirestoreYjsProvider, type ProviderStatus, type SyncStats } from '../lib/collab/provider'
@@ -13,6 +7,8 @@ import { FirestoreAwareness, type AwarenessUser, type CollabUser } from '../lib/
 import { MAX_MARKDOWN_BYTES, type Note } from '../lib/notes'
 import { colorForUid } from '../lib/collab/presenceColors'
 import { sameMarkdown } from '../lib/markdown'
+import { buildEditorExtensions } from '../lib/editor/extensions'
+import { EditorToolbar } from './EditorToolbar'
 
 interface CollaborativeEditorProps {
   note: Note
@@ -25,6 +21,8 @@ interface CollaborativeEditorProps {
   onPresence: (users: AwarenessUser[]) => void
   onStatus: (status: ProviderStatus) => void
   onStats?: (stats: SyncStats) => void
+  /** Phones get a formatting bar, since there are no markdown keys. */
+  isMobile?: boolean
 }
 
 export function CollaborativeEditor({
@@ -37,8 +35,10 @@ export function CollaborativeEditor({
   onPresence,
   onStatus,
   onStats,
+  isMobile = false,
 }: CollaborativeEditorProps) {
   const [ready, setReady] = useState(false)
+  const [focused, setFocused] = useState(false)
   const changeRef = useRef(onMarkdownChange)
   useEffect(() => {
     changeRef.current = onMarkdownChange
@@ -95,29 +95,14 @@ export function CollaborativeEditor({
     }
   }, [session, onPresence, onStatus])
 
+  const extensions = useMemo(
+    () => buildEditorExtensions({ doc: session.doc, awareness: session.awareness, user: userInfo }),
+    [session, userInfo]
+  )
+
   const editor = useEditor(
     {
-      extensions: [
-        StarterKit.configure({ undoRedo: false }),
-        Collaboration.configure({ document: session.doc, field: 'content' }),
-        CollaborationCaret.configure({
-          provider: { awareness: session.awareness },
-          user: userInfo,
-          render: (user: { name?: string; color?: string }) => {
-            const cursor = document.createElement('span')
-            cursor.className = 'collaboration-caret'
-            cursor.style.borderLeft = `2px solid ${user.color ?? '#c25e00'}`
-            const label = document.createElement('span')
-            label.textContent = user.name ?? 'Anónimo'
-            label.style.cssText = `background:${user.color ?? '#c25e00'};color:#fff;font-size:10px;padding:1px 4px;border-radius:3px;position:absolute;top:-16px;left:-2px;white-space:nowrap;`
-            cursor.appendChild(label)
-            return cursor
-          },
-        }),
-        Placeholder.configure({ placeholder: 'Empezá a escribir…' }),
-        TagHighlight,
-        Markdown.configure({ html: false, transformPastedText: true }),
-      ],
+      extensions,
       editorProps: {
         attributes: { class: 'md-editor-content', spellcheck: 'true' },
       },
@@ -185,7 +170,13 @@ export function CollaborativeEditor({
   }, [editor, editable])
 
   return (
-    <div style={{ position: 'relative' }}>
+    // React's onFocus/onBlur are focusin/focusout, so they still fire when
+    // Tiptap recreates the editable node after a `setOptions` call.
+    <div
+      style={{ position: 'relative' }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
       {!ready && (
         <div
           style={{
@@ -207,6 +198,7 @@ export function CollaborativeEditor({
         <p className="readonly-note">Solo lectura</p>
       )}
       <EditorContent editor={editor} />
+      {isMobile && editable && editor && <EditorToolbar editor={editor} visible={focused} />}
     </div>
   )
 }
