@@ -118,7 +118,13 @@ export class FirestoreYjsProvider {
   }
 
   private applyRemote(update: Uint8Array) {
-    Y.applyUpdate(this.doc, update, REMOTE_ORIGIN)
+    try {
+      Y.applyUpdate(this.doc, update, REMOTE_ORIGIN)
+    } catch {
+      // A denied write still shows up in the local Firestore cache before the
+      // server rejects it, and its payload may not be a valid Yjs update.
+      // Ignoring it keeps a rejected write from breaking the session.
+    }
   }
 
   private handleLocalUpdate = (update: Uint8Array, origin: unknown) => {
