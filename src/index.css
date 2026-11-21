@@ -79,22 +79,53 @@ button {
   overflow: hidden;
 }
 
+/* `--sidebar-w` is set inline by the resize handle; every rule that depends on
+   the panel width reads it so a resize cannot leave a half-collapsed panel. */
 .sidebar {
-  width: 240px;
+  position: relative;
+  width: var(--sidebar-w, 240px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
   border-right: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   overflow: hidden;
-  transition: margin-left 0.16s ease, transform 0.16s ease;
+  transition: margin-left 0.16s ease, visibility 0.16s ease;
 }
 
 /* Off-canvas must also leave the tab order: aria-hidden alone still lets
    keyboard users tab through 26 invisible controls. */
 .sidebar.collapsed {
-  margin-left: -240px;
+  margin-left: calc(-1 * var(--sidebar-w, 240px));
   visibility: hidden;
+}
+
+/* 6px grab strip on the border. Sits above the rows so the whole edge works. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after {
+  background: light-dark(var(--color-accent), var(--color-accent-dark));
 }
 
 .sidebar-head {
@@ -147,8 +178,15 @@ button {
 
 .file-list {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
   padding: 2px 8px 8px;
+}
+
+/* A deep tree used to truncate every nested title. Rows now size to their
+   content and the list scrolls sideways, so the full name stays readable. */
+.file-tree {
+  width: max-content;
+  min-width: 100%;
 }
 
 .file-item {
@@ -158,7 +196,9 @@ button {
   border: none;
   background: none;
   border-radius: var(--radius-control);
-  padding: 6px 8px 7px;
+  /* Single line now that the date/preview subtitle is gone: 7px keeps the row
+     the same 32px as a folder row. */
+  padding: 7px 8px;
   cursor: pointer;
   color: light-dark(var(--color-text), var(--color-text-dark));
 }
@@ -167,11 +207,11 @@ button {
   background: light-dark(rgba(0, 0, 0, 0.045), rgba(255, 255, 255, 0.055));
 }
 
-/* The active note used to be accent-on-accent-tint (3.65:1 in dark). The name
-   keeps full text contrast and a 2px inset bar carries the accent instead. */
+/* Selection is the tint alone. The 2px accent bar on the left read as a stray
+   second border next to the tree's guide rails; the name goes semibold and
+   keeps full text contrast (5.1:1 on this tint in dark). */
 .file-item.active {
   background: light-dark(rgba(111, 92, 224, 0.07), rgba(139, 124, 248, 0.13));
-  box-shadow: inset 2px 0 0 light-dark(var(--color-accent), var(--color-accent-dark));
 }
 
 .file-name {
@@ -183,19 +223,15 @@ button {
   white-space: nowrap;
 }
 
-.file-item.active .file-name {
-  font-weight: 600;
+/* Tailwind preflight makes every svg a block, which pushed the shared-note
+   glyph onto a line of its own above the title. */
+.file-name svg {
+  display: inline;
+  vertical-align: -1px;
 }
 
-.file-meta {
-  display: block;
-  font-size: 11.5px;
-  line-height: 1.3;
-  margin-top: 1px;
-  color: light-dark(var(--color-muted), var(--color-muted-dark));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.file-item.active .file-name {
+  font-weight: 600;
 }
 
 .sidebar-foot {
@@ -978,12 +1014,27 @@ button {
   transform: rotate(90deg);
 }
 
+/* Constant: the per-level offset lives in the row's own padding, so nesting
+   compounds to 12px per level instead of 24px. */
 .tree-notes {
-  padding-left: 12px;
+  position: relative;
+  padding-left: 4px;
+}
+
+/* Rail from the parent folder down its children: in a long tree this is what
+   says which notes belong to which folder. `--guide-x` comes from the depth. */
+.tree-notes::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 2px;
+  left: var(--guide-x, 8px);
+  width: 1px;
+  background: light-dark(rgba(0, 0, 0, 0.12), rgba(255, 255, 255, 0.14));
 }
 
 .tree-empty {
-  padding: 2px 8px 4px 26px;
+  padding: 2px 8px 4px 18px;
   font-size: 11.5px;
   color: light-dark(var(--color-muted), var(--color-muted-dark));
 }
@@ -1240,10 +1291,55 @@ button {
   overflow-y: auto;
 }
 
+.tag-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px 2px 4px;
+}
+
+.tag-panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 4px 4px 6px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  text-align: left;
+}
+
+.tag-panel-toggle:hover {
+  background: light-dark(rgba(0, 0, 0, 0.045), rgba(255, 255, 255, 0.055));
+}
+
+.tag-panel-toggle .sidebar-section-label {
+  padding-left: 0;
+}
+
+.tag-panel-count {
+  font-size: 10.5px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  font-variant-numeric: tabular-nums;
+}
+
 .tag-tree {
   display: flex;
   flex-direction: column;
   padding: 0 8px 6px;
+  overflow-x: auto;
+}
+
+/* Same trick as the file tree: rows grow to their content, the panel scrolls. */
+.tag-tree-rows {
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 100%;
 }
 
 .tag-tree-row {
@@ -1292,11 +1388,17 @@ button {
     bottom: 0;
     left: 0;
     z-index: 50;
+    /* A width saved on a wide screen must not swallow the phone viewport. */
+    width: min(var(--sidebar-w, 240px), 86vw);
     transform: translateX(-100%);
     margin-left: 0;
     visibility: hidden;
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.25);
     transition: transform 0.16s ease, visibility 0.16s ease;
+  }
+
+  .sidebar-resizer {
+    display: none;
   }
 
   .sidebar.open {
@@ -1320,7 +1422,8 @@ button {
   }
 
   .file-item {
-    padding: 10px 8px;
+    /* Title-only rows still owe touch users a 44px target. */
+    padding: 13px 8px;
   }
 
   .folder-toggle,

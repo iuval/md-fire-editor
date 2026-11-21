@@ -1,0 +1,331 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { Sidebar, type SidebarProps } from '../src/components/Sidebar'
+import {
+  DEFAULT_SIDEBAR_WIDTH,
+  MAX_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  TREE_INDENT,
+  TREE_ROW_STEP,
+  clampSidebarWidth,
+  guideIndent,
+} from '../src/lib/sidebarLayout'
+import type { Folder, Note } from '../src/lib/notes'
+import { buildTagTree } from '../src/lib/tags'
+
+let roots: Root[] = []
+let host: HTMLDivElement | null = null
+
+function mount(ui: React.ReactNode) {
+  host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  roots.push(root)
+  act(() => root.render(ui))
+  return host
+}
+
+afterEach(() => {
+  roots.forEach((r) => act(() => r.unmount()))
+  roots = []
+  document.body.innerHTML = ''
+  host = null
+})
+
+beforeEach(() => {
+  localStorage.clear()
+})
+
+function folder(id: string, name: string, parentId: string | null = null): Folder {
+  return {
+    id,
+    ownerId: 'u1',
+    name,
+    parentId,
+    tags: [],
+    memberIds: ['u1'],
+    roles: { u1: 'owner' },
+    access: 'restricted',
+    order: 0,
+  }
+}
+
+function note(id: string, title: string, folderId: string | null, tags: string[] = []): Note {
+  return {
+    id,
+    ownerId: 'u1',
+    folderId,
+    aclSource: 'own',
+    title,
+    markdown: '',
+    tags,
+    order: 0,
+    version: 1,
+    memberIds: ['u1'],
+    roles: { u1: 'owner' },
+    access: 'restricted',
+  }
+}
+
+const nested = [folder('g', 'GUIONES'), folder('lm', 'Los Muchachos', 'g'), folder('v3', 'V3', 'lm')]
+const withNotes = [
+  note('n1', 'Nota raíz', null, ['trabajo']),
+  note('n2', 'Diseño de sincronización', 'v3', ['trabajo/acme']),
+]
+
+function render(overrides: Partial<SidebarProps> = {}) {
+  const props: SidebarProps = {
+    notes: withNotes,
+    folders: nested,
+    activeId: null,
+    onSelect: () => {},
+    onNewNote: () => {},
+    onHeaderMenu: () => {},
+    rootSort: 'updated',
+    onFolderMenu: () => {},
+    expanded: new Set(['g', 'lm', 'v3']),
+    onToggleFolder: () => {},
+    onClose: () => {},
+    onCollapse: () => {},
+    isMobile: false,
+    isOpen: true,
+    loading: false,
+    tagTree: buildTagTree(withNotes),
+    selectedTags: [],
+    onToggleTag: () => {},
+    uid: 'u1',
+    userName: 'Iuval',
+    photoURL: null,
+    onAccountClick: () => {},
+    ...overrides,
+  }
+  return mount(<Sidebar {...props} />)
+}
+
+/** Sum of the inline indent contributions from a row up to the tree root. */
+function totalIndent(row: HTMLElement): number {
+  let total = 0
+  let node: HTMLElement | null = row
+  while (node && !node.classList.contains('file-list')) {
+    const pad = parseFloat(node.style.paddingLeft || '0')
+    if (Number.isFinite(pad)) total += pad
+    node = node.parentElement
+  }
+  return total
+}
+
+describe('sidebar collapse', () => {
+  it('actually collapses the desktop panel, not just the button state', () => {
+    const open = render({ isOpen: true })
+    const aside = open.querySelector('aside')!
+    expect(aside.classList.contains('collapsed')).toBe(false)
+    expect(aside.getAttribute('aria-hidden')).toBeNull()
+
+    act(() => roots[0].unmount())
+    roots = []
+    document.body.innerHTML = ''
+
+    const closed = render({ isOpen: false })
+    const hidden = closed.querySelector('aside')!
+    expect(hidden.classList.contains('collapsed')).toBe(true)
+    expect(hidden.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('never marks the phone drawer as collapsed', () => {
+    const el = render({ isMobile: true, isOpen: false })
+    const aside = el.querySelector('aside')!
+    expect(aside.classList.contains('collapsed')).toBe(false)
+    expect(aside.getAttribute('aria-hidden')).toBe('true')
+  })
+})
+
+describe('Etiquetas panel', () => {
+  it('starts collapsed so the file tree gets the space', () => {
+    const el = render()
+    const toggle = el.querySelector('.tag-panel-toggle') as HTMLButtonElement
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(el.querySelectorAll('.tag-tree-row')).toHaveLength(0)
+  })
+
+  it('expands on demand and remembers the choice', () => {
+    const el = render()
+    const toggle = el.querySelector('.tag-panel-toggle') as HTMLButtonElement
+    act(() => toggle.click())
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(el.querySelectorAll('.tag-tree-row').length).toBeGreaterThan(0)
+    expect(localStorage.getItem('mdfire-tags-open')).toBe('1')
+
+    act(() => roots[0].unmount())
+    roots = []
+    document.body.innerHTML = ''
+
+    const reopened = render()
+    expect(reopened.querySelectorAll('.tag-tree-row').length).toBeGreaterThan(0)
+  })
+
+  it('honours a stored "closed" preference', () => {
+    localStorage.setItem('mdfire-tags-open', '0')
+    const el = render()
+    expect(el.querySelectorAll('.tag-tree-row')).toHaveLength(0)
+  })
+})
+
+describe('tree indentation', () => {
+  it('spends 12px per nesting level instead of 24px', () => {
+    expect(TREE_INDENT).toBe(12)
+  })
+
+  it('walks nested rows at a constant 12px step', () => {
+    const el = render()
+    const rows = [...el.querySelectorAll<HTMLElement>('.folder-toggle')]
+    const totals = rows.map(totalIndent)
+
+    expect(rows.map((r) => r.textContent?.trim().slice(0, 8))).toEqual([
+      'GUIONES',
+      'Los Much',
+      'V3',
+    ])
+    expect(totals[0]).toBe(6)
+    expect(totals[1] - totals[0]).toBe(12)
+    expect(totals[2] - totals[1]).toBe(12)
+  })
+
+  it('keeps notes aligned with the sibling folder rows', () => {
+    const el = render()
+    const items = [...el.querySelectorAll<HTMLElement>('.file-item')]
+    const design = items.find((i) => i.textContent?.includes('Diseño'))!
+    const rootNote = items.find((i) => i.textContent?.includes('Nota raíz'))!
+    const v3 = [...el.querySelectorAll<HTMLElement>('.folder-toggle')].find((r) =>
+      r.textContent?.includes('V3')
+    )!
+
+    // A note inside `v3` sits at the same offset as a folder child of `v3`.
+    expect(totalIndent(design)).toBe(totalIndent(v3) + TREE_INDENT)
+    expect(totalIndent(rootNote)).toBe(totalIndent([...el.querySelectorAll<HTMLElement>('.folder-toggle')][0]))
+  })
+})
+
+describe('tree rows', () => {
+  it('shows only the title, no date/preview subtitle', () => {
+    const el = render()
+    const items = [...el.querySelectorAll<HTMLElement>('.file-item')]
+    expect(items.length).toBeGreaterThan(0)
+    items.forEach((item) => expect(item.querySelector('.file-meta')).toBeNull())
+
+    const design = items.find((i) => i.textContent?.includes('Diseño'))!
+    expect(design.textContent?.trim()).toBe('Diseño de sincronización')
+  })
+})
+
+describe('parent guides', () => {
+  it('lands the rail under the parent chevron at every depth', () => {
+    // The rail sits on the parent chevron centre: 12px in at depth 0, then the
+    // row step per level.
+    expect(guideIndent(0)).toBe(12)
+    expect(guideIndent(1) - guideIndent(0)).toBe(TREE_ROW_STEP)
+    expect(guideIndent(3) - guideIndent(2)).toBe(TREE_ROW_STEP)
+  })
+
+  it('marks each expanded children container with its rail offset', () => {
+    const el = render()
+    const containers = [...el.querySelectorAll<HTMLElement>('.tree-notes')]
+    expect(containers.length).toBeGreaterThan(1)
+    expect(containers[0].style.getPropertyValue('--guide-x')).toBe(`${guideIndent(0)}px`)
+    expect(containers[1].style.getPropertyValue('--guide-x')).toBe(`${guideIndent(1)}px`)
+  })
+
+  it('draws no rail for a collapsed folder', () => {
+    const el = render({ expanded: new Set() })
+    expect(el.querySelectorAll('.tree-notes')).toHaveLength(0)
+  })
+})
+
+describe('panel width', () => {
+  it('clamps out-of-range and non-numeric widths', () => {
+    expect(clampSidebarWidth(120)).toBe(MIN_SIDEBAR_WIDTH)
+    expect(clampSidebarWidth(9000)).toBe(MAX_SIDEBAR_WIDTH)
+    expect(clampSidebarWidth(Number.NaN)).toBe(DEFAULT_SIDEBAR_WIDTH)
+    expect(clampSidebarWidth(312.6)).toBe(313)
+  })
+
+  it('starts at the default width and stores it as a CSS variable', () => {
+    const el = render()
+    const aside = el.querySelector('aside') as HTMLElement
+    expect(aside.style.getPropertyValue('--sidebar-w')).toBe(`${DEFAULT_SIDEBAR_WIDTH}px`)
+  })
+
+  it('resizes by dragging the edge and persists the width', () => {
+    const el = render()
+    const aside = el.querySelector('aside') as HTMLElement
+    const handle = el.querySelector('.sidebar-resizer') as HTMLElement
+
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 240 }))
+      window.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 320 }))
+      window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    })
+
+    expect(aside.style.getPropertyValue('--sidebar-w')).toBe('320px')
+    expect(localStorage.getItem('mdfire-sidebar-width')).toBe('320')
+
+    // A drag past either bound stops at it.
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 320 }))
+      window.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 9000 }))
+      window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    })
+    expect(aside.style.getPropertyValue('--sidebar-w')).toBe(`${MAX_SIDEBAR_WIDTH}px`)
+  })
+
+  it('restores a stored width on the next visit', () => {
+    localStorage.setItem('mdfire-sidebar-width', '360')
+    const el = render()
+    const aside = el.querySelector('aside') as HTMLElement
+    expect(aside.style.getPropertyValue('--sidebar-w')).toBe('360px')
+    expect((el.querySelector('.sidebar-resizer') as HTMLElement).getAttribute('aria-valuenow')).toBe('360')
+  })
+
+  it('resizes from the keyboard', () => {
+    const el = render()
+    const aside = el.querySelector('aside') as HTMLElement
+    const handle = el.querySelector('.sidebar-resizer') as HTMLElement
+
+    act(() => {
+      handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    expect(aside.style.getPropertyValue('--sidebar-w')).toBe(`${DEFAULT_SIDEBAR_WIDTH + 16}px`)
+
+    act(() => {
+      handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    })
+    expect(aside.style.getPropertyValue('--sidebar-w')).toBe(`${MIN_SIDEBAR_WIDTH}px`)
+
+    act(() => {
+      handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    })
+    expect(aside.style.getPropertyValue('--sidebar-w')).toBe(`${MAX_SIDEBAR_WIDTH}px`)
+  })
+
+  it('offers no resize handle on the phone drawer', () => {
+    const el = render({ isMobile: true })
+    expect(el.querySelector('.sidebar-resizer')).toBeNull()
+  })
+})
+
+describe('horizontal scrolling for long trees', () => {
+  it('wraps the tree so rows can grow past the panel width', () => {
+    const el = render()
+    const tree = el.querySelector('.file-list > .file-tree')
+    expect(tree).not.toBeNull()
+    expect(tree!.querySelectorAll('.folder-toggle').length).toBeGreaterThan(0)
+  })
+
+  it('wraps the tag rows the same way', () => {
+    localStorage.setItem('mdfire-tags-open', '1')
+    const el = render()
+    expect(el.querySelector('.tag-tree > .tag-tree-rows')).not.toBeNull()
+  })
+})
