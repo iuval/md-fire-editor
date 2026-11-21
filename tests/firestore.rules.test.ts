@@ -861,3 +861,68 @@ describe('catch-all', () => {
     await assertFails(setDoc(doc(db(OWNER), 'secrets', 'x'), { a: 1 }))
   })
 })
+
+describe('usage and credits', () => {
+  const usage = (overrides: Record<string, unknown> = {}) => ({
+    month: '2026-11',
+    writes: 10,
+    reads: 4,
+    bytesWritten: 2048,
+    bytesRead: 1024,
+    storageBytes: 512,
+    updatedAt: ts(),
+    ...overrides,
+  })
+
+  it('a user can write and read their own usage counters', async () => {
+    await assertSucceeds(setDoc(doc(db(OWNER), 'usage', OWNER), usage()))
+    await assertSucceeds(getDoc(doc(db(OWNER), 'usage', OWNER)))
+  })
+
+  it('rejects foreign paths, bad months and negative counters', async () => {
+    await assertFails(setDoc(doc(db(EDITOR), 'usage', OWNER), usage()))
+    await assertFails(setDoc(doc(db(OWNER), 'usage', OWNER), usage({ month: 'noviembre' })))
+    await assertFails(setDoc(doc(db(OWNER), 'usage', OWNER), usage({ writes: -1 })))
+  })
+
+  it('credits are read-only for the user and admin-writable', async () => {
+    await assertFails(
+      setDoc(doc(db(OWNER), 'credits', OWNER), {
+        balanceUsd: 999,
+        thresholdUsd: 1,
+        topUpUsd: 2,
+        autoTopUp: true,
+        updatedAt: ts(),
+      })
+    )
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'admins', OWNER), { createdAt: ts() })
+    })
+    await assertSucceeds(
+      setDoc(doc(db(OWNER), 'credits', EDITOR), {
+        balanceUsd: 5,
+        thresholdUsd: 1,
+        topUpUsd: 2,
+        autoTopUp: true,
+        updatedAt: ts(),
+      })
+    )
+    await assertFails(
+      setDoc(doc(db(OWNER), 'credits', EDITOR), {
+        balanceUsd: 5,
+        thresholdUsd: 1,
+        topUpUsd: 1,
+        autoTopUp: true,
+        updatedAt: ts(),
+      })
+    )
+  })
+
+  it('the ledger is immutable: only the server writes it', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'credits', OWNER), { balanceUsd: 5 })
+    })
+    await assertFails(setDoc(doc(db(OWNER), 'credits', OWNER, 'ledger', 'e1'), { amount: 5 }))
+  })
+})

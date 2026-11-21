@@ -5,6 +5,7 @@
 import { login, logout, whoami, pairingCode } from './auth.mjs'
 import { AgentError, openStore, listNotes, listFolders, listTags, readNote, patchNote, appendNote, createNote, deleteNote, searchNotes } from './core.mjs'
 import { parseArgs } from './args.mjs'
+import { defaultDir, pull, push } from './vault.mjs'
 
 const HELP = `mdfire — notas FireMD desde la terminal (con permisos del agente)
 
@@ -16,6 +17,8 @@ const HELP = `mdfire — notas FireMD desde la terminal (con permisos del agente
   cat <id> [--max-bytes n] [--etag]          markdown crudo
   find <texto> [--tag t] [--limit n]         id:línea: texto
   tags                                      etiqueta\tnotas
+  vault pull [--dir ruta] [--prune]         nube → archivos .md
+  vault push [--dir ruta]                   archivos .md → nube (etag: nunca pisa)
   patch <id> [--etag e] [--find a --replace b]... [--all]
   append <id> [--text t]                     agrega al final (o stdin)
   new --folder f --title t [--body t]
@@ -86,6 +89,25 @@ try {
           const note = await readNote(db, args._[0], { maxBytes: Number(args['max-bytes']) || 0 })
           if (args.etag === true) process.stdout.write(`${note.etag}\n`)
           process.stdout.write(note.body.endsWith('\n') ? note.body : `${note.body}\n`)
+          break
+        }
+
+        case 'vault': {
+          const action = args._[1]
+          const dir = typeof args.dir === 'string' ? args.dir : defaultDir()
+          if (action === 'pull') {
+            const result = await pull(db, { dir, prune: args.prune === true })
+            process.stdout.write(`ok ${result.written} notas en ${result.dir}\n`)
+          } else if (action === 'push') {
+            const result = await push(db, { dir })
+            process.stdout.write(
+              `ok ${result.updated} actualizadas, ${result.created.length} creadas, ${result.unchanged} sin cambios\n`
+            )
+            result.conflicts.forEach((c) => process.stdout.write(`conflicto ${c.file} → ${c.conflict}\n`))
+            result.errors.forEach((e) => process.stderr.write(`aviso ${e}\n`))
+          } else {
+            fail('uso: mdfire vault pull|push [--dir ruta]', 64)
+          }
           break
         }
 

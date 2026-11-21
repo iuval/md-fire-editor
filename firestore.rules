@@ -420,6 +420,52 @@ service cloud.firestore {
         && isTimestamp(request.resource.data.updatedAt);
     }
 
+    // ---------- usage ----------
+    // Client-measured counters: good for transparency, never for billing.
+    match /usage/{userId} {
+      allow get: if signedIn() && (uid() == userId || isAdmin());
+      allow list: if false;
+
+      allow write: if signedIn()
+        && uid() == userId
+        && request.resource.data.keys().hasOnly([
+            'month', 'writes', 'reads', 'bytesWritten', 'bytesRead', 'storageBytes', 'updatedAt'
+          ])
+        && request.resource.data.month is string
+        && request.resource.data.month.matches('^[0-9]{4}-[0-9]{2}$')
+        && request.resource.data.writes is int && request.resource.data.writes >= 0
+        && request.resource.data.reads is int && request.resource.data.reads >= 0
+        && request.resource.data.bytesWritten is int && request.resource.data.bytesWritten >= 0
+        && request.resource.data.bytesRead is int && request.resource.data.bytesRead >= 0
+        && (!request.resource.data.keys().hasAny(['storageBytes'])
+          || (request.resource.data.storageBytes is int && request.resource.data.storageBytes >= 0))
+        && isTimestamp(request.resource.data.updatedAt);
+    }
+
+    // ---------- credits ----------
+    // Balances and auto top-up settings are written by an admin only: a client
+    // must never be able to grant itself money.
+    match /credits/{userId} {
+      allow get: if signedIn() && (uid() == userId || isAdmin());
+      allow list: if false;
+
+      allow write: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+            'balanceUsd', 'thresholdUsd', 'topUpUsd', 'autoTopUp', 'updatedAt'
+          ])
+        && request.resource.data.balanceUsd is number && request.resource.data.balanceUsd >= 0
+        && request.resource.data.thresholdUsd is number && request.resource.data.thresholdUsd >= 0
+        && request.resource.data.topUpUsd is number
+        && request.resource.data.topUpUsd >= 2
+        && request.resource.data.autoTopUp is bool
+        && isTimestamp(request.resource.data.updatedAt);
+
+      match /ledger/{entryId} {
+        allow read: if signedIn() && (uid() == userId || isAdmin());
+        allow write: if false;
+      }
+    }
+
     // ---------- product analytics ----------
     // Fixed event names, own events only, never listable across users.
     match /analytics/{userId}/events/{eventId} {

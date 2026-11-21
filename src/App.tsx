@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
+import { Activity, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { Menu, type MenuItem } from './components/Menu'
@@ -9,12 +9,23 @@ import { MoveDialog } from './components/MoveDialog'
 import { InputDialog } from './components/InputDialog'
 import { AgentsDialog } from './components/AgentsDialog'
 import { UpgradeDialog } from './components/UpgradeDialog'
+import { UsageDialog } from './components/UsageDialog'
 import { useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
-import { download, noteToMarkdown, notesToFiles, safeFileName, suggestExportName, zipStored } from './lib/export'
+import { download, noteToMarkdown, safeFileName } from './lib/export'
+import { buildVault, readVault } from './lib/vault'
 import { track } from './lib/analytics'
 import { extractTags, parseTagInput } from './lib/tags'
 import { isPaid, subscribeEntitlement } from './lib/entitlements'
+import {
+  recordUsage,
+  setStorageUsage,
+  subscribeCredits,
+  subscribeUsage,
+  type Credits,
+  type UsageTotals,
+} from './lib/usage'
+import type { SyncStats } from './lib/collab/provider'
 import {
   isAclOwner,
   moveNoteTo,
@@ -47,6 +58,7 @@ type Dialog =
   | { kind: 'folder-tags'; folderId: string }
   | { kind: 'agents' }
   | { kind: 'upgrade' }
+  | { kind: 'usage' }
 
 function initialNoteId(): string | null {
   const fromUrl = new URLSearchParams(window.location.search).get('note')
@@ -106,6 +118,10 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [paid, setPaid] = useState(false)
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [usage, setUsage] = useState<UsageTotals | null>(null)
+  const [credits, setCredits] = useState<Credits | null>(null)
+  const lastStats = useRef<SyncStats | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -127,6 +143,42 @@ function App() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    if (!user) {
+      setUsage(null)
+      setCredits(null)
+      return
+    }
+    const offUsage = subscribeUsage(user.uid, setUsage)
+    const offCredits = subscribeCredits(user.uid, setCredits)
+    return () => {
+      offUsage()
+      offCredits()
+    }
+  }, [user])
+
+  const handleStats = useCallback(
+    (stats: SyncStats) => {
+      if (!user) return
+      const previous = lastStats.current
+      lastStats.current = stats
+      if (!previous) return
+      void recordUsage(user.uid, {
+        writes: Math.max(0, stats.blocksWritten - previous.blocksWritten),
+        reads: Math.max(0, stats.blocksApplied - previous.blocksApplied),
+        bytesWritten: Math.max(0, stats.bytesWritten - previous.bytesWritten),
+        bytesRead: Math.max(0, stats.bytesApplied - previous.bytesApplied),
+      }).catch(() => undefined)
+    },
+    [user]
+  )
+
+  useEffect(() => {
+    if (!user) return
+    const storage = notes.reduce((sum, note) => sum + (note.markdown?.length ?? 0), 0)
+    void setStorageUsage(user.uid, storage).catch(() => undefined)
+  }, [user, notes])
 
   useEffect(() => {
     if (!user) {
@@ -221,10 +273,11 @@ function App() {
   )
 
   const handleExportAll = useCallback(() => {
-    const files = notesToFiles(notes, folders)
-    if (files.length === 0) return
-    download(zipStored(files), suggestExportName(), 'application/zip')
-    track('export', user?.uid, { kind: 'zip' })
+    if (notes.length === 0) return
+    const vault = buildVault(notes, folders)
+    download(vault.bytes, vault.fileName, 'application/zip')
+    setNotice(`Exportadas ${vault.notes} notas en ${vault.fileName} (listo para abrir en Obsidian).`)
+    track('export', user?.uid, { kind: 'vault' })
   }, [notes, folders, user?.uid])
 
   const handleExportNote = useCallback(() => {
@@ -236,27 +289,58 @@ function App() {
   const handleImportFiles = useCallback(
     async (files: FileList | null) => {
       if (!files || !user) return
-      const list = Array.from(files).slice(0, 20)
+      const list = Array.from(files)
+      const folderCache = new Map<string, string>()
       let first: string | null = null
-      for (const file of list) {
-        const text = await file.text()
-        const heading = text.match(/^#\s+(.+)$/m)?.[1]?.trim()
-        const title = (heading || file.name.replace(/\.md$/i, '')).slice(0, 300)
-        const note = await addNote()
-        if (!note) continue
-        const markdown = text.slice(0, 250_000)
+      let imported = 0
+      let skippedAttachments = 0
+
+      const pushNote = async (title: string, markdown: string, folderName: string | null) => {
+        let folder: Folder | undefined
+        if (folderName) {
+          const cached = folderCache.get(folderName)
+          folder = folders.find((f) => f.id === cached || f.name === folderName)
+          if (!folder) {
+            folder = (await addFolder(folderName)) ?? undefined
+            if (folder) folderCache.set(folderName, folder.id)
+          }
+        }
+        const note = await addNote(folder)
+        if (!note) return
         await saveNoteContent(note.id, {
           title,
-          markdown,
+          markdown: markdown.slice(0, 250_000),
           tags: extractTags(markdown),
           version: 1,
         })
+        imported++
         if (!first) first = note.id
       }
-      track('import', user.uid, { count: list.length })
+
+      for (const file of list) {
+        if (/\.zip$/i.test(file.name)) {
+          const vault = await readVault(new Uint8Array(await file.arrayBuffer()))
+          for (const entry of vault.entries) {
+            await pushNote(entry.title, entry.markdown, entry.folder)
+          }
+          skippedAttachments += vault.skipped.filter((s) => s.reason === 'attachment').length
+          continue
+        }
+
+        const text = await file.text()
+        const heading = text.match(/^#\s+(.+)$/m)?.[1]?.trim()
+        await pushNote((heading || file.name.replace(/\.md$/i, '')).slice(0, 300), text, null)
+      }
+
+      track('import', user.uid, { count: imported })
+      setNotice(
+        skippedAttachments > 0
+          ? `Importadas ${imported} notas. ${skippedAttachments} adjuntos quedaron fuera: todavía no se guardan imágenes en la app.`
+          : `Importadas ${imported} notas.`
+      )
       if (first) selectNote(first)
     },
-    [addNote, selectNote, user]
+    [addFolder, addNote, folders, selectNote, user]
   )
 
   const toggleFolder = useCallback((id: string) => {
@@ -487,6 +571,18 @@ function App() {
         />
 
         <div className="scroll">
+          {notice && (
+            <div
+              className="hint"
+              style={{ padding: '8px 16px', display: 'flex', gap: 8, alignItems: 'center' }}
+            >
+              <span style={{ flex: 1 }}>{notice}</span>
+              <button className="icon-btn" onClick={() => setNotice(null)} aria-label="Cerrar aviso">
+                ✕
+              </button>
+            </div>
+          )}
+
           {loadError && (
             <p className="hint" style={{ padding: '16px 24px', color: '#e05252' }}>
               {loadError}
@@ -537,6 +633,7 @@ function App() {
                 onMarkdownChange={handleMarkdownChange}
                 onPresence={setPresence}
                 onStatus={setStatus}
+                onStats={handleStats}
               />
             </div>
           )}
@@ -566,12 +663,18 @@ function App() {
           <Menu
             items={[
               {
-                label: 'Exportar todo (.zip)',
+                label: 'Exportar vault (.zip)',
                 icon: <Download size={14} />,
                 onSelect: handleExportAll,
               },
               {
-                label: 'Importar .md…',
+                label: 'Uso y facturación…',
+                icon: <Activity size={14} />,
+                onSelect: () => setDialog({ kind: 'usage' }),
+                separatorBefore: true,
+              },
+              {
+                label: 'Importar vault (.zip o .md)…',
                 icon: <Upload size={14} />,
                 onSelect: () => importRef.current?.click(),
               },
@@ -662,6 +765,17 @@ function App() {
         />
       )}
 
+      {dialog.kind === 'usage' && (
+        <UsageDialog
+          usage={usage}
+          credits={credits}
+          paid={paid}
+          notes={notes.length}
+          folders={folders.length}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
       {dialog.kind === 'upgrade' && (
         <UpgradeDialog onClose={() => setDialog({ kind: 'none' })} onExport={handleExportAll} />
       )}
@@ -669,7 +783,7 @@ function App() {
       <input
         ref={importRef}
         type="file"
-        accept=".md,text/markdown,text/plain"
+        accept=".md,.markdown,.zip,text/markdown,text/plain,application/zip"
         multiple
         hidden
         onChange={(e) => {

@@ -44,7 +44,7 @@ al parchear; reglas validan lista y tope de 30 (no pueden recorrer elementos).
 
 ---
 
-## 2. Importar / exportar vault de Obsidian
+## 2. Importar / exportar vault de Obsidian — ✅ implementado (21-nov-2026)
 
 **Qué**: botón "Importar vault…" y "Exportar vault…" que produzcan/consuman la estructura
 real de una carpeta Obsidian.
@@ -75,9 +75,16 @@ archivos de más de 250 KB (límite actual por nota), wikilinks que apuntan a no
 **Tamaño**: M (sin adjuntos) / L (con adjuntos) · **Depende de**: nada para texto; adjuntos
 dependen de Blaze.
 
+**Implementado**: `src/lib/unzip.ts` (lector ZIP propio: EOCD, directorio central, método
+*stored* y **DEFLATE** con `DecompressionStream('deflate-raw')`, sin dependencias),
+`src/lib/vault.ts` (import: carpetas por primer segmento, `.obsidian/`, `.trash/`, `.git/` y
+adjuntos omitidos y reportados; export: notas por carpeta + `.obsidian/app.json`).
+Verificado leyendo un ZIP armado con el comando `zip` (deflate real) y `unzip -l` sobre el
+ZIP que generamos.
+
 ---
 
-## 3. Archivos locales: CLI o mini app de sync (Windows/Mac)
+## 3. Archivos locales: CLI o mini app de sync (Windows/Mac) — ✅ CLI implementado
 
 **Qué**: mantener una carpeta local (el vault) espejada con la nube, para editar con cualquier
 editor y con Obsidian.
@@ -107,9 +114,15 @@ editor y con Obsidian.
 **Tamaño**: M (CLI) + M (app de escritorio) · **Depende de**: nada para CLI; app depende de
 certificados y de decidir adjuntos.
 
+**Implementado (CLI)**: `mdfire vault pull|push` (`agent/vault.mjs`) con manifiesto
+`.mdfire/manifest.json`, escritura por `replaceNote` con precondición de `updateTime`, y
+**archivo de conflicto** `<nota>.conflicto-YYYYMMDD-HHMM.md` si el remoto cambió: nunca pisa ni
+descarta. Los archivos nuevos solo se aceptan dentro de una carpeta compartida (el agente no
+puede crear notas sueltas ajenas). Falta el `watch` y la mini app de escritorio.
+
 ---
 
-## 4. Página de uso (transferencia / datos / almacenamiento)
+## 4. Página de uso (transferencia / datos / almacenamiento) — ✅ implementado (21-nov-2026)
 
 **Qué**: pantalla donde el usuario ve qué consume y cuánto costaría.
 
@@ -135,9 +148,15 @@ certificados y de decidir adjuntos.
 
 **Tamaño**: S · **Depende de**: nada para transparencia; cobro real depende de Blaze.
 
+**Implementado**: `usage/{uid}` con contadores incrementales (escrituras/lecturas/bytes),
+alimentado por los `stats` del provider cada 30 s, más `storageBytes` recalculado desde las
+notas. Diálogo "Uso y facturación" con plan, notas, carpetas, almacenamiento, transferencia y
+**costo estimado** con las tarifas públicas. Reglas: solo el dueño escribe, mes `YYYY-MM`,
+enteros no negativos.
+
 ---
 
-## 5. Auto top-up de créditos (mínimo $2)
+## 5. Auto top-up de créditos (mínimo $2) — 🟡 modelo y UI listos, falta el cobro
 
 **Qué**: recarga automática cuando el saldo baja de un umbral, con un mínimo de $2.
 
@@ -165,6 +184,12 @@ certificados y de decidir adjuntos.
 
 **Tamaño**: L · **Depende de**: Blaze + Cloud Functions, proveedor de pagos elegido,
 punto 4 (medición real) y planes (ya hay `entitlements`).
+
+**Hecho**: `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (regla: **≥ $2**),
+`autoTopUp` y libro mayor `ledger/` **inmutable**; el usuario solo lee, un admin escribe (un
+cliente no puede acreditarse saldo). La UI muestra saldo, umbral y recarga mínima dentro del
+diálogo de uso. **Falta**: cobro off-session, webhook idempotente, SCA/3DS, reintentos,
+factura y proveedor (Stripe no opera en UY).
 
 ---
 

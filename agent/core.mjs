@@ -306,6 +306,35 @@ export async function patchNote(db, ref, edits, { etag, replaceAll = false } = {
   }
 }
 
+/**
+ * Replaces the whole body (disk → cloud). Used by `vault push`: the etag makes
+ * a stale local copy fail instead of overwriting somebody else's edit.
+ */
+export async function replaceNote(db, ref, markdown, { etag } = {}) {
+  const doc = await resolveNote(db, ref)
+  if (etag && etag !== etagOf(doc.data)) {
+    throw new AgentError(`etag desactualizado (actual ${etagOf(doc.data)})`, 'E_ETAG')
+  }
+  const next = String(markdown ?? '')
+  if (next.length > 250000) throw new AgentError('la nota supera 250 KB', 'E_USAGE')
+
+  await db.patch(
+    'notes',
+    doc.id,
+    { markdown: next, tags: extractTags(next) },
+    {
+      updateTime: doc.updateTime,
+      transforms: [{ fieldPath: 'version', increment: 1 }, { fieldPath: 'updatedAt' }],
+    }
+  )
+
+  return {
+    id: doc.id,
+    etag: etagOf({ markdown: next, version: (doc.data.version ?? 0) + 1 }),
+    delta: next.length - String(doc.data.markdown ?? '').length,
+  }
+}
+
 export async function appendNote(db, ref, text) {
   if (!text) throw new AgentError('falta el texto', 'E_USAGE')
   const doc = await resolveNote(db, ref)

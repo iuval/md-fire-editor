@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { buildVault, readVault } from '../src/lib/vault'
+import type { Folder, Note } from '../src/lib/notes'
+
+function makeVaultZip(): { zip: Uint8Array; dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'vault-'))
+  mkdirSync(join(dir, 'Trabajo'), { recursive: true })
+  mkdirSync(join(dir, '.obsidian'), { recursive: true })
+  mkdirSync(join(dir, 'Adjuntos'), { recursive: true })
+
+  writeFileSync(join(dir, 'Ideas.md'), '# Ideas\n\n- uno #producto\n')
+  writeFileSync(join(dir, 'Trabajo', 'Acta.md'), '---\ntags: [reunion]\n---\n\nsin H1\n')
+  writeFileSync(join(dir, 'Trabajo', 'Reunion.md'), '# Reunión\n\n[[Ideas]] y #equipo/acme\n')
+  writeFileSync(join(dir, 'Adjuntos', 'foto.png'), 'no-soy-texto')
+  writeFileSync(join(dir, '.obsidian', 'app.json'), '{"legacyEditor":false}')
+
+  const zipPath = join(dir, 'vault.zip')
+  // -r deflates; -X drops extra fields. This proves we read real DEFLATE entries.
+  execFileSync('zip', ['-r', '-q', '-X', zipPath, '.', '-x', 'vault.zip'], { cwd: dir })
+  return { zip: new Uint8Array(readFileSync(zipPath)), dir }
+}
+
+function note(overrides: Partial<Note> = {}): Note {
+  return {
+    id: 'n1',
+    ownerId: 'u1',
+    folderId: null,
+    aclSource: 'own',
+    memberIds: ['u1'],
+    roles: { u1: 'owner' },
+    access: 'restricted',
+    title: 'Ideas',
+    markdown: '# Ideas\n\n- uno\n',
+    tags: [],
+    version: 1,
+    ...overrides,
+  }
+}
+
+describe('reading an Obsidian vault', () => {
+  it('reads deflated entries, maps folders and skips config/attachments', async () => {
+    const { zip } = makeVaultZip()
+    const vault = await readVault(zip)
+
+    const paths = vault.entries.map((e) => e.path).sort()
+    expect(paths).toEqual(['Ideas.md', 'Trabajo/Acta.md', 'Trabajo/Reunion.md'])
+
+    const acta = vault.entries.find((e) => e.path === 'Trabajo/Acta.md')!
+    expect(acta.folder).toBe('Trabajo')
+    expect(acta.title).toBe('Acta') // no H1 → file name
+    expect(acta.markdown).toContain('tags: [reunion]')
+
+    const reunion = vault.entries.find((e) => e.path === 'Trabajo/Reunion.md')!
+    expect(reunion.title).toBe('Reunión') // H1 wins over file name
+    expect(reunion.markdown).toContain('[[Ideas]]')
+
+    expect(vault.skipped.map((s) => s.path).sort()).toEqual(['Adjuntos/foto.png'])
+    expect(vault.skipped[0].reason).toBe('attachment')
+  })
+
+  it('rejects a file that is not a ZIP', async () => {
+    await expect(readVault(new TextEncoder().encode('no soy un zip'))).rejects.toThrow(/ZIP/i)
+  })
+})
+
+describe('building a vault', () => {
+  it('produces a ZIP that our own reader and unzip accept', async () => {
+    const folders: Folder[] = [
+      { id: 'f1', ownerId: 'u1', name: 'Trabajo', tags: [], memberIds: ['u1'], roles: { u1: 'owner' }, access: 'restricted' },
+    ]
+    const vault = buildVault(
+      [note(), note({ id: 'n2', title: 'Acta', folderId: 'f1', markdown: '# Acta\n\nhola\n' })],
+      folders
+    )
+
+    expect(vault.fileName).toMatch(/^mdfire-vault-\d{4}-\d{2}-\d{2}\.zip$/)
+    expect(vault.notes).toBe(2)
+
+    const dir = mkdtempSync(join(tmpdir(), 'vault-out-'))
+    const file = join(dir, 'out.zip')
+    writeFileSync(file, vault.bytes)
+    const listing = execFileSync('unzip', ['-l', file], { encoding: 'utf8' })
+    expect(listing).toContain('Ideas.md')
+    expect(listing).toContain('Trabajo/Acta.md')
+    expect(listing).toContain('.obsidian/app.json')
+
+    const back = await readVault(vault.bytes)
+    expect(back.entries.map((e) => e.path).sort()).toEqual(['Ideas.md', 'Trabajo/Acta.md'])
+  })
+})

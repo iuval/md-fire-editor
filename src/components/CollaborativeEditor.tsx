@@ -7,7 +7,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import * as Y from 'yjs'
 import { Loader2 } from 'lucide-react'
-import { FirestoreYjsProvider, type ProviderStatus } from '../lib/collab/provider'
+import { FirestoreYjsProvider, type ProviderStatus, type SyncStats } from '../lib/collab/provider'
 import { FirestoreAwareness, type AwarenessUser, type CollabUser } from '../lib/collab/awareness'
 import { MAX_MARKDOWN_BYTES, type Note } from '../lib/notes'
 import { colorForUid } from '../lib/collab/presenceColors'
@@ -20,6 +20,7 @@ interface CollaborativeEditorProps {
   onMarkdownChange: (markdown: string) => void
   onPresence: (users: AwarenessUser[]) => void
   onStatus: (status: ProviderStatus) => void
+  onStats?: (stats: SyncStats) => void
 }
 
 export function CollaborativeEditor({
@@ -30,6 +31,7 @@ export function CollaborativeEditor({
   onMarkdownChange,
   onPresence,
   onStatus,
+  onStats,
 }: CollaborativeEditorProps) {
   const [ready, setReady] = useState(false)
   const changeRef = useRef(onMarkdownChange)
@@ -58,6 +60,19 @@ export function CollaborativeEditor({
       awareness: new FirestoreAwareness(note.id, uid, userInfo, doc),
     }
   }, [note.id, uid, userInfo])
+
+  // Report provider counters periodically so the usage page stays cheap (one
+  // write every 30 s at most, never per keystroke).
+  useEffect(() => {
+    if (!onStats) return
+    const tick = () => onStats({ ...session.provider.stats })
+    tick()
+    const timer = setInterval(tick, 30_000)
+    return () => {
+      clearInterval(timer)
+      tick()
+    }
+  }, [session, onStats])
 
   useEffect(() => {
     const offStatus = session.provider.onStatus(onStatus)
