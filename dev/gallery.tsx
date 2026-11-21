@@ -91,6 +91,8 @@ function Shell({
 }: ShellProps) {
   // `sidebar=closed` lets the review see the phone layout without the drawer on top.
   const [sidebarOpen] = useState(mobile && params.get('sidebar') !== 'closed')
+  // Mirrors App.tsx so the collapse button can be reviewed, not just described.
+  const [collapsed, setCollapsed] = useState(params.get('collapsed') === '1')
   const note = list.find((n) => n.id === activeId) ?? null
   const body = note ? splitFrontmatter(note.markdown).body : ''
 
@@ -108,9 +110,9 @@ function Shell({
         expanded={expanded}
         onToggleFolder={() => {}}
         onClose={() => {}}
-        onCollapse={() => {}}
+        onCollapse={() => setCollapsed((v) => !v)}
         isMobile={mobile}
-        isOpen={mobile ? sidebarOpen : true}
+        isOpen={mobile ? sidebarOpen : !collapsed}
         loading={loading}
         tagTree={tagTreeOf(list)}
         selectedTags={selectedTags}
@@ -126,9 +128,9 @@ function Shell({
           title={title ?? note?.title ?? ''}
           status={status}
           presence={presenceUsers}
-          sidebarCollapsed={false}
+          sidebarCollapsed={!mobile && collapsed}
           isMobile={mobile}
-          onToggleSidebar={() => {}}
+          onToggleSidebar={() => setCollapsed((v) => !v)}
           onMenu={() => {}}
           menuOpen={false}
         />
@@ -547,10 +549,32 @@ function CollapsedShell() {
   const body = splitFrontmatter(note.markdown).body
   return (
     <div className="shell">
-      <aside className="sidebar collapsed" aria-hidden="true" />
+      <Sidebar
+        notes={notes}
+        folders={folders}
+        activeId={activeNote.id}
+        onSelect={() => {}}
+        onNewNote={() => {}}
+        onHeaderMenu={() => {}}
+        rootSort="updated"
+        onFolderMenu={() => {}}
+        expanded={allExpanded}
+        onToggleFolder={() => {}}
+        onClose={() => {}}
+        onCollapse={() => {}}
+        isMobile={false}
+        isOpen={false}
+        loading={false}
+        tagTree={tagTreeOf(notes)}
+        selectedTags={[]}
+        onToggleTag={() => {}}
+        uid={UID}
+        userName={USER}
+        photoURL={null}
+        onAccountClick={() => {}}
+      />
       <main className="pane">
         <PaneBar
-          title={note.title}
           status={connectedStatus}
           presence={[]}
           sidebarCollapsed
