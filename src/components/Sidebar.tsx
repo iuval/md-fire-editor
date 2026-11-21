@@ -1,8 +1,7 @@
-import { ChevronRight, Folder, FolderPlus, Link2, MoreHorizontal, PanelLeftClose, Plus, User } from 'lucide-react'
+import { ChevronRight, Folder, Link2, MoreHorizontal, PanelLeftClose, Plus, User } from 'lucide-react'
 import type { Folder as FolderType, Note } from '../lib/notes'
 import { buildFolderTree, type FolderNode } from '../lib/folders'
 import { sortFolders, sortNotes, type SortMode } from '../lib/sorting'
-import { ArrowDownWideNarrow } from 'lucide-react'
 import type { TagNode } from '../lib/tags'
 
 interface SidebarProps {
@@ -11,7 +10,8 @@ interface SidebarProps {
   activeId: string | null
   onSelect: (id: string) => void
   onNewNote: (folder?: FolderType) => void
-  onNewFolder: () => void
+  onHeaderMenu: (pos: { x: number; y: number }) => void
+  rootSort: SortMode
   onFolderMenu: (folder: FolderType, pos: { x: number; y: number }) => void
   expanded: Set<string>
   onToggleFolder: (id: string) => void
@@ -20,8 +20,6 @@ interface SidebarProps {
   isMobile: boolean
   isOpen: boolean
   loading: boolean
-  rootSort: SortMode
-  onOpenSort: (folder: FolderType | null) => void
   tagTree: TagNode[]
   selectedTags: string[]
   onToggleTag: (tagKey: string) => void
@@ -50,7 +48,8 @@ export function Sidebar({
   activeId,
   onSelect,
   onNewNote,
-  onNewFolder,
+  onHeaderMenu,
+  rootSort,
   onFolderMenu,
   expanded,
   onToggleFolder,
@@ -59,8 +58,6 @@ export function Sidebar({
   isMobile,
   isOpen,
   loading,
-  rootSort,
-  onOpenSort,
   tagTree,
   selectedTags,
   onToggleTag,
@@ -121,16 +118,16 @@ export function Sidebar({
         <button className="icon-btn" onClick={() => onNewNote()} aria-label="Nueva nota" title="Nueva nota">
           <Plus size={15} />
         </button>
-        <button className="icon-btn" onClick={onNewFolder} aria-label="Nueva carpeta" title="Nueva carpeta">
-          <FolderPlus size={15} />
-        </button>
         <button
           className="icon-btn"
-          onClick={() => onOpenSort(null)}
-          aria-label="Ordenar notas y carpetas"
-          title={`Orden: ${rootSort}`}
+          aria-label="Más acciones"
+          title="Más acciones"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            onHeaderMenu({ x: rect.left - 150, y: rect.bottom + 4 })
+          }}
         >
-          <ArrowDownWideNarrow size={15} />
+          <MoreHorizontal size={15} />
         </button>
         <button
           className="icon-btn"
@@ -211,18 +208,6 @@ export function Sidebar({
                     </span>
                   )}
                   <span className="folder-count">{children.length}</span>
-                </button>
-                <button
-                  className="icon-btn"
-                  style={{ width: 22, height: 22 }}
-                  aria-label={`Orden de ${folder.name}`}
-                  title={`Orden: ${folder.sort ?? sortOf(folder.parentId)}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onOpenSort(folder)
-                  }}
-                >
-                  <ArrowDownWideNarrow size={13} />
                 </button>
                 <button
                   className="icon-btn"

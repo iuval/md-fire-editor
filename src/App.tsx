@@ -118,6 +118,7 @@ function App() {
   const [isMobile, setIsMobile] = useState(false)
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
+  const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(initialExpanded)
   const [presence, setPresence] = useState<AwarenessUser[]>([])
   const [status, setStatus] = useState({
@@ -641,16 +642,18 @@ function App() {
           ),
       })
     }
-    noteMenu.push({
-      label: 'Subir',
-      icon: <ArrowUp size={14} />,
-      onSelect: () => void handleMoveNote(-1),
-    })
-    noteMenu.push({
-      label: 'Bajar',
-      icon: <ArrowDown size={14} />,
-      onSelect: () => void handleMoveNote(1),
-    })
+    if (resolveSort(activeNote.folderId ?? null, foldersById, rootSort) === 'manual') {
+      noteMenu.push({
+        label: 'Subir',
+        icon: <ArrowUp size={14} />,
+        onSelect: () => void handleMoveNote(-1),
+      })
+      noteMenu.push({
+        label: 'Bajar',
+        icon: <ArrowDown size={14} />,
+        onSelect: () => void handleMoveNote(1),
+      })
+    }
     noteMenu.push({
       label: 'Exportar .md',
       icon: <FileDown size={14} />,
@@ -699,16 +702,20 @@ function App() {
           icon: <ArrowDownWideNarrow size={14} />,
           onSelect: () => setDialog({ kind: 'sort', folderId: folderMenu!.folder.id }),
         },
-        {
-          label: 'Subir',
-          icon: <ArrowUp size={14} />,
-          onSelect: () => void handleMoveFolder(folderMenu!.folder, -1),
-        },
-        {
-          label: 'Bajar',
-          icon: <ArrowDown size={14} />,
-          onSelect: () => void handleMoveFolder(folderMenu!.folder, 1),
-        },
+        ...(resolveSort(folderMenu.folder.parentId ?? null, foldersById, rootSort) === 'manual'
+          ? [
+              {
+                label: 'Subir',
+                icon: <ArrowUp size={14} />,
+                onSelect: () => void handleMoveFolder(folderMenu!.folder, -1),
+              },
+              {
+                label: 'Bajar',
+                icon: <ArrowDown size={14} />,
+                onSelect: () => void handleMoveFolder(folderMenu!.folder, 1),
+              },
+            ]
+          : []),
         ...(isAclOwner(folderMenu.folder, user?.uid)
           ? [
               {
@@ -773,7 +780,8 @@ function App() {
           setSidebarOpen(false)
         }}
         onNewNote={(folder) => void handleNewNote(folder)}
-        onNewFolder={() => setDialog({ kind: 'new-folder', parentId: null })}
+        onHeaderMenu={(pos) => setHeaderMenu(pos)}
+        rootSort={rootSort}
         onFolderMenu={(folder, pos) => setFolderMenu({ folder, ...pos })}
         expanded={expanded}
         onToggleFolder={toggleFolder}
@@ -782,8 +790,6 @@ function App() {
         isMobile={isMobile}
         isOpen={isMobile ? sidebarOpen : !collapsed}
         loading={dataLoading}
-        rootSort={rootSort}
-        onOpenSort={(folder) => setDialog({ kind: 'sort', folderId: folder?.id ?? null })}
         tagTree={tagTree}
         selectedTags={selectedTags}
         onToggleTag={(key) =>
@@ -893,6 +899,27 @@ function App() {
 
       {dialog.kind === 'note-menu' && noteMenu.length > 0 && (
         <Menu items={noteMenu} onClose={() => setDialog({ kind: 'none' })} />
+      )}
+
+      {headerMenu && (
+        <Menu
+          anchor="pointer"
+          pos={headerMenu}
+          onClose={() => setHeaderMenu(null)}
+          items={[
+            {
+              label: 'Nueva carpeta',
+              icon: <FolderPlus size={14} />,
+              onSelect: () => setDialog({ kind: 'new-folder', parentId: null }),
+            },
+            {
+              label: `Orden de la lista: ${SORT_LABELS[rootSort]}…`,
+              icon: <ArrowDownWideNarrow size={14} />,
+              separatorBefore: true,
+              onSelect: () => setDialog({ kind: 'sort', folderId: null }),
+            },
+          ]}
+        />
       )}
 
       {folderMenu && (
