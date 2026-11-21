@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
 import { Sparkles, X } from 'lucide-react'
+import { Modal } from './Modal'
 
 interface UpgradeDialogProps {
   onClose: () => void
@@ -12,18 +12,8 @@ interface UpgradeDialogProps {
  * exporting the vault always works.
  */
 export function UpgradeDialog({ onClose, onExport }: UpgradeDialogProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   return (
-    <>
-      <div className="scrim" onClick={onClose} />
-      <div className="share" role="dialog" aria-modal="true" aria-labelledby="upgrade-heading">
+    <Modal labelledBy="upgrade-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="upgrade-heading">Compartir requiere un plan</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
@@ -53,7 +43,6 @@ export function UpgradeDialog({ onClose, onExport }: UpgradeDialogProps) {
             Entendido
           </button>
         </div>
-      </div>
-    </>
+    </Modal>
   )
 }

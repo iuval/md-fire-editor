@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Modal } from './Modal'
 
 interface InputDialogProps {
   title: string
@@ -25,12 +26,7 @@ export function InputDialog({
   useEffect(() => {
     inputRef.current?.focus()
     inputRef.current?.select()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [])
 
   const submit = () => {
     const clean = value.trim()
@@ -40,9 +36,7 @@ export function InputDialog({
   }
 
   return (
-    <>
-      <div className="scrim" onClick={onClose} />
-      <div className="share" role="dialog" aria-modal="true" aria-labelledby="input-dialog-title">
+    <Modal labelledBy="input-dialog-title" onClose={onClose}>
         <h2 id="input-dialog-title">{title}</h2>
         <label className="hint" htmlFor="input-dialog-field">
           {label}
@@ -66,7 +60,6 @@ export function InputDialog({
             {confirmLabel}
           </button>
         </div>
-      </div>
-    </>
+    </Modal>
   )
 }

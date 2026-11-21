@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { X } from 'lucide-react'
+import { Modal } from './Modal'
 
 interface RenameTagDialogProps {
   current: string
@@ -13,14 +14,6 @@ export function RenameTagDialog({ current, knownTags, onRename, onClose }: Renam
   const [from, setFrom] = useState(current)
   const [to, setTo] = useState('')
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   const submit = () => {
     const source = from.trim().replace(/^#/, '')
     const target = to.trim().replace(/^#/, '')
@@ -30,9 +23,7 @@ export function RenameTagDialog({ current, knownTags, onRename, onClose }: Renam
   }
 
   return (
-    <>
-      <div className="scrim" onClick={onClose} />
-      <div className="share" role="dialog" aria-modal="true" aria-labelledby="rename-tag-heading">
+    <Modal labelledBy="rename-tag-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="rename-tag-heading">Renombrar etiqueta</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
@@ -84,7 +75,6 @@ export function RenameTagDialog({ current, knownTags, onRename, onClose }: Renam
             Renombrar
           </button>
         </div>
-      </div>
-    </>
+    </Modal>
   )
 }

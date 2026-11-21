@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Bot, X } from 'lucide-react'
+import { Modal } from './Modal'
 import { ROLE_LABELS, type Folder, type Role } from '../lib/notes'
 
 interface AgentsDialogProps {
@@ -20,14 +21,6 @@ export function AgentsDialog({ folders, onLink, onClose }: AgentsDialogProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   const submit = async () => {
     const clean = uid.trim()
@@ -55,9 +48,7 @@ export function AgentsDialog({ folders, onLink, onClose }: AgentsDialogProps) {
   }
 
   return (
-    <>
-      <div className="scrim" onClick={onClose} />
-      <div className="share" role="dialog" aria-modal="true" aria-labelledby="agents-heading">
+    <Modal labelledBy="agents-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="agents-heading">Agentes de IA</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
@@ -114,9 +105,8 @@ export function AgentsDialog({ folders, onLink, onClose }: AgentsDialogProps) {
           </button>
         </div>
 
-        {done && <p className="hint" style={{ color: '#3fa65c' }}>{done}</p>}
-        {error && <p className="hint" style={{ color: '#e05252' }}>{error}</p>}
-      </div>
-    </>
+        {done && <p className="hint tone-ok">{done}</p>}
+        {error && <p className="hint tone-danger">{error}</p>}
+    </Modal>
   )
 }

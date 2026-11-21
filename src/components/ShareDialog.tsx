@@ -9,6 +9,7 @@ import {
   type Role,
 } from '../lib/notes'
 import { getProfileName, lookupByEmail } from '../lib/directory'
+import { Modal } from './Modal'
 
 export interface ShareTarget {
   kind: 'note' | 'folder'
@@ -73,14 +74,6 @@ export function ShareDialog({
     }
   }, [members, names])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(link)
@@ -137,9 +130,7 @@ export function ShareDialog({
   }
 
   return (
-    <>
-      <div className="scrim" onClick={onClose} />
-      <div className="share" role="dialog" aria-modal="true" aria-labelledby="share-heading">
+    <Modal labelledBy="share-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="share-heading">
             Compartir {target.kind === 'folder' ? 'carpeta' : 'nota'} «{target.name || 'Sin título'}»
@@ -242,8 +233,7 @@ export function ShareDialog({
                             <option value="editor">{ROLE_LABELS.editor}</option>
                           </select>
                           <button
-                            className="icon-btn"
-                            style={{ width: 22, height: 22 }}
+                            className="icon-btn icon-btn--sm"
                             aria-label={`Quitar acceso a ${names[uid] ?? uid}`}
                             disabled={busy}
                             onClick={() => void run(() => onRemoveMember(uid))}
@@ -291,9 +281,8 @@ export function ShareDialog({
           </>
         )}
 
-        {error && <p className="hint" style={{ color: '#e05252' }}>{error}</p>}
-      </div>
-    </>
+        {error && <p className="hint tone-danger">{error}</p>}
+    </Modal>
   )
 }
 

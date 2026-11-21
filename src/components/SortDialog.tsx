@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
 import { X } from 'lucide-react'
+import { Modal } from './Modal'
 import { SORT_LABELS, isSortMode, type SortMode } from '../lib/sorting'
 
 interface SortDialogProps {
@@ -13,18 +13,8 @@ const MODES: SortMode[] = ['name', 'created', 'updated', 'manual']
 
 /** Ordering for one folder (or the root list). */
 export function SortDialog({ target, current, onChoose, onClose }: SortDialogProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   return (
-    <>
-      <div className="scrim" onClick={onClose} />
-      <div className="share" role="dialog" aria-modal="true" aria-labelledby="sort-heading">
+    <Modal labelledBy="sort-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="sort-heading">Ordenar «{target}»</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
@@ -63,7 +53,6 @@ export function SortDialog({ target, current, onChoose, onClose }: SortDialogPro
         <p className="hint">
           Las carpetas creadas dentro de esta heredan el orden, salvo que les pongas uno propio.
         </p>
-      </div>
-    </>
+    </Modal>
   )
 }

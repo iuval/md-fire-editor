@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
 import { Folder, X } from 'lucide-react'
+import { Modal } from './Modal'
 import type { Folder as FolderType } from '../lib/notes'
 
 interface MoveDialogProps {
@@ -11,18 +11,8 @@ interface MoveDialogProps {
 }
 
 export function MoveDialog({ noteTitle, folders, currentFolderId, onMove, onClose }: MoveDialogProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   return (
-    <>
-      <div className="scrim" onClick={onClose} />
-      <div className="share" role="dialog" aria-modal="true" aria-labelledby="move-heading">
+    <Modal labelledBy="move-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="move-heading">Mover «{noteTitle || 'Sin título'}»</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
@@ -59,7 +49,6 @@ export function MoveDialog({ noteTitle, folders, currentFolderId, onMove, onClos
         </div>
 
         {folders.length === 0 && <p className="hint">Todavía no tenés carpetas.</p>}
-      </div>
-    </>
+    </Modal>
   )
 }
