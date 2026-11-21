@@ -15,7 +15,8 @@
     "test:unit": "vitest run tests/collab.test.ts tests/editor.test.tsx",
     "test:agent": "firebase emulators:exec --only firestore,auth --project demo-mdfire \"vitest run tests/agent.test.ts\"",
     "mdfire": "node agent/cli.mjs",
-    "mdfire-mcp": "node agent/mcp.mjs"
+    "mdfire-mcp": "node agent/mcp.mjs",
+    "bench:sync": "firebase emulators:exec --only firestore --project demo-mdfire \"BENCH=1 vitest run tests/sync.bench.test.ts\""
   },
   "dependencies": {
     "@tiptap/extension-collaboration": "^3.35.0",

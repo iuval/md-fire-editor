@@ -485,13 +485,103 @@ describe('folders', () => {
 })
 
 describe('collaboration sub-collections respect roles', () => {
-  it('editor appends updates, viewer cannot, both can read', async () => {
-    await seedNote('n1', everyRole)
-    const update = { data: 'AQID', clientId: 1, createdAt: ts() }
+  const block = (overrides: Record<string, unknown> = {}) => ({
+    v: 1,
+    jid: 1,
+    hash: '0123456789ab',
+    bytes: 3,
+    data: 'AQID',
+    clientId: 1,
+    createdAt: ts(),
+    ...overrides,
+  })
 
-    await assertFails(addDoc(collection(db(VIEWER), 'notes', 'n1', 'updates'), update))
-    await assertSucceeds(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), update))
+  it('editor appends blocks, viewer cannot, both can read', async () => {
+    await seedNote('n1', everyRole)
+    await assertFails(addDoc(collection(db(VIEWER), 'notes', 'n1', 'updates'), block()))
+    await assertSucceeds(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block()))
     await assertSucceeds(getDocs(collection(db(VIEWER), 'notes', 'n1', 'updates')))
+  })
+
+  it('rejects a block without a content hash', async () => {
+    await seedNote('n1', everyRole)
+    const { hash: _hash, ...noHash } = block()
+    await assertFails(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), noHash))
+  })
+
+  it('rejects a malformed hash', async () => {
+    await seedNote('n1', everyRole)
+    await assertFails(
+      addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block({ hash: 'NOT-A-HASH' }))
+    )
+  })
+
+  it('rejects an unknown block version', async () => {
+    await seedNote('n1', everyRole)
+    await assertFails(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block({ v: 2 })))
+  })
+
+  it('rejects non-positive jids and oversized blocks', async () => {
+    await seedNote('n1', everyRole)
+    await assertFails(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block({ jid: 0 })))
+    await assertFails(
+      addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block({ bytes: 500_001 }))
+    )
+    await assertFails(
+      addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block({ data: 'A'.repeat(620_001) }))
+    )
+  })
+
+  it('blocks are immutable, editors can prune them', async () => {
+    await seedNote('n1', everyRole)
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'notes', 'n1', 'updates', 'b1'), block())
+    })
+    await assertFails(
+      updateDoc(doc(db(EDITOR), 'notes', 'n1', 'updates', 'b1'), { data: 'BAUG', createdAt: ts() })
+    )
+    await assertSucceeds(deleteDoc(doc(db(EDITOR), 'notes', 'n1', 'updates', 'b1')))
+  })
+
+  it('manifest carries the snapshot and is writable by editors only', async () => {
+    await seedNote('n1', everyRole)
+    const manifest = {
+      epoch: 1,
+      snapshot: 'AQID',
+      stateVector: 'AQID',
+      jid: 12,
+      bytes: 3,
+      clientId: 1,
+      updatedAt: ts(),
+    }
+    await assertFails(
+      setDoc(doc(db(VIEWER), 'notes', 'n1', 'collab', 'manifest'), manifest)
+    )
+    await assertSucceeds(
+      setDoc(doc(db(EDITOR), 'notes', 'n1', 'collab', 'manifest'), manifest)
+    )
+    await assertFails(
+      setDoc(doc(db(EDITOR), 'notes', 'n1', 'collab', 'manifest'), { ...manifest, epoch: 2 })
+    )
+    await assertFails(
+      setDoc(doc(db(EDITOR), 'notes', 'n1', 'collab', 'manifest'), {
+        ...manifest,
+        snapshot: 'A'.repeat(900_001),
+      })
+    )
+  })
+
+  it('the v1 state document is read-only for readers and deletable for writers', async () => {
+    await seedNote('n1', everyRole)
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'notes', 'n1', 'collab', 'state'), {
+        state: 'AQID',
+        clientId: 1,
+        updatedAt: ts(),
+      })
+    })
+    await assertSucceeds(getDoc(doc(db(VIEWER), 'notes', 'n1', 'collab', 'state')))
+    await assertSucceeds(deleteDoc(doc(db(EDITOR), 'notes', 'n1', 'collab', 'state')))
   })
 
   it('viewers cannot write presence, editors can', async () => {
@@ -509,15 +599,9 @@ describe('collaboration sub-collections respect roles', () => {
     await assertSucceeds(setDoc(doc(db(EDITOR), 'notes', 'n1', 'presence', EDITOR), presence(EDITOR)))
   })
 
-  it('stranger cannot write updates on a restricted note', async () => {
+  it('stranger cannot write blocks on a restricted note', async () => {
     await seedNote('n1')
-    await assertFails(
-      addDoc(collection(db(STRANGER), 'notes', 'n1', 'updates'), {
-        data: 'AQID',
-        clientId: 1,
-        createdAt: ts(),
-      })
-    )
+    await assertFails(addDoc(collection(db(STRANGER), 'notes', 'n1', 'updates'), block()))
   })
 })
 

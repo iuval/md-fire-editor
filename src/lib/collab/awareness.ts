@@ -21,9 +21,11 @@ export interface AwarenessUser extends CollabUser {
   clientId: number
 }
 
-const HEARTBEAT_MS = 15_000
-const WRITE_THROTTLE_MS = 200
-const STALE_AFTER_MS = 45_000
+// Presence is the cheapest thing to over-write and the least valuable to send
+// often: a caret does not need 200 ms resolution. Measured cost, not taste.
+const HEARTBEAT_MS = 20_000
+const WRITE_THROTTLE_MS = 1_200
+const STALE_AFTER_MS = 50_000
 
 /**
  * `y-protocols` Awareness-compatible object whose transport is a Firestore
@@ -44,6 +46,13 @@ export class FirestoreAwareness {
   private unsub: (() => void) | null = null
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private writeTimer: ReturnType<typeof setTimeout> | null = null
+  private lastSent = ''
+  private lastSentAt = 0
+  private hidden = false
+  private onVisibility = () => {
+    this.hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+    if (!this.hidden) this.scheduleWrite()
+  }
   private destroyed = false
   private readonly fs: Firestore | null
 
@@ -97,8 +106,13 @@ export class FirestoreAwareness {
       () => undefined
     )
 
-    this.heartbeat = setInterval(() => void this.write(), HEARTBEAT_MS)
-    void this.write()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.onVisibility)
+      this.hidden = document.visibilityState === 'hidden'
+    }
+
+    this.heartbeat = setInterval(() => void this.write({ force: true }), HEARTBEAT_MS)
+    void this.write({ force: true })
   }
 
   getUsers(): AwarenessUser[] {
@@ -146,6 +160,9 @@ export class FirestoreAwareness {
 
   destroy(): void {
     this.destroyed = true
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onVisibility)
+    }
     if (this.heartbeat) clearInterval(this.heartbeat)
     if (this.writeTimer) clearTimeout(this.writeTimer)
     this.unsub?.()
@@ -161,9 +178,15 @@ export class FirestoreAwareness {
     this.writeTimer = setTimeout(() => void this.write(), WRITE_THROTTLE_MS)
   }
 
-  private async write(): Promise<void> {
+  private async write({ force = false } = {}): Promise<void> {
     if (!this.fs || this.destroyed || !this.localState) return
+    if (this.hidden && !force) return
+
     const cursor = (this.localState.cursor ?? {}) as { anchor?: unknown; head?: unknown }
+    const payload = `${jsonToBase64(cursor.anchor ?? null)}|${jsonToBase64(cursor.head ?? null)}`
+    // Identical caret + recent heartbeat means there is nothing new to say.
+    if (!force && payload === this.lastSent && Date.now() - this.lastSentAt < HEARTBEAT_MS) return
+
     try {
       await setDoc(doc(this.fs, 'notes', this.noteId, 'presence', this.uid), {
         userId: this.uid,
@@ -174,6 +197,8 @@ export class FirestoreAwareness {
         selection: jsonToBase64(cursor.head ?? null),
         updatedAt: serverTimestamp(),
       })
+      this.lastSent = payload
+      this.lastSentAt = Date.now()
     } catch {
       // Presence is best-effort; never break editing because of it.
     }

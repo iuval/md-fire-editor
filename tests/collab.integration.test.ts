@@ -18,6 +18,19 @@ const NOTE_ID = 'shared-note'
 
 let env: RulesTestEnvironment
 
+function blockEnvelope(overrides: Record<string, unknown> = {}) {
+  return {
+    v: 1,
+    jid: 1,
+    hash: '0123456789ab',
+    bytes: 3,
+    data: 'AQID',
+    clientId: 1,
+    createdAt: undefined as unknown,
+    ...overrides,
+  }
+}
+
 function waitFor(predicate: () => boolean, timeoutMs = 12_000, label = 'condition'): Promise<void> {
   const start = Date.now()
   return new Promise((resolvePromise, reject) => {
@@ -173,8 +186,7 @@ describe('real-time collaboration over Firestore', () => {
     const { collection } = await import('firebase/firestore')
     await expect(
       addDoc(collection(strangerFs, 'notes', NOTE_ID, 'updates'), {
-        data: 'AQID',
-        clientId: 1,
+        ...blockEnvelope(),
         createdAt: serverTimestamp(),
       })
     ).rejects.toThrow()
@@ -197,14 +209,136 @@ describe('real-time collaboration over Firestore', () => {
     const { addDoc, serverTimestamp, collection } = await import('firebase/firestore')
     await expect(
       addDoc(collection(viewerFs, 'notes', NOTE_ID, 'updates'), {
-        data: 'AQID',
-        clientId: 1,
+        ...blockEnvelope(),
         createdAt: serverTimestamp(),
       })
     ).rejects.toThrow()
 
     viewerProvider.destroy()
     viewerDoc.destroy()
+  })
+
+  it('propagates while the writer keeps typing (trailing throttle, not debounce)', async () => {
+    const aliceFs = env.authenticatedContext(ALICE).firestore()
+    const bobFs = env.authenticatedContext(BOB).firestore()
+
+    const aliceDoc = new Y.Doc()
+    const bobDoc = new Y.Doc()
+    const alice = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs)
+    const bob = new FirestoreYjsProvider(NOTE_ID, bobDoc, bobFs)
+    alice.connect()
+    bob.connect()
+    await waitFor(() => bobDoc.getText('content').length > 0, 12_000, 'initial hydration').catch(
+      () => undefined
+    )
+
+    const text = aliceDoc.getText('content')
+    const start = Date.now()
+    let sawWhileTyping = false
+
+    // 3 s of continuous typing, never pausing long enough for a debounce.
+    for (let i = 0; i < 30; i++) {
+      text.insert(text.length, 'x')
+      await new Promise((r) => setTimeout(r, 100))
+      if (!sawWhileTyping && bobDoc.getText('content').length > 0) {
+        sawWhileTyping = true
+        expect(Date.now() - start).toBeLessThan(2000)
+      }
+    }
+
+    expect(sawWhileTyping).toBe(true)
+    await waitFor(
+      () => aliceDoc.getText('content').toString() === bobDoc.getText('content').toString(),
+      12_000,
+      'convergence'
+    )
+
+    alice.destroy()
+    bob.destroy()
+    aliceDoc.destroy()
+    bobDoc.destroy()
+  })
+
+  it('compaction writes a manifest and prunes the blocks it folded in', async () => {
+    const aliceFs = env.authenticatedContext(ALICE).firestore()
+    const { getDocs, collection, getDoc, doc: docRef } = await import('firebase/firestore')
+
+    const aliceDoc = new Y.Doc()
+    const alice = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs)
+    alice.connect()
+    await new Promise((r) => setTimeout(r, 600))
+
+    const text = aliceDoc.getText('content')
+    for (let i = 0; i < 6; i++) {
+      text.insert(text.length, `bloque ${i}. `)
+      await new Promise((r) => setTimeout(r, 400))
+    }
+    await new Promise((r) => setTimeout(r, 900))
+
+    const before = await getDocs(collection(aliceFs, 'notes', NOTE_ID, 'updates'))
+    expect(before.size).toBeGreaterThan(1)
+
+    await alice.compactNow()
+    await new Promise((r) => setTimeout(r, 400))
+
+    const manifest = await getDoc(docRef(aliceFs, 'notes', NOTE_ID, 'collab', 'manifest'))
+    expect(manifest.exists()).toBe(true)
+    expect(typeof manifest.data()!.snapshot).toBe('string')
+    expect(manifest.data()!.jid).toBeGreaterThan(0)
+
+    const after = await getDocs(collection(aliceFs, 'notes', NOTE_ID, 'updates'))
+    expect(after.size).toBeLessThan(before.size)
+
+    // A cold client still gets the whole document from the manifest.
+    const coldDoc = new Y.Doc()
+    const cold = new FirestoreYjsProvider(NOTE_ID, coldDoc, aliceFs)
+    cold.connect()
+    await waitFor(
+      () => coldDoc.getText('content').toString() === text.toString(),
+      12_000,
+      'cold join from manifest'
+    )
+
+    alice.destroy()
+    cold.destroy()
+    aliceDoc.destroy()
+    coldDoc.destroy()
+  })
+
+  it('rejects a block whose content does not match its hash', async () => {
+    const aliceFs = env.authenticatedContext(ALICE).firestore()
+    const { addDoc, collection, serverTimestamp } = await import('firebase/firestore')
+
+    const doc = new Y.Doc()
+    const provider = new FirestoreYjsProvider(NOTE_ID, doc, aliceFs)
+    let error: string | null = null
+    provider.onStatus((s) => {
+      if (s.error) error = s.error
+    })
+    provider.connect()
+    await new Promise((r) => setTimeout(r, 600))
+
+    const forged = new Y.Doc()
+    forged.getText('content').insert(0, 'INYECTADO')
+    const payload = Y.encodeStateAsUpdate(forged)
+
+    await addDoc(collection(aliceFs, 'notes', NOTE_ID, 'updates'), {
+      v: 1,
+      jid: 9000,
+      hash: '000000000000',
+      bytes: payload.byteLength,
+      data: Buffer.from(payload).toString('base64'),
+      clientId: 4242,
+      createdAt: serverTimestamp(),
+    })
+
+    await new Promise((r) => setTimeout(r, 1200))
+    expect(doc.getText('content').toString()).not.toContain('INYECTADO')
+    expect(error).toMatch(/hash/i)
+    expect(provider.stats.rejectedBlocks).toBeGreaterThan(0)
+
+    provider.destroy()
+    doc.destroy()
   })
 
   it('a member can persist the serialized markdown on the note document', async () => {

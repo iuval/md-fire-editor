@@ -9,8 +9,9 @@ rules_version = '2';
 //   notes/{noteId}
 //     ownerId, folderId|null, aclSource: own | folder,
 //     memberIds[], roles{}, access, title, markdown, version, createdAt, updatedAt
-//   notes/{noteId}/updates/{id}      Yjs update log
-//   notes/{noteId}/collab/state      compacted Yjs state
+//   notes/{noteId}/updates/{id}      Yjs blocks: { v, jid, hash, bytes, data, clientId, createdAt }
+//   notes/{noteId}/collab/manifest   snapshot + state vector + highest jid
+//   notes/{noteId}/collab/state      v1 compacted state (read/delete only)
 //   notes/{noteId}/presence/{uid}    presence + caret
 //   userIndex/{sha256(email)}        directory used to add collaborators
 //
@@ -244,31 +245,68 @@ service cloud.firestore {
       return aclOf(get(/databases/$(database)/documents/notes/$(noteId)).data);
     }
 
+    // One block of the Yjs log. The envelope is what makes blocks verifiable and
+    // bounded: version, monotonic jid, content hash, size.
     match /notes/{noteId}/updates/{updateId} {
       allow read: if canRead(noteAcl(noteId));
 
       allow create: if canWrite(noteAcl(noteId))
-        && request.resource.data.keys().hasOnly(['data', 'clientId', 'createdAt'])
-        && isString(request.resource.data.data)
-        && request.resource.data.data.size() <= 400000
+        && request.resource.data.keys().hasOnly([
+            'v', 'jid', 'hash', 'bytes', 'data', 'clientId', 'createdAt'
+          ])
+        && request.resource.data.v == 1
+        && request.resource.data.jid is int
+        && request.resource.data.jid > 0
+        && request.resource.data.hash is string
+        && request.resource.data.hash.matches('^[0-9a-f]{12}$')
+        && request.resource.data.bytes is int
+        && request.resource.data.bytes > 0
+        && request.resource.data.bytes <= 500000
+        && request.resource.data.data is string
+        && request.resource.data.data.size() <= 620000
         && request.resource.data.clientId is int
         && isTimestamp(request.resource.data.createdAt);
 
+      // Compaction prunes exactly the blocks it folded into the snapshot.
       allow delete: if canWrite(noteAcl(noteId));
 
       allow update: if false;
     }
 
-    match /notes/{noteId}/collab/{documentId} {
+    // Manifest: metadata + snapshot, never the whole log. Joining reads this
+    // document first (Dropbox's SFJ + JID cursor).
+    match /notes/{noteId}/collab/manifest {
       allow read: if canRead(noteAcl(noteId));
 
       allow write: if canWrite(noteAcl(noteId))
-        && documentId == 'state'
+        && request.resource.data.keys().hasOnly([
+            'epoch', 'snapshot', 'stateVector', 'jid', 'bytes', 'clientId', 'updatedAt'
+          ])
+        && request.resource.data.epoch == 1
+        && isString(request.resource.data.snapshot)
+        && request.resource.data.snapshot.size() <= 900000
+        && isString(request.resource.data.stateVector)
+        && request.resource.data.stateVector.size() <= 4096
+        && request.resource.data.jid is int
+        && request.resource.data.jid >= 0
+        && request.resource.data.bytes is int
+        && request.resource.data.clientId is int
+        && isTimestamp(request.resource.data.updatedAt);
+    }
+
+    // v1 compacted state: readable, and deletable by writers so it can be folded
+    // into the manifest and dropped.
+    match /notes/{noteId}/collab/state {
+      allow read: if canRead(noteAcl(noteId));
+
+      allow create, update: if canWrite(noteAcl(noteId))
         && request.resource.data.keys().hasOnly(['state', 'clientId', 'updatedAt'])
         && isString(request.resource.data.state)
         && request.resource.data.state.size() <= 700000
         && request.resource.data.clientId is int
         && isTimestamp(request.resource.data.updatedAt);
+
+      allow delete: if canWrite(noteAcl(noteId));
     }
 
     match /notes/{noteId}/presence/{presenceId} {

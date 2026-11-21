@@ -40,26 +40,37 @@ directorio y el panel lo avisa.
 
 ## Cómo funciona la colaboración
 
+El diseño está justificado en [`docs/sync-algorithms.md`](docs/sync-algorithms.md): cómo
+sincronizan rsync, CDC/FastCDC, Dropbox (bloques + blocklist + journal + cursor), Git y
+Google Docs (OT con servidor central), y qué de todo eso aplica a un editor CRDT.
+
 Firestore no trae un motor de colaboración, así que el documento se modela como un
 **CRDT** y Firestore se usa solo como bitácora de updates:
 
 ```
 folders/{folderId}                nombre + ACL de la carpeta
 notes/{noteId}                    título, markdown serializado, ACL (propia o heredada)
-notes/{noteId}/updates/{id}       updates incrementales de Yjs (base64)
-notes/{noteId}/collab/state       snapshot compactado del documento
-notes/{noteId}/presence/{uid}     presencia + cursor (heartbeat 15 s)
+notes/{noteId}/updates/{id}       bloque: { v, jid, hash, bytes, data, clientId }
+notes/{noteId}/collab/manifest    snapshot + state vector + jid más alto
+notes/{noteId}/presence/{uid}     presencia + cursor (heartbeat 20 s, throttle 1,2 s)
 userIndex/{sha256(email)}         directorio para agregar colaboradores
 profiles/{uid}                    nombre visible de cada persona
 ```
 
-- Cada cliente tiene un `Y.Doc`. Los edits locales se agrupan cada 400 ms y se
-  agregan como un documento en `updates`.
+Cada bloque lleva el **hash SHA-256** de su contenido y se verifica antes de aplicarlo; el
+manifiesto separa metadatos de contenido, así que entrar a una nota es **1 lectura del
+manifiesto + snapshot + una cola corta**, no replay de toda la bitácora. Los edits se emiten
+con **throttle de 350 ms** (no debounce: el otro cliente ve el cambio aunque sigas tipeando) y
+con **backpressure** de 2 escrituras en vuelo. La compactación dispara por cantidad de bloques,
+por bytes o por inactividad, y poda **exactamente** los ids que entraron en el snapshot.
+
+- Cada cliente tiene un `Y.Doc`. Los edits locales se agrupan (throttle 350 ms) en un
+  **bloque** con hash y `jid` monotónico, y se agregan a `updates`.
 - `onSnapshot` entrega los updates de los demás y se aplican al mismo `Y.Doc`.
   Yjs es idempotente y conmutativo, así que el orden de llegada no importa y
   re-aplicar no duplica texto.
-- Cuando la bitácora pasa de 120 updates, un cliente escribe el estado completo en
-  `collab/state` y poda los updates ya incluidos.
+- Cuando la bitácora pasa de 40 bloques o 160 KB (o queda inactiva 5 min), un cliente
+  escribe el estado completo en `collab/manifest` y poda exactamente los ids incluidos.
 - La presencia (nombre, color, cursor) viaja por `presence/{uid}` con heartbeats;
   los registros con más de 45 s se ignoran. Los cursores remotos usan
   `RelativePosition` de Yjs, así que sobreviven a ediciones concurrentes.

@@ -25,3 +25,12 @@ export function base64ToJson<T>(base64: string): T | null {
     return null
   }
 }
+
+/** Short content hash used to verify a block before applying it. */
+export async function sha256Hex(bytes: Uint8Array, length = 12): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes))
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, length)
+}
