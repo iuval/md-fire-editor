@@ -13,6 +13,7 @@ import { FirestoreAwareness } from '../src/lib/collab/awareness'
 const PROJECT_ID = 'demo-mdfire'
 const ALICE = 'alice-uid'
 const BOB = 'bob-uid'
+const VIEWER = 'viewer-uid'
 const NOTE_ID = 'shared-note'
 
 let env: RulesTestEnvironment
@@ -43,8 +44,10 @@ beforeAll(async () => {
     const now = new Date()
     await setDoc(doc(ctx.firestore(), 'notes', NOTE_ID), {
       ownerId: ALICE,
-      memberIds: [ALICE, BOB],
-      roles: { [ALICE]: 'owner', [BOB]: 'editor' },
+      folderId: null,
+      aclSource: 'own',
+      memberIds: [ALICE, BOB, VIEWER],
+      roles: { [ALICE]: 'owner', [BOB]: 'editor', [VIEWER]: 'viewer' },
       access: 'restricted',
       title: 'Compartida',
       markdown: '',
@@ -175,6 +178,33 @@ describe('real-time collaboration over Firestore', () => {
         createdAt: serverTimestamp(),
       })
     ).rejects.toThrow()
+  })
+
+  it('a viewer hydrates the document but every write is rejected', async () => {
+    const viewerFs = env.authenticatedContext(VIEWER).firestore()
+    const viewerDoc = new Y.Doc()
+    const viewerProvider = new FirestoreYjsProvider(NOTE_ID, viewerDoc, viewerFs)
+    viewerProvider.connect()
+
+    // Read path works: the viewer receives the shared text.
+    await waitFor(
+      () => viewerDoc.getText('content').toString().includes('Bruno'),
+      12_000,
+      'viewer to hydrate'
+    )
+
+    // Write path is denied by the rules.
+    const { addDoc, serverTimestamp, collection } = await import('firebase/firestore')
+    await expect(
+      addDoc(collection(viewerFs, 'notes', NOTE_ID, 'updates'), {
+        data: 'AQID',
+        clientId: 1,
+        createdAt: serverTimestamp(),
+      })
+    ).rejects.toThrow()
+
+    viewerProvider.destroy()
+    viewerDoc.destroy()
   })
 
   it('a member can persist the serialized markdown on the note document', async () => {

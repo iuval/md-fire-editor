@@ -7,16 +7,50 @@ simultánea con CRDT (Yjs), login con Google, PWA instalable y fallback offline.
 - **Stack:** React 19 + Vite + TypeScript · Tiptap (ProseMirror) · Yjs · Firebase Auth +
   Firestore + Hosting
 
+## Carpetas y permisos
+
+Un espacio de trabajo tiene **carpetas** y **notas sueltas**. Una nota puede vivir en la raíz
+(ACL propia) o dentro de una carpeta (ACL heredada).
+
+**Roles por persona:** `Dueño` (comparte y borra), `Escritura` (edita contenido),
+`Lectura` (solo abre y lee).
+
+**Acceso por enlace:** `Privada`, `Enlace de lectura` (cualquiera logueado con el link puede
+leer) o `Enlace de escritura` (puede editar en simultáneo).
+
+Carpeta y nota se comparten por separado:
+
+| | permiso | alcance |
+|---|---|---|
+| Carpeta | lectura / escritura / por email | todas las notas que hereden de ella |
+| Nota | lectura / escritura / por email | solo esa nota |
+
+Una nota dentro de una carpeta tiene `aclSource: 'folder'`: **las reglas resuelven sus
+permisos leyendo el documento de la carpeta en cada operación**. Revocar el acceso a la
+carpeta corta el acceso a sus notas al instante, sin propagación ni esperas. La copia de
+`memberIds` en la nota solo alimenta el listado del sidebar y se refresca con un batch
+cuando el dueño cambia la carpeta.
+
+Al mover una nota a una carpeta hereda su ACL; al sacarla vuelve a ser privada del dueño.
+
+**Agregar gente por email** no requiere backend: cada usuario publica
+`userIndex/{sha256(email)}` (legible uno por uno, nunca listable) y `profiles/{uid}` con su
+nombre para mostrarlo en el panel. Si alguien nunca entró con Google, no existe en el
+directorio y el panel lo avisa.
+
 ## Cómo funciona la colaboración
 
 Firestore no trae un motor de colaboración, así que el documento se modela como un
 **CRDT** y Firestore se usa solo como bitácora de updates:
 
 ```
-notes/{noteId}                    título, markdown serializado, ACL
+folders/{folderId}                nombre + ACL de la carpeta
+notes/{noteId}                    título, markdown serializado, ACL (propia o heredada)
 notes/{noteId}/updates/{id}       updates incrementales de Yjs (base64)
 notes/{noteId}/collab/state       snapshot compactado del documento
 notes/{noteId}/presence/{uid}     presencia + cursor (heartbeat 15 s)
+userIndex/{sha256(email)}         directorio para agregar colaboradores
+profiles/{uid}                    nombre visible de cada persona
 ```
 
 - Cada cliente tiene un `Y.Doc`. Los edits locales se agrupan cada 400 ms y se
@@ -48,14 +82,19 @@ latencia o más de ~50 editores por documento, conviene un provider websocket
 
 | Acción | Quién |
 |---|---|
-| Leer nota | miembros (`memberIds`) o cualquiera logueado si `access == 'link-edit'` |
-| Editar contenido | miembros y editores por link |
-| Cambiar título/markdown | miembros / `link-edit` (solo campos de contenido) |
-| Cambiar ACL (`memberIds`, `roles`, `access`, `ownerId`) | solo el dueño |
-| Borrar nota | solo el dueño |
-| Escribir `updates` / `collab/state` | miembros / `link-edit` |
-| Escribir `presence` | solo el propio `uid` |
+| Leer nota o carpeta | cualquier rol (`lectura`+), o link `link-view`/`link-edit` |
+| Editar contenido | rol `escritura`/`dueño`, o link `link-edit` |
+| Cambiar ACL (`memberIds`, `roles`, `access`) | solo el dueño del documento |
+| Cambiar nombre de carpeta | dueño o `escritura` (solo el campo `name`) |
+| Mover nota de carpeta | dueño de la nota |
+| Borrar nota / carpeta | solo el dueño |
+| Escribir `updates` / `collab/state` / `presence` | quien pueda escribir la nota |
+| Leer `userIndex` | uno por id (nunca `list`); escribir solo el propio `uid` |
 | Colecciones no declaradas | denegado (catch-all) |
+
+Una nota con `aclSource == 'folder'` no puede tener una ACL distinta a la de su carpeta:
+la regla lo verifica con un `get()` de la carpeta, así que un cliente no puede
+"auto-compartirse" editando el documento de la nota.
 
 Validaciones activas en reglas: campos permitidos por colección (lista blanca), tipos,
 `markdown` ≤ 250 KB, `title` ≤ 300 caracteres, `access` en enum, `ownerId` y
@@ -96,9 +135,9 @@ aunque el cliente lo intente a mano.
 ## Tests
 
 ```bash
-npm test          # lógica pura: convergencia CRDT, permisos, encoding (12)
-npm run test:rules   # 48 tests de firestore.rules contra el emulador
-npm run test:collab  # 6 tests de colaboración real (2 clientes, presencia, ACL)
+npm test             # 19 tests: convergencia CRDT, ACL/carpetas, editor en jsdom
+npm run test:rules   # 63 tests de firestore.rules contra el emulador
+npm run test:collab  # 7 tests de colaboración real (2 clientes, presencia, viewer)
 npm run test:all     # todo (requiere Java para el emulador)
 ```
 
@@ -130,15 +169,19 @@ src/
 ├── components/
 │   ├── CollaborativeEditor.tsx   Tiptap + Yjs + cursores remotos
 │   ├── PaneBar.tsx               franja mínima: título, presencia, estado
-│   ├── Menu.tsx                  menú contextual (compartir, eliminar, sesión)
-│   ├── ShareDialog.tsx           permisos y enlace
-│   └── Sidebar.tsx               explorador de notas
-├── hooks/useFirebase.ts          sesión + notas + migración v1
+│   ├── Menu.tsx                  menú contextual (compartir, mover, borrar, sesión)
+│   ├── ShareDialog.tsx           roles, enlaces y alta por email
+│   ├── InputDialog.tsx           crear / renombrar carpeta
+│   ├── MoveDialog.tsx            mover nota entre carpetas
+│   └── Sidebar.tsx               árbol de carpetas + notas
+├── hooks/useFirebase.ts          sesión + workspace (notas/carpetas) + migración v1
 ├── lib/
 │   ├── collab/provider.ts        transporte Yjs sobre Firestore
 │   ├── collab/awareness.ts       presencia compatible con y-protocols
 │   ├── collab/encoding.ts        base64 ↔ bytes/JSON
-│   └── notes.ts                  modelo y CRUD
+│   ├── acl.ts                    roles y cheques de permiso
+│   ├── directory.ts              email → uid, nombres visibles
+│   └── notes.ts                  modelo, CRUD, sharing, propagación
 ├── firebase.ts                   init, App Check, cache persistente
 └── firebaseConfig.ts             config desde env
 firestore.rules                   reglas (fuente de verdad de la seguridad)

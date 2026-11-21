@@ -2,14 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { auth, isFirebaseReady, signInWithGoogle, signOutUser } from '../firebase'
 import {
+  createFolder,
   createNote,
+  deleteFolder,
   deleteNote,
   migrateLegacyNotes,
+  MIGRATION_FLAG,
+  subscribeMyFolders,
   subscribeMyNotes,
+  type Folder,
   type Note,
 } from '../lib/notes'
-
-const MIGRATION_FLAG = 'mdfire-migrated-v2'
+import { publishOwnDirectoryEntry } from '../lib/directory'
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
@@ -36,6 +40,13 @@ export function useAuth() {
     return unsub
   }, [])
 
+  // Publish (or refresh) this user's directory entry so others can add them by
+  // email. Best-effort: failure never blocks the session.
+  useEffect(() => {
+    if (!user) return
+    void publishOwnDirectoryEntry(user.uid, user.email, user.displayName).catch(() => undefined)
+  }, [user])
+
   const doGoogleSignIn = useCallback(async () => {
     const u = await signInWithGoogle()
     if (!u) setError('No se pudo iniciar sesión con Google')
@@ -50,31 +61,58 @@ export function useAuth() {
   return { user, loading, error, doGoogleSignIn, doSignOut }
 }
 
-export function useMyNotes(uid: string | undefined) {
+export function useWorkspace(uid: string | undefined) {
   const [notes, setNotes] = useState<Note[]>([])
+  const [folders, setFolders] = useState<Folder[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!uid || !isFirebaseReady()) {
       setNotes([])
+      setFolders([])
       setLoading(false)
       return
     }
+
     setLoading(true)
-    const unsub = subscribeMyNotes(
+    let notesReady = false
+    let foldersReady = false
+    const settle = () => {
+      if (notesReady && foldersReady) setLoading(false)
+    }
+
+    const unsubNotes = subscribeMyNotes(
       uid,
       (next) => {
+        notesReady = true
         setNotes(next)
-        setLoading(false)
         setError(null)
+        settle()
       },
       (message) => {
         setError(message)
         setLoading(false)
       }
     )
-    return unsub
+
+    const unsubFolders = subscribeMyFolders(
+      uid,
+      (next) => {
+        foldersReady = true
+        setFolders(next)
+        settle()
+      },
+      (message) => {
+        setError(message)
+        setLoading(false)
+      }
+    )
+
+    return () => {
+      unsubNotes()
+      unsubFolders()
+    }
   }, [uid])
 
   // v1 → v2 migration, once per browser.
@@ -85,14 +123,29 @@ export function useMyNotes(uid: string | undefined) {
     void migrateLegacyNotes(uid).catch(() => localStorage.removeItem(MIGRATION_FLAG))
   }, [uid])
 
-  const addNote = useCallback(async () => {
-    if (!uid) return null
-    return createNote(uid)
-  }, [uid])
+  const addNote = useCallback(
+    async (folder?: Folder) => {
+      if (!uid) return null
+      return createNote(uid, folder)
+    },
+    [uid]
+  )
+
+  const addFolder = useCallback(
+    async (name: string) => {
+      if (!uid) return null
+      return createFolder(uid, name)
+    },
+    [uid]
+  )
 
   const removeNote = useCallback(async (noteId: string) => {
     await deleteNote(noteId)
   }, [])
 
-  return { notes, loading, error, addNote, removeNote }
+  const removeFolder = useCallback(async (folderId: string) => {
+    await deleteFolder(folderId)
+  }, [])
+
+  return { notes, folders, loading, error, addNote, addFolder, removeNote, removeFolder }
 }

@@ -631,3 +631,135 @@ button {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ---------- folder tree ---------- */
+
+.sidebar-section {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 2px;
+}
+
+.sidebar-section-label {
+  flex: 1;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  padding-left: 6px;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 5px;
+  padding-right: 2px;
+}
+
+.folder-row:hover {
+  background: light-dark(rgba(0, 0, 0, 0.045), rgba(255, 255, 255, 0.055));
+}
+
+.folder-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 5px 4px 5px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  color: light-dark(var(--color-text), var(--color-text-dark));
+  text-align: left;
+}
+
+.folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.folder-count {
+  font-size: 10.5px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  margin-left: auto;
+  padding-right: 2px;
+  flex-shrink: 0;
+}
+
+.chev {
+  flex-shrink: 0;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  transition: transform 0.12s ease;
+}
+
+.chev.open {
+  transform: rotate(90deg);
+}
+
+.tree-notes {
+  padding-left: 12px;
+}
+
+.tree-empty {
+  padding: 2px 8px 4px 26px;
+  font-size: 11.5px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+/* ---------- sharing panel ---------- */
+
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 2px;
+  font-size: 12.5px;
+}
+
+.member-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-select {
+  font-size: 11.5px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  background: light-dark(var(--color-bg), var(--color-bg-3-dark));
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+.share-hint-box {
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: light-dark(var(--color-bg-2), var(--color-bg-3-dark));
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

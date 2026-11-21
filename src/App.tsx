@@ -1,24 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link2, LogOut, Trash2 } from 'lucide-react'
+import { FolderPlus, Link2, LogOut, Move, Pencil, Trash2 } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { Menu, type MenuItem } from './components/Menu'
 import { CollaborativeEditor } from './components/CollaborativeEditor'
 import { ShareDialog } from './components/ShareDialog'
-import { useAuth, useMyNotes } from './hooks/useFirebase'
-import {
-  canEdit as noteCanEdit,
-  isOwner as noteIsOwner,
-  saveNoteContent,
-  setNoteAccess,
-  subscribeNote,
-  type Note,
-} from './lib/notes'
+import { MoveDialog } from './components/MoveDialog'
+import { InputDialog } from './components/InputDialog'
+import { useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
-import type { ProviderStatus } from './lib/collab/provider'
+import {
+  isAclOwner,
+  moveNoteTo,
+  noteCanEdit,
+  renameFolder,
+  saveNoteContent,
+  subscribeNote,
+  updateFolderSharing,
+  updateNoteSharing,
+  type Access,
+  type Folder,
+  type Note,
+  type Role,
+} from './lib/notes'
 
 const ACTIVE_KEY = 'mdfire-active'
 const SIDEBAR_KEY = 'mdfire-sidebar'
+const EXPANDED_KEY = 'mdfire-folders'
+
+type Dialog =
+  | { kind: 'none' }
+  | { kind: 'note-menu' }
+  | { kind: 'account-menu' }
+  | { kind: 'share-note' }
+  | { kind: 'share-folder'; folderId: string }
+  | { kind: 'move' }
+  | { kind: 'new-folder' }
+  | { kind: 'rename-folder'; folderId: string }
 
 function initialNoteId(): string | null {
   const fromUrl = new URLSearchParams(window.location.search).get('note')
@@ -38,22 +56,41 @@ function initialCollapsed(): boolean {
   }
 }
 
+function initialExpanded(): Set<string> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_KEY)
+    return new Set<string>(raw ? (JSON.parse(raw) as string[]) : [])
+  } catch {
+    return new Set<string>()
+  }
+}
+
 function App() {
   const { user, loading: authLoading, error: authError, doGoogleSignIn, doSignOut } = useAuth()
-  const { notes, loading: notesLoading, addNote, removeNote } = useMyNotes(user?.uid)
+  const {
+    notes,
+    folders,
+    loading: dataLoading,
+    addNote,
+    addFolder,
+    removeNote,
+    removeFolder,
+  } = useWorkspace(user?.uid)
 
   const [activeId, setActiveId] = useState<string | null>(initialNoteId)
   const [activeNote, setActiveNote] = useState<Note | null>(null)
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const [dialog, setDialog] = useState<'none' | 'note-menu' | 'account-menu' | 'share'>('none')
+  const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
+  const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(initialExpanded)
   const [presence, setPresence] = useState<AwarenessUser[]>([])
-  const [status, setStatus] = useState<ProviderStatus>({
+  const [status, setStatus] = useState({
     connected: false,
     pendingWrites: 0,
     updateCount: 0,
-    error: null,
+    error: null as string | null,
   })
   const [title, setTitle] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -107,14 +144,22 @@ function App() {
   }, [notes, activeId, selectNote])
 
   useEffect(() => {
+    try {
+      localStorage.setItem(EXPANDED_KEY, JSON.stringify(Array.from(expanded)))
+    } catch {
+      /* ignore */
+    }
+  }, [expanded])
+
+  useEffect(() => {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current)
       if (titleTimer.current) clearTimeout(titleTimer.current)
     }
   }, [])
 
-  const editable = !!user && !!activeNote && noteCanEdit(activeNote, user.uid)
-  const owner = !!user && !!activeNote && noteIsOwner(activeNote, user.uid)
+  const editable = !!user && !!activeNote && noteCanEdit(activeNote, folders, user.uid)
+  const noteOwner = !!user && !!activeNote && activeNote.ownerId === user.uid
 
   const persist = useCallback(
     (patch: { title?: string; markdown?: string }) => {
@@ -144,21 +189,56 @@ function App() {
     [editable, persist]
   )
 
-  const handleNewNote = useCallback(async () => {
-    const note = await addNote()
-    if (!note) return
-    setPresence([])
-    selectNote(note.id)
-    if (isMobile) setSidebarOpen(false)
-  }, [addNote, isMobile, selectNote])
+  const toggleFolder = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
 
-  const handleDelete = useCallback(async () => {
+  const handleNewNote = useCallback(
+    async (folder?: Folder) => {
+      const note = await addNote(folder)
+      if (!note) return
+      if (folder) setExpanded((prev) => new Set(prev).add(folder.id))
+      setPresence([])
+      selectNote(note.id)
+      if (isMobile) setSidebarOpen(false)
+    },
+    [addNote, isMobile, selectNote]
+  )
+
+  const handleNewFolder = useCallback(
+    async (name: string) => {
+      const folder = await addFolder(name)
+      if (folder) setExpanded((prev) => new Set(prev).add(folder.id))
+    },
+    [addFolder]
+  )
+
+  const handleDeleteNote = useCallback(async () => {
     if (!activeNote) return
     if (!window.confirm(`¿Eliminar "${activeNote.title || 'Sin título'}"?`)) return
     await removeNote(activeNote.id)
     selectNote(null)
     setActiveNote(null)
   }, [activeNote, removeNote, selectNote])
+
+  const handleDeleteFolder = useCallback(
+    async (folder: Folder) => {
+      if (
+        !window.confirm(
+          `¿Eliminar la carpeta "${folder.name}"? Sus notas vuelven a "Sin carpeta" y quedan privadas.`
+        )
+      ) {
+        return
+      }
+      await removeFolder(folder.id)
+    },
+    [removeFolder]
+  )
 
   const handleSignOut = useCallback(async () => {
     await doSignOut()
@@ -182,38 +262,83 @@ function App() {
     })
   }, [isMobile])
 
-  const menuItems: MenuItem[] = []
-  if (owner) {
-    menuItems.push({
-      label: 'Compartir…',
-      icon: <Link2 size={14} />,
-      onSelect: () => setDialog('share'),
-    })
-    menuItems.push({
-      label: 'Eliminar nota',
-      icon: <Trash2 size={14} />,
-      danger: true,
-      separatorBefore: true,
-      onSelect: () => void handleDelete(),
-    })
+  const sharedFolder = sharedFolderOf(activeNote, folders)
+  const canManageNoteShare = noteOwner && activeNote?.aclSource === 'own'
+  const shareFolderTarget =
+    dialog.kind === 'share-folder' ? folders.find((f) => f.id === dialog.folderId) : undefined
+
+  const noteMenu: MenuItem[] = []
+  if (activeNote) {
+    if (canManageNoteShare || sharedFolder) {
+      noteMenu.push({
+        label: sharedFolder ? 'Permisos de la carpeta…' : 'Compartir…',
+        icon: <Link2 size={14} />,
+        onSelect: () =>
+          setDialog(sharedFolder ? { kind: 'share-folder', folderId: sharedFolder.id } : { kind: 'share-note' }),
+      })
+    }
+    if (noteOwner) {
+      noteMenu.push({
+        label: 'Mover a…',
+        icon: <Move size={14} />,
+        onSelect: () => setDialog({ kind: 'move' }),
+      })
+      noteMenu.push({
+        label: 'Eliminar nota',
+        icon: <Trash2 size={14} />,
+        danger: true,
+        separatorBefore: true,
+        onSelect: () => void handleDeleteNote(),
+      })
+    }
   }
 
-  const accountItems: MenuItem[] = [
-    { label: 'Cerrar sesión', icon: <LogOut size={14} />, onSelect: () => void handleSignOut() },
-  ]
+  const folderMenuItems: MenuItem[] = folderMenu
+    ? [
+        {
+          label: 'Nueva nota acá',
+          icon: <FolderPlus size={14} />,
+          onSelect: () => void handleNewNote(folderMenu.folder),
+        },
+        {
+          label: 'Renombrar…',
+          icon: <Pencil size={14} />,
+          onSelect: () => setDialog({ kind: 'rename-folder', folderId: folderMenu.folder.id }),
+        },
+        ...(isAclOwner(folderMenu.folder, user?.uid)
+          ? [
+              {
+                label: 'Compartir…',
+                icon: <Link2 size={14} />,
+                onSelect: () =>
+                  setDialog({ kind: 'share-folder', folderId: folderMenu!.folder.id }),
+              },
+            ]
+          : []),
+        ...(isAclOwner(folderMenu.folder, user?.uid)
+          ? [
+              {
+                label: 'Eliminar carpeta',
+                icon: <Trash2 size={14} />,
+                danger: true,
+                separatorBefore: true,
+                onSelect: () => void handleDeleteFolder(folderMenu.folder),
+              },
+            ]
+          : []),
+      ]
+    : []
 
   const userName = user?.displayName || user?.email?.split('@')[0] || ''
 
-  if (authLoading) {
-    return <div className="empty">Cargando…</div>
-  }
+  if (authLoading) return <div className="empty">Cargando…</div>
 
   if (!user) {
     return (
       <div className="empty" style={{ gap: 14 }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, letterSpacing: '-0.01em' }}>FireMD</h1>
         <p style={{ maxWidth: 320, margin: 0, lineHeight: 1.6, textAlign: 'center' }}>
-          Notas en Markdown, sincronizadas y editables en simultáneo.
+          Notas en Markdown, en carpetas, compartibles para leer o editar.
         </p>
         <button className="btn" onClick={() => void doGoogleSignIn()}>
           Entrar con Google
@@ -229,22 +354,27 @@ function App() {
 
       <Sidebar
         notes={notes}
+        folders={folders}
         activeId={activeId}
         onSelect={(id) => {
           setPresence([])
           selectNote(id)
           setSidebarOpen(false)
         }}
-        onNewNote={() => void handleNewNote()}
+        onNewNote={(folder) => void handleNewNote(folder)}
+        onNewFolder={() => setDialog({ kind: 'new-folder' })}
+        onFolderMenu={(folder, pos) => setFolderMenu({ folder, ...pos })}
+        expanded={expanded}
+        onToggleFolder={toggleFolder}
         onClose={() => setSidebarOpen(false)}
         onCollapse={toggleSidebar}
         isMobile={isMobile}
         isOpen={isMobile ? sidebarOpen : !collapsed}
-        loading={notesLoading}
+        loading={dataLoading}
         uid={user.uid}
         userName={userName}
         photoURL={user.photoURL}
-        onAccountClick={() => setDialog('account-menu')}
+        onAccountClick={() => setDialog({ kind: 'account-menu' })}
       />
 
       <main className="pane">
@@ -255,8 +385,10 @@ function App() {
           sidebarCollapsed={!isMobile && collapsed}
           isMobile={isMobile}
           onToggleSidebar={toggleSidebar}
-          onMenu={() => setDialog(dialog === 'note-menu' ? 'none' : 'note-menu')}
-          menuOpen={dialog === 'note-menu'}
+          onMenu={() =>
+            setDialog(dialog.kind === 'note-menu' ? { kind: 'none' } : { kind: 'note-menu' })
+          }
+          menuOpen={dialog.kind === 'note-menu'}
         />
 
         <div className="scroll">
@@ -287,6 +419,11 @@ function App() {
                 aria-label="Título de la nota"
                 spellCheck={false}
               />
+              {sharedFolder && (
+                <p className="readonly-note">
+                  En la carpeta «{sharedFolder.name}» · permisos heredados de la carpeta
+                </p>
+              )}
               <CollaborativeEditor
                 key={activeNote.id}
                 note={activeNote}
@@ -302,26 +439,124 @@ function App() {
         </div>
       </main>
 
-      {dialog === 'note-menu' && menuItems.length > 0 && (
-        <Menu items={menuItems} onClose={() => setDialog('none')} />
+      {dialog.kind === 'note-menu' && noteMenu.length > 0 && (
+        <Menu items={noteMenu} onClose={() => setDialog({ kind: 'none' })} />
       )}
 
-      {dialog === 'account-menu' && (
+      {folderMenu && (
+        <Menu
+          items={folderMenuItems}
+          anchor="pointer"
+          pos={{ x: folderMenu.x, y: folderMenu.y }}
+          onClose={() => setFolderMenu(null)}
+        />
+      )}
+
+      {dialog.kind === 'account-menu' && (
         <>
-          <div className="scrim" style={{ background: 'transparent' }} onClick={() => setDialog('none')} />
-          <Menu items={accountItems} onClose={() => setDialog('none')} anchor="bottom-left" />
+          <div
+            className="scrim"
+            style={{ background: 'transparent' }}
+            onClick={() => setDialog({ kind: 'none' })}
+          />
+          <Menu
+            items={[
+              { label: 'Cerrar sesión', icon: <LogOut size={14} />, onSelect: () => void handleSignOut() },
+            ]}
+            onClose={() => setDialog({ kind: 'none' })}
+            anchor="bottom-left"
+          />
         </>
       )}
 
-      {dialog === 'share' && activeNote && (
+      {dialog.kind === 'share-note' && activeNote && (
         <ShareDialog
-          note={activeNote}
-          onClose={() => setDialog('none')}
-          onChangeAccess={(access) => setNoteAccess(activeNote.id, access)}
+          target={{
+            kind: 'note',
+            id: activeNote.id,
+            name: activeNote.title,
+            acl: { memberIds: activeNote.memberIds, roles: activeNote.roles, access: activeNote.access },
+            ownerId: activeNote.ownerId,
+            inheritedFrom: sharedFolder ? { id: sharedFolder.id, name: sharedFolder.name } : null,
+          }}
+          currentUid={user.uid}
+          onClose={() => setDialog({ kind: 'none' })}
+          onChangeAccess={(access: Access) => updateNoteSharing(activeNote, { access })}
+          onAddMember={(uid: string, role: Role) =>
+            updateNoteSharing(activeNote, { addMember: { uid, role } })
+          }
+          onSetRole={(uid: string, role: Role) =>
+            updateNoteSharing(activeNote, { setRole: { uid, role } })
+          }
+          onRemoveMember={(uid: string) => updateNoteSharing(activeNote, { removeMember: uid })}
+          onOpenFolder={(folderId) => setDialog({ kind: 'share-folder', folderId })}
+        />
+      )}
+
+      {dialog.kind === 'share-folder' && shareFolderTarget && (
+        <ShareDialog
+          target={{
+            kind: 'folder',
+            id: shareFolderTarget.id,
+            name: shareFolderTarget.name,
+            acl: {
+              memberIds: shareFolderTarget.memberIds,
+              roles: shareFolderTarget.roles,
+              access: shareFolderTarget.access,
+            },
+            ownerId: shareFolderTarget.ownerId,
+          }}
+          currentUid={user.uid}
+          onClose={() => setDialog({ kind: 'none' })}
+          onChangeAccess={(access: Access) => updateFolderSharing(shareFolderTarget, { access })}
+          onAddMember={(uid: string, role: Role) =>
+            updateFolderSharing(shareFolderTarget, { addMember: { uid, role } })
+          }
+          onSetRole={(uid: string, role: Role) =>
+            updateFolderSharing(shareFolderTarget, { setRole: { uid, role } })
+          }
+          onRemoveMember={(uid: string) =>
+            updateFolderSharing(shareFolderTarget, { removeMember: uid })
+          }
+        />
+      )}
+
+      {dialog.kind === 'move' && activeNote && (
+        <MoveDialog
+          noteTitle={activeNote.title}
+          folders={folders}
+          currentFolderId={activeNote.folderId}
+          onMove={(folder) => void moveNoteTo(activeNote, folder)}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
+      {dialog.kind === 'new-folder' && (
+        <InputDialog
+          title="Nueva carpeta"
+          label="Nombre"
+          confirmLabel="Crear"
+          onConfirm={(name) => void handleNewFolder(name)}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
+      {dialog.kind === 'rename-folder' && (
+        <InputDialog
+          title="Renombrar carpeta"
+          label="Nombre"
+          initialValue={folders.find((f) => f.id === dialog.folderId)?.name ?? ''}
+          onConfirm={(name) => void renameFolder(dialog.folderId, name)}
+          onClose={() => setDialog({ kind: 'none' })}
         />
       )}
     </div>
   )
+}
+
+function sharedFolderOf(note: Note | null, folders: Folder[]): Folder | null {
+  if (!note || note.aclSource !== 'folder' || !note.folderId) return null
+  return folders.find((f) => f.id === note.folderId) ?? null
 }
 
 export default App

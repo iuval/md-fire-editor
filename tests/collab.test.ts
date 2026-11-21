@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { base64ToBytes, base64ToJson, bytesToBase64, jsonToBase64 } from '../src/lib/collab/encoding'
-import { canEdit, isOwner, toNote, type Note } from '../src/lib/notes'
+import {
+  canReadAcl,
+  canWriteAcl,
+  effectiveAcl,
+  isAclOwner,
+  noteCanEdit,
+  noteCanRead,
+  roleOf,
+  toNote,
+  type Folder,
+  type Note,
+} from '../src/lib/notes'
 
 describe('encoding helpers', () => {
   it('round-trips binary updates', () => {
@@ -77,10 +88,63 @@ describe('Yjs convergence (what makes simultaneous editing safe)', () => {
   })
 })
 
-describe('note permission helpers', () => {
-  const base: Note = {
-    id: 'n1',
+describe('ACL helpers', () => {
+  const acl = {
+    memberIds: ['owner', 'editor', 'viewer'],
+    roles: { owner: 'owner', editor: 'editor', viewer: 'viewer' } as Record<string, 'owner' | 'editor' | 'viewer'>,
+    access: 'restricted' as const,
+  }
+
+  it('maps roles', () => {
+    expect(roleOf(acl, 'owner')).toBe('owner')
+    expect(roleOf(acl, 'viewer')).toBe('viewer')
+    expect(roleOf(acl, 'stranger')).toBeNull()
+    expect(roleOf(acl, undefined)).toBeNull()
+  })
+
+  it('everything with a role can read', () => {
+    expect(canReadAcl(acl, 'viewer')).toBe(true)
+    expect(canReadAcl(acl, 'stranger')).toBe(false)
+    expect(canReadAcl(acl, undefined)).toBe(false)
+  })
+
+  it('only owner and editor can write', () => {
+    expect(canWriteAcl(acl, 'owner')).toBe(true)
+    expect(canWriteAcl(acl, 'editor')).toBe(true)
+    expect(canWriteAcl(acl, 'viewer')).toBe(false)
+  })
+
+  it('link-view reads but never writes, link-edit writes', () => {
+    const reader = { ...acl, memberIds: ['owner'], roles: { owner: 'owner' as const }, access: 'link-view' as const }
+    expect(canReadAcl(reader, 'whoever')).toBe(true)
+    expect(canWriteAcl(reader, 'whoever')).toBe(false)
+
+    const writer = { ...reader, access: 'link-edit' as const }
+    expect(canWriteAcl(writer, 'whoever')).toBe(true)
+    expect(isAclOwner(writer, 'whoever')).toBe(false)
+  })
+
+  it('anonymous visitors never read or write', () => {
+    expect(canReadAcl({ ...acl, access: 'link-edit' }, undefined)).toBe(false)
+    expect(canWriteAcl({ ...acl, access: 'link-edit' }, undefined)).toBe(false)
+  })
+})
+
+describe('folder inheritance', () => {
+  const folder: Folder = {
+    id: 'f1',
     ownerId: 'owner',
+    name: 'Equipo',
+    memberIds: ['owner', 'editor', 'viewer'],
+    roles: { owner: 'owner', editor: 'editor', viewer: 'viewer' },
+    access: 'restricted',
+  }
+
+  const inherited: Note = {
+    id: 'n1',
+    ownerId: 'editor',
+    folderId: 'f1',
+    aclSource: 'folder',
     memberIds: ['owner'],
     roles: { owner: 'owner' },
     access: 'restricted',
@@ -89,36 +153,31 @@ describe('note permission helpers', () => {
     version: 1,
   }
 
-  it('owner can edit', () => {
-    expect(canEdit(base, 'owner')).toBe(true)
-    expect(isOwner(base, 'owner')).toBe(true)
+  it('resolves permissions from the folder, not from the stale copy', () => {
+    const resolved = effectiveAcl(inherited, [folder])
+    expect(canWriteAcl(resolved, 'editor')).toBe(true)
+    expect(canReadAcl(resolved, 'viewer')).toBe(true)
+    expect(canWriteAcl(resolved, 'viewer')).toBe(false)
+    expect(noteCanEdit(inherited, [folder], 'viewer')).toBe(false)
+    expect(noteCanRead(inherited, [folder], 'stranger')).toBe(false)
   })
 
-  it('stranger cannot edit a restricted note', () => {
-    expect(canEdit(base, 'stranger')).toBe(false)
-    expect(isOwner(base, 'stranger')).toBe(false)
+  it('fails closed when the folder is gone', () => {
+    const resolved = effectiveAcl(inherited, [])
+    expect(canReadAcl(resolved, 'editor')).toBe(false)
+    expect(noteCanEdit(inherited, [], 'editor')).toBe(false)
   })
 
-  it('member can edit but is not owner', () => {
-    const shared: Note = { ...base, memberIds: ['owner', 'editor'], roles: { owner: 'owner', editor: 'editor' } }
-    expect(canEdit(shared, 'editor')).toBe(true)
-    expect(isOwner(shared, 'editor')).toBe(false)
-  })
-
-  it('any signed-in user can edit a link-edit note but none becomes owner', () => {
-    const linked: Note = { ...base, access: 'link-edit' }
-    expect(canEdit(linked, 'someone')).toBe(true)
-    expect(isOwner(linked, 'someone')).toBe(false)
-  })
-
-  it('anonymous visitors can never edit', () => {
-    expect(canEdit({ ...base, access: 'link-edit' }, undefined)).toBe(false)
+  it('own-ACL notes ignore folders entirely', () => {
+    const own: Note = { ...inherited, aclSource: 'own', folderId: 'f1' }
+    expect(effectiveAcl(own, [folder]).memberIds).toEqual(['owner'])
   })
 
   it('normalizes raw Firestore documents', () => {
     const note = toNote('abc', { ownerId: 'u', title: 't', roles: { u: 'owner' } })
     expect(note.memberIds).toEqual([])
+    expect(note.aclSource).toBe('own')
+    expect(note.folderId).toBeNull()
     expect(note.access).toBe('restricted')
-    expect(note.version).toBe(0)
   })
 })

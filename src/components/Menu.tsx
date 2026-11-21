@@ -11,10 +11,11 @@ export interface MenuItem {
 interface MenuProps {
   items: MenuItem[]
   onClose: () => void
-  anchor?: 'top-right' | 'bottom-left'
+  anchor?: 'top-right' | 'bottom-left' | 'pointer'
+  pos?: { x: number; y: number }
 }
 
-export function Menu({ items, onClose, anchor = 'top-right' }: MenuProps) {
+export function Menu({ items, onClose, anchor = 'top-right', pos }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -32,17 +33,18 @@ export function Menu({ items, onClose, anchor = 'top-right' }: MenuProps) {
     }
   }, [onClose])
 
+  const style: React.CSSProperties =
+    anchor === 'pointer' && pos
+      ? {
+          top: Math.min(pos.y, window.innerHeight - 220),
+          left: Math.min(pos.x, window.innerWidth - 220),
+        }
+      : anchor === 'top-right'
+        ? { top: 38, right: 8 }
+        : { bottom: 44, left: 8 }
+
   return (
-    <div
-      className="menu"
-      role="menu"
-      ref={ref}
-      style={
-        anchor === 'top-right'
-          ? { top: 38, right: 8 }
-          : { bottom: 44, left: 8 }
-      }
-    >
+    <div className="menu" role="menu" ref={ref} style={style}>
       {items.map((item) => (
         <div key={item.label}>
           {item.separatorBefore && <div className="menu-sep" />}
