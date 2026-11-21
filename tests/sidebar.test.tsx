@@ -208,6 +208,30 @@ describe('tree indentation', () => {
   })
 })
 
+describe('footer', () => {
+  it('keeps the avatar and one menu button, and drops the name', () => {
+    const el = render({ userName: 'Iuval' })
+    const foot = el.querySelector('.sidebar-foot')!
+
+    expect(foot.querySelector('.avatar')).not.toBeNull()
+    expect(foot.querySelector('.account-name')).toBeNull()
+    expect(foot.textContent?.trim()).toBe('')
+
+    const buttons = [...foot.querySelectorAll('button')]
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].getAttribute('aria-label')).toBe('Cuenta y ajustes de Iuval')
+    expect(buttons[0].getAttribute('title')).toContain('Iuval')
+  })
+
+  it('opens the account menu from that button', () => {
+    let opened = 0
+    const el = render({ onAccountClick: () => (opened += 1) })
+    const button = el.querySelector('.sidebar-foot button') as HTMLButtonElement
+    act(() => button.click())
+    expect(opened).toBe(1)
+  })
+})
+
 describe('tree rows', () => {
   it('shows only the title, no date/preview subtitle', () => {
     const el = render()

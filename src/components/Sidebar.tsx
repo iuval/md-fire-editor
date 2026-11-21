@@ -353,16 +353,23 @@ export function Sidebar({
         </div>
       </div>
 
+      {/* Identity only: the name lives in the menu button's label, not as a
+          second line competing with the tree. */}
       <div className="sidebar-foot">
-        <button className="account" onClick={onAccountClick} aria-label="Cuenta y ajustes">
-          {photoURL ? (
-            <img className="avatar" src={photoURL} alt="" referrerPolicy="no-referrer" />
-          ) : (
-            <span className="avatar" aria-hidden="true">
-              {uid ? <User size={11} /> : null}
-            </span>
-          )}
-          <span className="account-name">{userName || 'Cuenta'}</span>
+        {photoURL ? (
+          <img className="avatar" src={photoURL} alt="" referrerPolicy="no-referrer" />
+        ) : (
+          <span className="avatar" aria-hidden="true">
+            {uid ? <User size={11} /> : null}
+          </span>
+        )}
+        <button
+          className="icon-btn icon-btn--sm"
+          onClick={onAccountClick}
+          aria-label={userName ? `Cuenta y ajustes de ${userName}` : 'Cuenta y ajustes'}
+          title={userName ? `${userName} · Cuenta y ajustes` : 'Cuenta y ajustes'}
+        >
+          <MoreHorizontal size={15} />
         </button>
       </div>
 

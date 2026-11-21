@@ -234,38 +234,19 @@ button {
   font-weight: 600;
 }
 
+/* Avatar on the left, account menu on the right: no name, so the footer stays
+   a single 32px strip whatever the tree above it is doing. */
 .sidebar-foot {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
   border-top: 1px solid light-dark(var(--color-border), var(--color-border-dark));
 }
 
-.account {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex: 1;
-  min-width: 0;
-  padding: 4px 6px;
-  border: none;
-  border-radius: 5px;
-  background: none;
-  cursor: pointer;
-  font-size: 12.5px;
-  text-align: left;
-  color: light-dark(var(--color-muted), var(--color-muted-dark));
-}
-
-.account:hover {
-  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
-}
-
-.account-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sidebar-foot .avatar {
+  margin-left: 6px;
 }
 
 .avatar {
@@ -1455,10 +1436,6 @@ button {
   .role-select {
     min-height: 44px;
     font-size: 14px;
-  }
-
-  .account {
-    min-height: 44px;
   }
 
   /* A centered 440px dialog on a 390px phone is a squeezed card; from the
