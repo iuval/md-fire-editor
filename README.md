@@ -1,132 +1,158 @@
-# FireMD Editor 🔥📝
+# FireMD Editor
 
-A beautiful, fast Markdown editor built with **React + Vite + TypeScript** and synced via **Firebase**. Works offline with localStorage fallback, and syncs automatically when Firebase is configured.
+Editor de Markdown colaborativo en tiempo real. Notas guardadas en Firestore, edición
+simultánea con CRDT (Yjs), login con Google, PWA instalable y fallback offline.
 
-## Features
+- **Live:** https://md-sync-app.web.app
+- **Stack:** React 19 + Vite + TypeScript · Tiptap (ProseMirror) · Yjs · Firebase Auth +
+  Firestore + Hosting
 
-- 📝 **Vditor** — WYSIWYG, Instant Rendering (Typora-like), and Split View modes
-- 🔥 **Firebase Sync** — Real-time cloud sync with Firestore + anonymous auth
-- 📱 **Responsive** — Desktop sidebar + mobile drawer
-- 📴 **Offline-first** — Works without Firebase; localStorage backup
-- ⚡ **PWA** — Installable on desktop and mobile
-- 🌗 **Dark mode** — Automatic via `prefers-color-scheme`
-- ⌨️ **Keyboard friendly** — Standard Markdown shortcuts via Vditor
+## Cómo funciona la colaboración
 
-## Editor Modes
+Firestore no trae un motor de colaboración, así que el documento se modela como un
+**CRDT** y Firestore se usa solo como bitácora de updates:
 
-Vditor supports three powerful editing modes:
-- **WYSIWYG** — Rich text editing like Notion
-- **Instant Rendering (IR)** — Type and see rendered Markdown immediately (like Typora)
-- **Split View (SV)** — Classic side-by-side editor + preview
+```
+notes/{noteId}                    título, markdown serializado, ACL
+notes/{noteId}/updates/{id}       updates incrementales de Yjs (base64)
+notes/{noteId}/collab/state       snapshot compactado del documento
+notes/{noteId}/presence/{uid}     presencia + cursor (heartbeat 15 s)
+```
 
-*(Defaults to IR on desktop, SV on mobile)*
+- Cada cliente tiene un `Y.Doc`. Los edits locales se agrupan cada 400 ms y se
+  agregan como un documento en `updates`.
+- `onSnapshot` entrega los updates de los demás y se aplican al mismo `Y.Doc`.
+  Yjs es idempotente y conmutativo, así que el orden de llegada no importa y
+  re-aplicar no duplica texto.
+- Cuando la bitácora pasa de 120 updates, un cliente escribe el estado completo en
+  `collab/state` y poda los updates ya incluidos.
+- La presencia (nombre, color, cursor) viaja por `presence/{uid}` con heartbeats;
+  los registros con más de 45 s se ignoran. Los cursores remotos usan
+  `RelativePosition` de Yjs, así que sobreviven a ediciones concurrentes.
 
-## Tech Stack
+Consecuencia práctica: dos personas pueden escribir el mismo párrafo al mismo tiempo
+y no se pierde texto de ninguna de las dos (last-write-wins destruiría contenido; un
+CRDT no).
 
-| Layer | Tech |
-|-------|------|
-| Framework | React 19 + Vite 6 + TypeScript |
-| Editor | [Vditor](https://github.com/Vanessa219/vditor) (11k+ ⭐) |
-| Styling | Tailwind CSS v4 + CSS variables |
-| Backend | Firebase Auth (anonymous) + Firestore |
-| PWA | `vite-plugin-pwa` |
+### ¿Por qué no "solo Firestore"?
 
-## Quick Start
+Firestore es una base de documentos: dos escrituras al mismo campo se pisan. Para
+texto compartido hace falta un CRDT (Yjs) o un servidor de OT. Yjs sobre Firestore
+funciona bien y no requiere infraestructura extra; si más adelante necesitás menor
+latencia o más de ~50 editores por documento, conviene un provider websocket
+(y-websocket / Hocuspocus) manteniendo Firestore para persistencia.
 
-### 1. Clone & Install
+## Seguridad
+
+### Modelo de datos y permisos (`firestore.rules`)
+
+| Acción | Quién |
+|---|---|
+| Leer nota | miembros (`memberIds`) o cualquiera logueado si `access == 'link-edit'` |
+| Editar contenido | miembros y editores por link |
+| Cambiar título/markdown | miembros / `link-edit` (solo campos de contenido) |
+| Cambiar ACL (`memberIds`, `roles`, `access`, `ownerId`) | solo el dueño |
+| Borrar nota | solo el dueño |
+| Escribir `updates` / `collab/state` | miembros / `link-edit` |
+| Escribir `presence` | solo el propio `uid` |
+| Colecciones no declaradas | denegado (catch-all) |
+
+Validaciones activas en reglas: campos permitidos por colección (lista blanca), tipos,
+`markdown` ≤ 250 KB, `title` ≤ 300 caracteres, `access` en enum, `ownerId` y
+`createdAt` inmutables, el dueño no puede degradarse a sí mismo, `roles` y
+`memberIds` deben estar sincronizados, updates ≤ 400 KB, presencia ≤ 4/8 KB.
+
+Un editor nunca puede escalar privilegios: agregar miembros, cambiar el modo de
+compartición, cambiar de dueño o reescribir `createdAt` está denegado por reglas
+aunque el cliente lo intente a mano.
+
+### Otras capas
+
+- **API key restringida por referrer** a `md-sync-app.web.app`, `md-sync-app.firebaseapp.com`
+  y `localhost` (5173/4173). Requests desde otro origen reciben 403.
+- **Headers de seguridad** en Hosting: CSP (sin `unsafe-inline` en scripts, sin
+  `object-src`, `frame-ancestors 'none'`), HSTS, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`,
+  `Cross-Origin-Opener-Policy: same-origin-allow-popups` (necesario para el popup de Google).
+- **Cache**: assets hasheados inmutables; `index.html`, `sw.js` y el manifest sin cache
+  (evita servir bundles viejos).
+- **App Check** listo: definí `VITE_APPCHECK_SITE_KEY` (reCAPTCHA v3) y después
+  *enforce* en la consola de Firebase. Sin la variable, la app funciona igual.
+- **Auth**: solo Google. No hay usuario anónimo ni signup por email. La sesión se
+  persiste en IndexedDB (`browserLocalPersistence`).
+- **XSS**: el contenido se edita como documento ProseMirror y se serializa con
+  `tiptap-markdown` (`html: false`), nunca se inyecta HTML crudo en el DOM.
+- **Secretos**: `.env` no se commitea (la config web de Firebase no es secreta; lo que
+  protege los datos son las reglas + la restricción de la API key).
+
+### Recomendado para producción real
+
+1. Habilitar **App Check** y pasar a *enforced*.
+2. Plan **Blaze** + backups/PITR de Firestore.
+3. Definir un presupuesto de alertas: cada sesión de tipeo escribe ~2 updates/s
+   mientras se escribe (agrupados a 400 ms). Con uso intensivo conviene subir el
+   debounce en `src/lib/collab/provider.ts` o mover el transporte a RTDB.
+
+## Tests
 
 ```bash
-git clone <repo-url>
-cd md-fire-editor
+npm test          # lógica pura: convergencia CRDT, permisos, encoding (12)
+npm run test:rules   # 48 tests de firestore.rules contra el emulador
+npm run test:collab  # 6 tests de colaboración real (2 clientes, presencia, ACL)
+npm run test:all     # todo (requiere Java para el emulador)
+```
+
+Los tests de colaboración levantan el emulador de Firestore, conectan dos clientes Yjs
+reales y verifican que convergen, que un cliente tardío se hidrata desde la bitácora y
+que un extraño no puede leer ni escribir. `tests/editor.test.tsx` monta el editor en
+jsdom para detectar roturas de wiring (extensiones, presence, modo solo lectura).
+
+## Local
+
+```bash
 npm install
-```
-
-### 2. Configure Firebase
-
-Create a `.env` file from the example:
-
-```bash
-cp .env.example .env
-```
-
-Fill in your Firebase project credentials:
-
-```
-VITE_FIREBASE_API_KEY=your_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
-VITE_FIREBASE_APP_ID=1:123456789:web:abcdef
-```
-
-Get these from [Firebase Console](https://console.firebase.google.com/) → Project Settings → General → Your apps → SDK setup and configuration.
-
-### 3. Run locally
-
-```bash
+cp .env.example .env    # completar con la config del proyecto Firebase
 npm run dev
 ```
 
-### 4. Build for production
-
 ```bash
 npm run build
+firebase deploy --only firestore:rules,firestore:indexes,hosting
 ```
 
-The PWA-ready build will be in `dist/`.
+> La query del sidebar (`memberIds array-contains` + `orderBy updatedAt`) necesita el
+> índice compuesto de `firestore.indexes.json`. El emulador no lo exige; producción sí.
 
-## Firebase Setup (required for sync)
-
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Create a new project
-3. Enable **Firestore Database** (start in test mode for development)
-4. Enable **Authentication** → Sign-in method → **Anonymous** (enable it)
-5. Copy the web app config into `.env`
-
-### Firestore Security Rules (for production)
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId}/notes/{noteId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-  }
-}
-```
-
-## Architecture
+## Estructura
 
 ```
 src/
 ├── components/
-│   ├── Header.tsx      # Top bar: title, sync status, new/delete
-│   ├── Sidebar.tsx     # Note list (drawer on mobile)
-│   └── Editor.tsx      # Vditor wrapper
-├── hooks/
-│   └── useFirebase.ts  # Auth + Firestore/localStorage abstraction
-├── firebase.ts         # Firebase config + CRUD helpers
-├── firebaseConfig.ts   # Reads env vars
-└── App.tsx             # Main layout + debounced sync
+│   ├── CollaborativeEditor.tsx   Tiptap + Yjs + cursores remotos
+│   ├── PaneBar.tsx               franja mínima: título, presencia, estado
+│   ├── Menu.tsx                  menú contextual (compartir, eliminar, sesión)
+│   ├── ShareDialog.tsx           permisos y enlace
+│   └── Sidebar.tsx               explorador de notas
+├── hooks/useFirebase.ts          sesión + notas + migración v1
+├── lib/
+│   ├── collab/provider.ts        transporte Yjs sobre Firestore
+│   ├── collab/awareness.ts       presencia compatible con y-protocols
+│   ├── collab/encoding.ts        base64 ↔ bytes/JSON
+│   └── notes.ts                  modelo y CRUD
+├── firebase.ts                   init, App Check, cache persistente
+└── firebaseConfig.ts             config desde env
+firestore.rules                   reglas (fuente de verdad de la seguridad)
+tests/                            reglas + colaboración + editor
 ```
 
-## How Sync Works
+## UI
 
-1. **Local-first**: All notes are stored in `localStorage` if Firebase is not configured
-2. **Debounced save**: Changes are synced to Firestore 1.5s after you stop typing
-3. **Real-time**: If Firebase is active, `onSnapshot` keeps all clients in sync
-4. **Offline resilience**: If the network drops, notes stay editable locally; sync resumes when online
+Estética deliberadamente sobria, al estilo Obsidian: un sidebar de archivos, una franja de
+36 px con el título del documento y el estado, y el documento a pantalla completa con
+título editable en línea. Sin botones grandes ni tarjetas: el estado de sync es un punto
+de color (verde/ámbar/rojo) y el único acento es el violeta de la nota activa. El panel
+lateral se colapsa y se recuerda en `localStorage`; en mobile entra como drawer.
 
-## Deployment
-
-This is a static SPA. Deploy to:
-- **Vercel**: `vercel --prod`
-- **Netlify**: Drag `dist/` to deploy
-- **Firebase Hosting**: `firebase deploy`
-- **GitHub Pages**: Use `gh-pages` branch from `dist/`
-
-## License
+## Licencia
 
 MIT

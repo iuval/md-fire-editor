@@ -1,186 +1,108 @@
-import { FileText, X } from 'lucide-react'
-import type { Note } from '../firebase'
+import { PanelLeftClose, Plus, Link2, User } from 'lucide-react'
+import type { Note } from '../lib/notes'
 
 interface SidebarProps {
   notes: Note[]
   activeId: string | null
   onSelect: (id: string) => void
-  isOpen: boolean
+  onNewNote: () => void
   onClose: () => void
+  onCollapse: () => void
   isMobile: boolean
+  isOpen: boolean
   loading: boolean
+  uid?: string
+  userName?: string
+  photoURL?: string | null
+  onAccountClick: () => void
 }
 
-function formatDate(ts?: { seconds?: number }) {
+function formatDate(ts?: { seconds: number } | null) {
   if (!ts?.seconds) return ''
-  const d = new Date(ts.seconds * 1000)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return new Date(ts.seconds * 1000).toLocaleDateString('es', { day: '2-digit', month: '2-digit' })
 }
 
-function getPreview(content: string): string {
-  return content.replace(/[#*`\[\]!\-_>]/g, '').slice(0, 60).trim() || 'No content'
+function preview(markdown: string): string {
+  return markdown.replace(/[#*`[\]!>_~-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60)
 }
 
-export function Sidebar({ notes, activeId, onSelect, isOpen, onClose, isMobile, loading }: SidebarProps) {
-  const sidebar = (
-    <div
-      style={{
-        width: 280,
-        height: '100%',
-        background: 'light-dark(var(--color-surface), var(--color-surface-dark))',
-        borderRight: '1px solid light-dark(var(--color-border), var(--color-border-dark))',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
+export function Sidebar({
+  notes,
+  activeId,
+  onSelect,
+  onNewNote,
+  onClose,
+  onCollapse,
+  isMobile,
+  isOpen,
+  loading,
+  uid,
+  userName,
+  photoURL,
+  onAccountClick,
+}: SidebarProps) {
+  return (
+    <aside
+      className={`sidebar${isOpen ? ' open' : ''}`}
+      aria-label="Lista de notas"
+      aria-hidden={isMobile && !isOpen}
     >
-      <div
-        style={{
-          padding: '16px 20px',
-          borderBottom: '1px solid light-dark(var(--color-border), var(--color-border-dark))',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <h2
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-            color: 'light-dark(var(--color-muted), var(--color-muted-dark))',
-            margin: 0,
-          }}
+      <div className="sidebar-head">
+        <span className="sidebar-title">Notas</span>
+        <button className="icon-btn" onClick={onNewNote} aria-label="Nueva nota" title="Nueva nota">
+          <Plus size={15} />
+        </button>
+        <button
+          className="icon-btn"
+          onClick={isMobile ? onClose : onCollapse}
+          aria-label={isMobile ? 'Cerrar panel' : 'Ocultar panel'}
+          title={isMobile ? 'Cerrar panel' : 'Ocultar panel'}
         >
-          Notes
-        </h2>
-        {isMobile && (
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 4,
-              color: 'light-dark(var(--color-muted), var(--color-muted-dark))',
-              display: 'flex',
-            }}
-            aria-label="Close menu"
-          >
-            <X size={18} />
-          </button>
-        )}
+          <PanelLeftClose size={15} />
+        </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-        {loading && (
-          <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--color-muted)' }}>
-            Loading...
-          </div>
-        )}
+      <div className="file-list">
+        {loading && <p className="hint" style={{ padding: '10px 8px' }}>Cargando…</p>}
 
         {!loading && notes.length === 0 && (
-          <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'light-dark(var(--color-muted), var(--color-muted-dark))' }}>
-            No notes yet. Create one to get started.
-          </div>
+          <p className="hint" style={{ padding: '10px 8px' }}>
+            Sin notas todavía.
+          </p>
         )}
 
         {notes.map((note) => {
-          const isActive = note.id === activeId
+          const shared = note.memberIds.length > 1 || note.access === 'link-edit'
+          const meta = [formatDate(note.updatedAt), preview(note.markdown)].filter(Boolean).join(' · ')
           return (
             <button
               key={note.id}
-              onClick={() => {
-                onSelect(note.id)
-                if (isMobile) onClose()
-              }}
-              className={`note-item ${isActive ? 'active' : ''}`}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                background: 'none',
-                border: 'none',
-                borderBottom: '1px solid light-dark(var(--color-border), var(--color-border-dark))',
-                padding: '12px 20px',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                outline: 'none',
-              }}
+              className={`file-item${note.id === activeId ? ' active' : ''}`}
+              onClick={() => onSelect(note.id)}
+              aria-current={note.id === activeId ? 'true' : undefined}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <FileText size={14} style={{ color: 'light-dark(var(--color-muted), var(--color-muted-dark))', flexShrink: 0 }} />
-                <span
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 500,
-                    color: 'light-dark(var(--color-text), var(--color-text-dark))',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {note.title || 'Untitled'}
-                </span>
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: 'light-dark(var(--color-muted), var(--color-muted-dark))',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  paddingLeft: 22,
-                }}
-              >
-                {getPreview(note.content)}
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: 'light-dark(var(--color-muted), var(--color-muted-dark))',
-                  paddingLeft: 22,
-                }}
-              >
-                {formatDate(note.updatedAt as any)}
-              </div>
+              <span className="file-name">
+                {shared && <Link2 size={10} style={{ marginRight: 4, opacity: 0.6, verticalAlign: 'middle' }} />}
+                {note.title || 'Sin título'}
+              </span>
+              <span className="file-meta">{meta || 'Vacía'}</span>
             </button>
           )
         })}
       </div>
-    </div>
-  )
 
-  if (!isMobile) return sidebar
-
-  return (
-    <>
-      {isOpen && (
-        <div
-          onClick={onClose}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            zIndex: 40,
-          }}
-        />
-      )}
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          bottom: 0,
-          zIndex: 50,
-          transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-          transition: 'transform 0.2s ease',
-        }}
-      >
-        {sidebar}
+      <div className="sidebar-foot">
+        <button className="account" onClick={onAccountClick} aria-label="Cuenta y ajustes">
+          {photoURL ? (
+            <img className="avatar" src={photoURL} alt="" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="avatar" aria-hidden="true">
+              {uid ? <User size={11} /> : null}
+            </span>
+          )}
+          <span className="account-name">{userName || 'Cuenta'}</span>
+        </button>
       </div>
-    </>
+    </aside>
   )
 }
