@@ -134,18 +134,31 @@ aunque el cliente lo intente a mano.
 
 ## Agentes de IA
 
-Hay una CLI y un servidor MCP pensados para que un agente lea y edite gastando lo mínimo.
-Ambos usan el mismo núcleo (`agent/core.mjs`) y **no devuelven JSON**: TSV para listados,
-markdown crudo para lectura, y deltas para escritura.
+Hay una CLI y un servidor MCP para que un agente lea y edite gastando lo mínimo. Ambos
+devuelven **texto, no JSON**, y el agente es **una cuenta propia** (anónima de Firebase),
+no la tuya: las reglas de seguridad se aplican igual que a una persona.
 
 ```bash
-npm run mdfire -- ls                 # id	título	fecha	carpeta
-npm run mdfire -- cat 3f9a1c2b       # markdown crudo
-npm run mdfire -- find harina        # id:línea: texto
+npm run mdfire -- login       # crea la identidad del agente
+npm run mdfire -- whoami      # imprime el uid a vincular en la web
+npm run mdfire -- ls          # id	título	fecha	carpeta
+npm run mdfire -- cat 3f9a1c2b
+npm run mdfire -- find harina
 npm run mdfire -- patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find '- dos' --replace '- dos
 - tres'
 npm run mdfire -- append 3f9a1c2b --text '- sal'
 ```
+
+**Vinculación (2 pasos):**
+
+1. `mdfire login` → imprime el uid del agente. El refresh token queda en
+   `~/.config/mdfire/credentials.json` (0600) y se renueva solo.
+2. En la app: menú de cuenta → **Agentes de IA** → pegás el uid, elegís carpeta y rol
+   (**Lectura** o **Escritura**) → Vincular.
+
+A partir de ahí el agente solo ve esa carpeta. Quitarle el acceso es quitarlo de
+*Compartir* en la carpeta: el corte es inmediato porque la autoridad es el documento de la
+carpeta, no la copia en cada nota.
 
 ### Por qué es barato
 
@@ -156,38 +169,47 @@ npm run mdfire -- append 3f9a1c2b --text '- sal'
 | `patch` | `ok 1 edits +7 4-9f2c1a` | ~12 tok |
 | `find` | `id:línea: texto` | ~15 tok/hit |
 
-Para las mismas dos notas, el listado completo como JSON con todos los campos son ~201
-tokens; la salida TSV son ~20 (medido con los fixtures de `tests/agent.test.ts`). Y como
-`cat` entrega un **etag**, el agente puede editar sin volver a leer el documento: el parche
-se rechaza si el etag quedó viejo (`E_ETAG`), si el `find` no existe (`E_NO_MATCH`) o si
-aparece más de una vez (`E_AMBIGUOUS`, hay que agregar contexto).
+Medido con los fixtures de `tests/agent.test.ts`: las mismas dos notas como JSON completo
+son ~201 tokens; el listado TSV son ~20. `cat` devuelve un **etag**, así que el agente
+edita sin releer: el parche se rechaza si el etag quedó viejo (`E_ETAG`), si el `find` no
+existe, o si aparece más de una vez (`E_AMBIGUOUS`). Además del etag, el servidor manda el
+`updateTime` leído como precondición del `commit`, así que una carrera falla en Firestore y
+no pisa el trabajo de otra persona.
 
-### Conectarlo
+### Conectarlo como MCP
 
 ```jsonc
-// .mcp.json de tu agente (Claude Code, T3, etc.)
+// .mcp.json de tu agente
 {
   "mcpServers": {
     "mdfire": {
       "command": "node",
-      "args": ["/ruta/al/repo/agent/mcp.mjs"],
-      "env": { "GOOGLE_APPLICATION_CREDENTIALS": "/ruta/service-account.json", "MDFIRE_UID": "<tu-uid>" }
+      "args": ["/ruta/al/repo/agent/mcp.mjs"]
     }
   }
 }
 ```
 
-Autenticación: `GOOGLE_APPLICATION_CREDENTIALS` (ADC) o `MDFIRE_ACCESS_TOKEN`
-(`gcloud auth print-access-token`). Usa el **Admin SDK**, así que **omite las reglas**:
-corrélo como el dueño del proyecto, en tu máquina. `MDFIRE_UID` solo hace falta para crear
-notas.
+Siete tools (`notes_list`, `notes_read`, `notes_patch`, `notes_append`, `notes_search`,
+`notes_create`, `folders_list`), esquemas de una línea y resultados de texto.
+
+### Autenticación en detalle
+
+- `mdfire login` hace `accounts:signUp` con la API key web (pública) y guarda el refresh
+  token; los ID tokens se renuevan contra `securetoken.googleapis.com`.
+- Como la API key está restringida por referrer, las llamadas mandan
+  `Referer: https://md-sync-app.web.app/` (configurable con `MDFIRE_REFERER`).
+- Firestore se consume por **REST con el ID token del agente**, no con Admin SDK: si el
+  agente no tiene permiso, Firestore devuelve `PERMISSION_DENIED` y la CLI explica que
+  revise el rol.
+- Para tests: `MDFIRE_ID_TOKEN` inyecta un token externo.
 
 ### Escrituras concurrentes
 
 El editor sigue siendo la fuente de verdad del CRDT. Cuando el documento cambia por fuera
 (agente, otra app), el editor detecta el markdown distinto al que él emitió y lo aplica al
-documento Yjs (`tests/editor.test.tsx` cubre ese camino). Si alguien está tipeando en ese
-momento, el último que escribe gana: por eso el `--etag` existe.
+documento Yjs (`tests/editor.test.tsx`). Si alguien está tipeando en ese momento, la
+precondición del `commit` hace fallar al agente en vez de pisar el cambio.
 
 ## Tests
 
@@ -195,7 +217,7 @@ momento, el último que escribe gana: por eso el `--etag` existe.
 npm test             # 19 tests: convergencia CRDT, ACL/carpetas, editor en jsdom
 npm run test:rules   # 63 tests de firestore.rules contra el emulador
 npm run test:collab  # 7 tests de colaboración real (2 clientes, presencia, viewer)
-npm run test:agent   # 13 tests de la CLI/MCP (listado, etag, parches, búsqueda)
+npm run test:agent   # 17 tests de la CLI/MCP con reglas aplicadas (auth anónima real)
 npm run test:all     # todo (requiere Java para el emulador)
 ```
 

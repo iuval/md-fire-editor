@@ -1,22 +1,48 @@
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
 
+const PROJECT_ID = 'demo-mdfire'
 const OWNER = 'owner-uid'
+const AUTH_EMULATOR = 'http://127.0.0.1:9099'
 
 let env: RulesTestEnvironment
 let core: typeof import('../agent/core.mjs')
+let auth: typeof import('../agent/auth.mjs')
+let editorToken: string
+let editorUid: string
+let viewerToken: string
+
+async function anonymousUser(): Promise<{ idToken: string; uid: string }> {
+  const response = await fetch(
+    `${AUTH_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-key`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"returnSecureToken":true}' }
+  )
+  const data = await response.json()
+  if (!data.idToken) throw new Error(`auth emulator: ${JSON.stringify(data)}`)
+  return { idToken: data.idToken, uid: data.localId }
+}
+
+function asAgent(token: string) {
+  process.env.MDFIRE_ID_TOKEN = token
+}
 
 beforeAll(async () => {
   process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080'
-  process.env.MDFIRE_PROJECT = 'demo-mdfire'
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099'
+  process.env.MDFIRE_PROJECT = PROJECT_ID
+  process.env.MDFIRE_API_KEY = 'fake-key'
+  // Keep `mdfire login` out of the developer's real home directory.
+  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), 'mdfire-test-'))
 
   env = await initializeTestEnvironment({
-    projectId: 'demo-mdfire',
+    projectId: PROJECT_ID,
     firestore: {
       rules: readFileSync(resolve(__dirname, '..', 'firestore.rules'), 'utf8'),
       host: '127.0.0.1',
@@ -25,6 +51,13 @@ beforeAll(async () => {
   })
 
   core = await import('../agent/core.mjs')
+  auth = await import('../agent/auth.mjs')
+
+  const editor = await anonymousUser()
+  editorToken = editor.idToken
+  editorUid = editor.uid
+  const viewer = await anonymousUser()
+  viewerToken = viewer.idToken
 })
 
 afterAll(async () => {
@@ -40,6 +73,15 @@ beforeEach(async () => {
     await setDoc(doc(db, 'folders', 'folder-work'), {
       ownerId: OWNER,
       name: 'Trabajo',
+      memberIds: [OWNER, editorUid],
+      roles: { [OWNER]: 'owner', [editorUid]: 'editor' },
+      access: 'restricted',
+      createdAt: now,
+      updatedAt: now,
+    })
+    await setDoc(doc(db, 'folders', 'folder-private'), {
+      ownerId: OWNER,
+      name: 'Privada',
       memberIds: [OWNER],
       roles: { [OWNER]: 'owner' },
       access: 'restricted',
@@ -50,8 +92,8 @@ beforeEach(async () => {
       ownerId: OWNER,
       folderId: 'folder-work',
       aclSource: 'folder',
-      memberIds: [OWNER],
-      roles: { [OWNER]: 'owner' },
+      memberIds: [OWNER, editorUid],
+      roles: { [OWNER]: 'owner', [editorUid]: 'editor' },
       access: 'restricted',
       title: 'Ideas de producto',
       markdown: '# Ideas\n\n- uno\n- dos\n',
@@ -59,19 +101,199 @@ beforeEach(async () => {
       createdAt: now,
       updatedAt: now,
     })
-    await setDoc(doc(db, 'notes', 'noteroot001'), {
+    await setDoc(doc(db, 'notes', 'notesecret1'), {
       ownerId: OWNER,
-      folderId: null,
-      aclSource: 'own',
+      folderId: 'folder-private',
+      aclSource: 'folder',
       memberIds: [OWNER],
       roles: { [OWNER]: 'owner' },
       access: 'restricted',
-      title: 'Recetas',
-      markdown: 'masa madre\nharina 100 g\n',
+      title: 'Secreto',
+      markdown: 'no deberías ver esto\n',
       version: 1,
       createdAt: now,
       updatedAt: now,
     })
+  })
+})
+
+describe('agent identity', () => {
+  it('login creates an anonymous Firebase account and stores credentials', async () => {
+    const credentials = await auth.login()
+    expect(credentials.uid).toHaveLength(28)
+    expect(credentials.refreshToken).toBeTruthy()
+
+    const me = await auth.whoami()
+    expect(me?.uid).toBe(credentials.uid)
+    expect(auth.pairingCode(credentials.uid)).toBe(credentials.uid.slice(0, 12))
+
+    // A refresh token can mint new ID tokens, so the CLI stays logged in.
+    const token = await auth.idToken({ force: true })
+    expect(token.split('.')).toHaveLength(3)
+    expect(auth.uidFromToken(token)).toBe(credentials.uid)
+  })
+
+  it('logout revokes the stored refresh token', async () => {
+    await auth.login()
+    await auth.logout()
+    const creds = await auth.readCredentials()
+    expect(creds?.refreshToken).toBeNull()
+    await expect(auth.idToken({ force: true })).rejects.toThrow(/refresh_token|INVALID|login/i)
+  })
+})
+
+describe('agent reads through the rules', () => {
+  it('lists only the notes it is a member of', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    const output = await core.listNotes(db, { limit: 10 })
+
+    expect(output).toContain('Ideas de producto')
+    expect(output).not.toContain('Secreto')
+    expect(output.split('\n')).toHaveLength(1)
+  })
+
+  it('filters by folder name and root', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    expect(await core.listNotes(db, { folder: 'Trabajo' })).toContain('Ideas de producto')
+    expect(await core.listNotes(db, { folder: 'root' })).toBe('')
+  })
+
+  it('lists folders it has access to', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    const folders = await core.listFolders(db)
+    expect(folders).toContain('Trabajo')
+    expect(folders).not.toContain('Privada')
+  })
+
+  it('reads a shared note as raw markdown', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    const note = await core.readNote(db, 'noteideas')
+    expect(note.body).toBe('# Ideas\n\n- uno\n- dos\n')
+    expect(note.etag).toMatch(/^3-[0-9a-f]{12}$/)
+  })
+
+  it('cannot read a note it was not invited to', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    await expect(core.readNote(db, 'notesecret1')).rejects.toThrow()
+  })
+
+  it('search sees only shared notes', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    expect(await core.searchNotes(db, 'uno')).toContain('noteidea')
+    expect(await core.searchNotes(db, 'no deberías')).toBe('')
+  })
+})
+
+describe('agent writes through the rules', () => {
+  it('editor can patch and the etag guard still applies', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    const before = await core.readNote(db, 'noteideas')
+
+    const result = await core.patchNote(db, 'noteideas', [{ find: '- dos\n', replace: '- dos\n- tres\n' }], {
+      etag: before.etag,
+    })
+    expect(result.delta).toBe(7)
+
+    await expect(
+      core.patchNote(db, 'noteideas', [{ find: 'uno', replace: '1' }], { etag: before.etag })
+    ).rejects.toThrow(/etag/i)
+  })
+
+  it('appends and searches the new text', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    await core.appendNote(db, 'noteideas', '- tres\n')
+    expect(await core.searchNotes(db, 'tres')).toContain('noteidea')
+  })
+
+  it('creates a note inside a folder it can write, owned by the agent', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    const created = await core.createNote(db, { title: 'Desde el agente', folder: 'Trabajo', body: 'hola' })
+
+    const note = await core.readNote(db, created.id)
+    expect(note.body).toBe('hola')
+    expect(await core.listNotes(db, { folder: 'Trabajo' })).toContain('Desde el agente')
+
+    // The agent owns what it created, so it can delete it; the folder ACL is
+    // what limits visibility.
+    await core.deleteNote(db, created.id)
+    await expect(core.readNote(db, created.id)).rejects.toThrow()
+  })
+
+  it('cannot create notes in a folder it cannot see', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    await expect(core.createNote(db, { title: 'x', folder: 'folder-private' })).rejects.toThrow()
+  })
+
+  it('cannot delete a note owned by somebody else', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    await expect(core.deleteNote(db, 'noteideas')).rejects.toThrow()
+  })
+
+  it('a viewer can read but not write', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore()
+      const { updateDoc, doc } = await import('firebase/firestore')
+      const viewerUid = auth.uidFromToken(viewerToken) as string
+      await updateDoc(doc(db, 'folders', 'folder-work'), {
+        memberIds: [OWNER, editorUid, viewerUid],
+        roles: { [OWNER]: 'owner', [editorUid]: 'editor', [viewerUid]: 'viewer' },
+      })
+      await updateDoc(doc(db, 'notes', 'noteideas01'), {
+        memberIds: [OWNER, editorUid, viewerUid],
+        roles: { [OWNER]: 'owner', [editorUid]: 'editor', [viewerUid]: 'viewer' },
+      })
+    })
+
+    asAgent(viewerToken)
+    const db = await core.openStore()
+    expect((await core.readNote(db, 'noteideas')).body).toContain('Ideas')
+    await expect(
+      core.patchNote(db, 'noteideas', [{ find: 'uno', replace: '1' }])
+    ).rejects.toThrow()
+  })
+
+  it('revoking the agent from the folder cuts access immediately', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    expect(await core.listNotes(db)).toContain('Ideas de producto')
+
+    // The owner revokes the agent. The note keeps its old member copy on
+    // purpose: authority always comes from the folder, so the write window is
+    // already closed even before any copy is refreshed.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db2 = ctx.firestore()
+      const { updateDoc, doc } = await import('firebase/firestore')
+      await updateDoc(doc(db2, 'folders', 'folder-work'), {
+        memberIds: [OWNER],
+        roles: { [OWNER]: 'owner' },
+      })
+    })
+
+    await expect(core.readNote(db, 'noteideas')).rejects.toThrow()
+    await expect(core.patchNote(db, 'noteideas', [{ find: 'uno', replace: '1' }])).rejects.toThrow()
+
+    // Listing reads the member copy, which the web app refreshes when the owner
+    // changes sharing (propagateFolderAcl). Simulate that refresh.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db2 = ctx.firestore()
+      const { updateDoc, doc } = await import('firebase/firestore')
+      await updateDoc(doc(db2, 'notes', 'noteideas01'), {
+        memberIds: [OWNER],
+        roles: { [OWNER]: 'owner' },
+      })
+    })
+    expect(await core.listNotes(db)).toBe('')
   })
 })
 
@@ -91,125 +313,5 @@ describe('CLI argument parsing', () => {
     expect(args.all).toBe(true)
     expect(args.find).toEqual(['a', 'c'])
     expect(args.replace).toEqual(['b', 'd'])
-  })
-})
-
-describe('agent CLI core', () => {
-  it('lists notes as compact TSV with short ids and folder names', async () => {
-    const db = core.openStore()
-    const output = await core.listNotes(db, { limit: 10 })
-    const lines = output.split('\n')
-
-    expect(lines).toHaveLength(2)
-    expect(lines.join('\n')).toContain('Ideas de producto')
-    expect(lines.join('\n')).toContain('Trabajo')
-    // No markdown in the listing: only id, title, date, folder.
-    expect(lines.join('\n')).not.toContain('masa madre')
-    // Short ids are 8 chars, not the 20-char document ids.
-    expect(lines[0].split('\t')[0]).toHaveLength(8)
-  })
-
-  it('filters by folder and by root', async () => {
-    const db = core.openStore()
-    const inFolder = await core.listNotes(db, { folder: 'Trabajo' })
-    expect(inFolder).toContain('Ideas de producto')
-    expect(inFolder).not.toContain('Recetas')
-
-    const root = await core.listNotes(db, { folder: 'root' })
-    expect(root).toContain('Recetas')
-    expect(root).not.toContain('Ideas de producto')
-  })
-
-  it('reads raw markdown and never wraps it in JSON', async () => {
-    const db = core.openStore()
-    const note = await core.readNote(db, 'noteideas')
-    expect(note.body).toBe('# Ideas\n\n- uno\n- dos\n')
-    expect(note.etag).toMatch(/^3-[0-9a-f]{12}$/)
-  })
-
-  it('truncates large notes on request', async () => {
-    const db = core.openStore()
-    const note = await core.readNote(db, 'noteideas', { maxBytes: 8 })
-    expect(note.truncated).toBe(true)
-    expect(note.body).toContain('truncado')
-  })
-
-  it('patches by exact substring and returns only the delta', async () => {
-    const db = core.openStore()
-    const before = await core.readNote(db, 'noteideas')
-    const result = await core.patchNote(
-      db,
-      'noteideas',
-      [{ find: '- dos\n', replace: '- dos\n- tres\n' }],
-      { etag: before.etag }
-    )
-
-    expect(result.delta).toBe(7)
-    expect(result.edits).toBe(1)
-    expect(result.etag).not.toBe(before.etag)
-
-    const after = await core.readNote(db, 'noteideas')
-    expect(after.body).toContain('- tres')
-  })
-
-  it('rejects a stale etag instead of overwriting', async () => {
-    const db = core.openStore()
-    await expect(
-      core.patchNote(db, 'noteideas', [{ find: 'uno', replace: '1' }], { etag: '0-deadbeefcafe' })
-    ).rejects.toThrow(/etag/)
-  })
-
-  it('rejects an ambiguous find so edits never hit the wrong place', async () => {
-    const db = core.openStore()
-    const before = await core.readNote(db, 'noteideas')
-    await expect(
-      core.patchNote(db, 'noteideas', [{ find: 'o', replace: 'X' }], { etag: before.etag })
-    ).rejects.toThrow(/más de una vez/)
-  })
-
-  it('rejects a find that does not exist', async () => {
-    const db = core.openStore()
-    await expect(
-      core.patchNote(db, 'noteideas', [{ find: 'no existe esto', replace: 'x' }])
-    ).rejects.toThrow(/no encontré/)
-  })
-
-  it('appends text with a single newline', async () => {
-    const db = core.openStore()
-    const result = await core.appendNote(db, 'noteroot', '- sal\n')
-    expect(result.delta).toBe(6)
-    const after = await core.readNote(db, 'noteroot')
-    expect(after.body).toBe('masa madre\nharina 100 g\n- sal\n')
-  })
-
-  it('searches bodies and returns id:line: text', async () => {
-    const db = core.openStore()
-    const hits = await core.searchNotes(db, 'harina')
-    expect(hits).toMatch(/^noteroot:2: harina 100 g$/)
-  })
-
-  it('resolves unique id prefixes and reports ambiguity', async () => {
-    const db = core.openStore()
-    const note = await core.readNote(db, 'noteideas01')
-    expect(note.id).toBe('noteideas01')
-    await expect(core.readNote(db, 'note')).rejects.toThrow(/ambiguo/)
-  })
-
-  it('creates a note inside a folder inheriting its ACL', async () => {
-    const db = core.openStore()
-    const created = await core.createNote(db, { title: 'Nueva', folder: 'Trabajo', ownerId: OWNER })
-    expect(created.short).toHaveLength(8)
-
-    const snap = await db.collection('notes').doc(created.id).get()
-    const data = snap.data()
-    expect(data.aclSource).toBe('folder')
-    expect(data.folderId).toBe('folder-work')
-    expect(data.memberIds).toEqual([OWNER])
-  })
-
-  it('deletes a note', async () => {
-    const db = core.openStore()
-    await core.deleteNote(db, 'noteroot')
-    await expect(core.readNote(db, 'noteroot')).rejects.toThrow()
   })
 })

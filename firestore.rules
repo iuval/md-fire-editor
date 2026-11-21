@@ -122,7 +122,9 @@ service cloud.firestore {
     }
 
     match /folders/{folderId} {
-      allow get: if canRead(resource.data);
+      // `resource` is null for a document that does not exist: deny cleanly
+      // instead of letting the expression throw.
+      allow get: if resource != null && canRead(resource.data);
 
       allow list: if signedIn() && uid() in resource.data.memberIds;
 
@@ -132,13 +134,14 @@ service cloud.firestore {
         && selfOwnedAcl(request.resource.data)
         && request.resource.data.createdAt == request.resource.data.updatedAt;
 
-      allow update: if validFolder(request.resource.data)
+      allow update: if resource != null
+        && validFolder(request.resource.data)
         && (
           (isAclOwner(resource.data) && aclUpdateValid(resource.data, request.resource.data))
           || (canWrite(resource.data) && nameOnlyChange())
         );
 
-      allow delete: if isAclOwner(resource.data);
+      allow delete: if resource != null && isAclOwner(resource.data);
     }
 
     // Owner may change sharing and members but not the identity of the folder.
@@ -183,7 +186,7 @@ service cloud.firestore {
     }
 
     match /notes/{noteId} {
-      allow get: if canRead(aclOf(resource.data));
+      allow get: if resource != null && canRead(aclOf(resource.data));
 
       allow list: if signedIn() && uid() in resource.data.memberIds;
 
@@ -203,7 +206,8 @@ service cloud.firestore {
             && mirrorsFolder(request.resource.data.folderId, request.resource.data))
         );
 
-      allow update: if validNote(request.resource.data)
+      allow update: if resource != null
+        && validNote(request.resource.data)
         && ownershipUnchanged(resource.data, request.resource.data)
         && (
           // Owner: sharing, moving between folders, or content.
@@ -221,7 +225,7 @@ service cloud.firestore {
               .hasOnly(['memberIds', 'roles', 'access', 'updatedAt']))
         );
 
-      allow delete: if isAclOwner(resource.data);
+      allow delete: if resource != null && isAclOwner(resource.data);
     }
 
     // Owner edits keep the note consistent: an inheriting note must mirror its

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FolderPlus, Link2, LogOut, Move, Pencil, Trash2 } from 'lucide-react'
+import { Bot, FolderPlus, Link2, LogOut, Move, Pencil, Trash2 } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { Menu, type MenuItem } from './components/Menu'
@@ -7,6 +7,7 @@ import { CollaborativeEditor } from './components/CollaborativeEditor'
 import { ShareDialog } from './components/ShareDialog'
 import { MoveDialog } from './components/MoveDialog'
 import { InputDialog } from './components/InputDialog'
+import { AgentsDialog } from './components/AgentsDialog'
 import { useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
 import {
@@ -37,6 +38,7 @@ type Dialog =
   | { kind: 'move' }
   | { kind: 'new-folder' }
   | { kind: 'rename-folder'; folderId: string }
+  | { kind: 'agents' }
 
 function initialNoteId(): string | null {
   const fromUrl = new URLSearchParams(window.location.search).get('note')
@@ -461,7 +463,17 @@ function App() {
           />
           <Menu
             items={[
-              { label: 'Cerrar sesión', icon: <LogOut size={14} />, onSelect: () => void handleSignOut() },
+              {
+                label: 'Agentes de IA…',
+                icon: <Bot size={14} />,
+                onSelect: () => setDialog({ kind: 'agents' }),
+              },
+              {
+                label: 'Cerrar sesión',
+                icon: <LogOut size={14} />,
+                separatorBefore: true,
+                onSelect: () => void handleSignOut(),
+              },
             ]}
             onClose={() => setDialog({ kind: 'none' })}
             anchor="bottom-left"
@@ -528,6 +540,16 @@ function App() {
           currentFolderId={activeNote.folderId}
           onMove={(folder) => void moveNoteTo(activeNote, folder)}
           onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
+      {dialog.kind === 'agents' && (
+        <AgentsDialog
+          folders={folders}
+          onClose={() => setDialog({ kind: 'none' })}
+          onLink={async (agentUid, folder, role) => {
+            await updateFolderSharing(folder, { addMember: { uid: agentUid, role } })
+          }}
         />
       )}
 

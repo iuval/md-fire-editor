@@ -73,7 +73,7 @@ const TOOLS = [
   },
   {
     name: 'notes_create',
-    description: 'Crea una nota (requiere MDFIRE_UID). Devuelve el id corto.',
+    description: 'Crea una nota dentro de una carpeta. Devuelve el id corto.',
     inputSchema: {
       type: 'object',
       properties: { title: { type: 'string' }, folder: { type: 'string' }, body: { type: 'string' } },
@@ -115,13 +115,7 @@ async function callTool(db, name, a) {
     case 'notes_search':
       return text((await searchNotes(db, a.query, { limit: a.limit, context: a.context })) || '(sin resultados)')
     case 'notes_create': {
-      if (!process.env.MDFIRE_UID) throw new AgentError('definí MDFIRE_UID para crear notas', 'E_USAGE')
-      const result = await createNote(db, {
-        title: a.title,
-        folder: a.folder,
-        body: a.body,
-        ownerId: process.env.MDFIRE_UID,
-      })
+      const result = await createNote(db, { title: a.title, folder: a.folder, body: a.body })
       return text(result.short)
     }
     case 'folders_list':
@@ -131,7 +125,7 @@ async function callTool(db, name, a) {
   }
 }
 
-const db = openStore()
+const db = await openStore()
 const rl = createInterface({ input: process.stdin })
 
 function send(payload) {

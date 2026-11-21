@@ -245,6 +245,10 @@ describe('notes: read', () => {
     await assertSucceeds(getDoc(doc(db(STRANGER), 'notes', 'n1')))
   })
 
+  it('reading a missing note is denied without an evaluation error', async () => {
+    await assertFails(getDoc(doc(db(OWNER), 'notes', 'does-not-exist')))
+  })
+
   it('a note pointing at a deleted folder fails closed', async () => {
     await seedNote('n1', { folderId: 'gone', aclSource: 'folder' })
     await assertFails(getDoc(doc(db(OWNER), 'notes', 'n1')))
