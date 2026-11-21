@@ -294,19 +294,27 @@ function App() {
     async (files: FileList | null) => {
       if (!files || !user) return
       const list = Array.from(files)
-      const folderCache = new Map<string, string>()
+      // Keyed by lower-case path: the props array does not contain folders created
+      // during this import, so the cache is the source of truth (this used to
+      // create one folder per note).
+      const normalizeKey = (name: string) => name.normalize('NFC').trim().toLowerCase()
+      const folderCache = new Map<string, Folder>(
+        folders.map((folder) => [normalizeKey(folder.name), folder])
+      )
       let first: string | null = null
       let imported = 0
       let skippedAttachments = 0
+      let skippedJunk = 0
+      let skippedLarge = 0
 
       const pushNote = async (title: string, markdown: string, folderName: string | null) => {
         let folder: Folder | undefined
         if (folderName) {
-          const cached = folderCache.get(folderName)
-          folder = folders.find((f) => f.id === cached || f.name === folderName)
+          const key = normalizeKey(folderName)
+          folder = folderCache.get(key)
           if (!folder) {
             folder = (await addFolder(folderName)) ?? undefined
-            if (folder) folderCache.set(folderName, folder.id)
+            if (folder) folderCache.set(key, folder)
           }
         }
         const note = await addNote(folder)
@@ -328,6 +336,8 @@ function App() {
             await pushNote(entry.title, entry.markdown, entry.folder)
           }
           skippedAttachments += vault.skipped.filter((s) => s.reason === 'attachment').length
+          skippedJunk += vault.skipped.filter((s) => s.reason === 'junk').length
+          skippedLarge += vault.skipped.filter((s) => s.reason === 'too-large').length
           continue
         }
 
@@ -337,9 +347,13 @@ function App() {
       }
 
       track('import', user.uid, { count: imported })
+      const details: string[] = []
+      if (skippedJunk > 0) details.push(`${skippedJunk} archivos de sistema de macOS`)
+      if (skippedAttachments > 0) details.push(`${skippedAttachments} adjuntos (todavía no se guardan imágenes)`)
+      if (skippedLarge > 0) details.push(`${skippedLarge} notas de más de 250 KB`)
       setNotice(
-        skippedAttachments > 0
-          ? `Importadas ${imported} notas. ${skippedAttachments} adjuntos quedaron fuera: todavía no se guardan imágenes en la app.`
+        details.length > 0
+          ? `Importadas ${imported} notas. Omitidos: ${details.join(', ')}.`
           : `Importadas ${imported} notas.`
       )
       if (first) selectNote(first)

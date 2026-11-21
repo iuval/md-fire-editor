@@ -105,7 +105,8 @@ export function zipStored(entries: ZipEntry[], now = new Date()): Uint8Array {
 }
 
 export function safeFileName(name: string, fallback = 'sin-titulo'): string {
-  const clean = name
+  const clean = String(name)
+    .normalize('NFC')
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
@@ -129,6 +130,15 @@ export interface ExportedFile {
 }
 
 /** One `.md` per note, inside a folder per folder, de-duplicating file names. */
+/** Folder names may carry a nested path (`GUIONES/V3`); keep the segments. */
+export function safePath(name: string, fallback = 'carpeta'): string {
+  return String(name)
+    .split('/')
+    .map((segment) => safeFileName(segment, fallback))
+    .filter(Boolean)
+    .join('/')
+}
+
 export function notesToFiles(notes: Note[], folders: Folder[]): ExportedFile[] {
   const folderName = new Map(folders.map((f) => [f.id, safeFileName(f.name, 'carpeta')]))
   const used = new Set<string>()

@@ -50,7 +50,22 @@ export async function unzip(
   const centralOffset = view.getUint32(eocd + 16, true)
   if (entries > maxEntries) throw new Error(`el ZIP tiene demasiados archivos (${entries})`)
 
-  const decoder = new TextDecoder()
+  const decodeName = (raw: Uint8Array): string => {
+    // Names written by macOS tools are UTF-8 but often lack the UTF-8 flag.
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(raw)
+    } catch {
+      for (const encoding of ['macintosh', 'windows-1252']) {
+        try {
+          return new TextDecoder(encoding, { fatal: true }).decode(raw)
+        } catch {
+          /* try the next one */
+        }
+      }
+      return new TextDecoder().decode(raw)
+    }
+  }
+
   const out: ZipFileEntry[] = []
   let total = 0
   let cursor = centralOffset
@@ -66,7 +81,7 @@ export async function unzip(
     const extraLength = view.getUint16(cursor + 30, true)
     const commentLength = view.getUint16(cursor + 32, true)
     const localOffset = view.getUint32(cursor + 42, true)
-    const name = decoder.decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength))
+    const name = decodeName(bytes.subarray(cursor + 46, cursor + 46 + nameLength))
 
     cursor += 46 + nameLength + extraLength + commentLength
 

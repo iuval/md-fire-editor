@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildVault, readVault } from '../src/lib/vault'
+import { dirname } from 'node:path'
 import type { Folder, Note } from '../src/lib/notes'
 
 function makeVaultZip(): { zip: Uint8Array; dir: string } {
@@ -40,6 +41,79 @@ function note(overrides: Partial<Note> = {}): Note {
     ...overrides,
   }
 }
+
+describe('real-world vault shapes', () => {
+  function buildZip(files: Record<string, string>, extraDirs: string[] = []): Uint8Array {
+    const dir = mkdtempSync(join(tmpdir(), 'vault-real-'))
+    for (const [path, content] of Object.entries(files)) {
+      const full = join(dir, path)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, content)
+    }
+    for (const path of extraDirs) mkdirSync(join(dir, path), { recursive: true })
+    const zipPath = join(dir, 'v.zip')
+    execFileSync('zip', ['-r', '-q', '-X', zipPath, '.'], { cwd: dir })
+    return new Uint8Array(readFileSync(zipPath))
+  }
+
+  it('strips a doubled vault root and keeps the nested structure', async () => {
+    const zip = buildZip({
+      'ObsidianVault/ObsidianVault/Diario/2026-11-21.md': '# Día\n',
+      'ObsidianVault/ObsidianVault/GUIONES/V3/acto-1.md': '# Acto 1\n',
+      'ObsidianVault/ObsidianVault/suelta.md': '# Suelta\n',
+    })
+
+    const vault = await readVault(zip)
+    const byPath = Object.fromEntries(vault.entries.map((e) => [e.path, e.folder]))
+
+    expect(byPath['Diario/2026-11-21.md']).toBe('Diario')
+    expect(byPath['GUIONES/V3/acto-1.md']).toBe('GUIONES/V3')
+    expect(byPath['suelta.md']).toBeNull()
+    expect(vault.roots).toEqual(['ObsidianVault', 'ObsidianVault'])
+  })
+
+  it('keeps a single folder level instead of flattening the vault', async () => {
+    const zip = buildZip({ 'Vault/Diario/a.md': '# A\n', 'Vault/Diario/b.md': '# B\n' })
+    const vault = await readVault(zip)
+    expect(vault.entries.map((e) => e.folder)).toEqual(['Diario', 'Diario'])
+  })
+
+  it('skips macOS resource forks, dotfiles and binary payloads, and reports them', async () => {
+    const zip = buildZip({
+      'Vault/Nota.md': '# Nota\n',
+      'Vault/._Nota.md': '\u0000\u0005\u0016\u0007Mac OS X        ATTR',
+      '__MACOSX/Vault/._Nota.md': '\u0000\u0005\u0016\u0007Mac OS X',
+      'Vault/.DS_Store': '\u0000junk',
+      'Vault/.obsidian/app.json': '{}',
+      'Vault/foto.png': 'binary',
+    })
+
+    const vault = await readVault(zip)
+    // One folder + one file: the wrapper is kept so the vault structure survives.
+    expect(vault.entries.map((e) => e.path)).toEqual(['Vault/Nota.md'])
+    expect(vault.entries[0].folder).toBe('Vault')
+
+    const junk = vault.skipped.filter((s) => s.reason === 'junk').length
+    expect(junk).toBeGreaterThanOrEqual(2)
+    expect(vault.skipped.some((s) => s.reason === 'attachment' && s.path.endsWith('foto.png'))).toBe(true)
+  })
+
+  it('skips a __MACOSX tree nested inside the vault', async () => {
+    const zip = buildZip({
+      'Vault/ObsidianVault/Nota.md': '# Nota\n',
+      'Vault/ObsidianVault/__MACOSX/._Nota.md': '\u0000\u0005\u0016\u0007Mac OS X',
+      'Vault/__MACOSX/ObsidianVault/x.md': '\u0000\u0005\u0016\u0007Mac OS X',
+    })
+    const vault = await readVault(zip)
+    expect(vault.entries.map((e) => e.path)).toEqual(['ObsidianVault/Nota.md'])
+  })
+
+  it('decodes UTF-8 names that lack the UTF-8 flag', async () => {
+    const zip = buildZip({ 'Vault/Versión 1/acto.md': '# Acto\n' })
+    const vault = await readVault(zip)
+    expect(vault.entries[0].path).toBe('Versión 1/acto.md')
+  })
+})
 
 describe('reading an Obsidian vault', () => {
   it('reads deflated entries, maps folders and skips config/attachments', async () => {
