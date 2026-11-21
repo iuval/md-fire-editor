@@ -1,8 +1,199 @@
 rules_version = '2';
+
+// FireMD Editor — security rules
+//
+// Data model
+//   notes/{noteId}
+//     ownerId:   string        (uid, immutable)
+//     memberIds: string[]      (uids with access, <= 50)
+//     roles:     map<uid, 'owner'|'editor'>
+//     access:    'restricted' | 'link-edit'
+//     title:     string        (<= 300 chars)
+//     markdown:  string        (<= 250 KB)
+//     version:   int
+//     createdAt: timestamp     (immutable)
+//     updatedAt: timestamp
+//   notes/{noteId}/updates/{updateId}   Yjs incremental updates
+//   notes/{noteId}/collab/state         Yjs compacted state
+//   notes/{noteId}/presence/{uid}       presence + cursor
+//
+//   users/{uid}/notes/{noteId}          legacy (read/take-out only, for migration)
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isString(v) {
+      return v is string;
+    }
+
+    function isTimestamp(v) {
+      return v is timestamp;
+    }
+
+    // ---------- notes ----------
+
+    function validNoteFields(d) {
+      return d.keys().hasOnly([
+          'ownerId', 'memberIds', 'roles', 'access',
+          'title', 'markdown', 'version', 'createdAt', 'updatedAt'
+        ])
+        && isString(d.ownerId)
+        && d.memberIds is list
+        && d.memberIds.size() > 0
+        && d.memberIds.size() <= 50
+        && d.roles is map
+        && d.roles.size() <= 50
+        && d.access in ['restricted', 'link-edit']
+        && isString(d.title)
+        && d.title.size() <= 300
+        && isString(d.markdown)
+        && d.markdown.size() <= 250000
+        && (!d.keys().hasAny(['version']) || d.version is int)
+        && isTimestamp(d.createdAt)
+        && isTimestamp(d.updatedAt);
+    }
+
+    function canReadNote(d) {
+      return signedIn() && (uid() in d.memberIds || d.access == 'link-edit');
+    }
+
+    function canWriteNote(d) {
+      return signedIn() && (uid() in d.memberIds || d.access == 'link-edit');
+    }
+
+    function isOwner(d) {
+      return signedIn() && d.ownerId == uid();
+    }
+
+    // Fields a collaborator (editor) may touch: content only.
+    function contentOnlyChange() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['title', 'markdown', 'updatedAt', 'version']);
+    }
+
+    // Fields only the owner may touch, with invariants preserved:
+    // owner never changes, owner stays 'owner', every member has a role and
+    // every role belongs to a member.
+    function aclChangeIsValid() {
+      let next = request.resource.data;
+      let roles = next.roles;
+      return next.ownerId == resource.data.ownerId
+        && next.createdAt == resource.data.createdAt
+        && roles[resource.data.ownerId] == 'owner'
+        && resource.data.ownerId in next.memberIds
+        && roles.keys().hasOnly(next.memberIds)
+        && next.memberIds.hasOnly(roles.keys());
+    }
+
+    match /notes/{noteId} {
+      allow get: if canReadNote(resource.data);
+
+      // Listing is only allowed with a `memberIds array-contains <uid>` filter,
+      // which the rules engine can prove implies membership.
+      allow list: if signedIn() && uid() in resource.data.memberIds;
+
+      allow create: if signedIn()
+        && validNoteFields(request.resource.data)
+        && request.resource.data.ownerId == uid()
+        && request.resource.data.memberIds == [uid()]
+        && request.resource.data.roles[uid()] == 'owner'
+        && request.resource.data.roles.size() == 1
+        && request.resource.data.createdAt == request.resource.data.updatedAt;
+
+      allow update: if validNoteFields(request.resource.data)
+        && (
+          // Owner: full control (content + sharing)
+          (isOwner(resource.data) && aclChangeIsValid())
+          // Editor / link-editor: content only, ACL immutable
+          || (canWriteNote(resource.data) && contentOnlyChange())
+        );
+
+      allow delete: if isOwner(resource.data);
+    }
+
+    // ---------- collaboration sub-collections ----------
+
+    // `id` must be passed in: a function declared at this scope cannot see the
+    // `noteId` wildcard captured by a nested match block.
+    function parentNote(id) {
+      return get(/databases/$(database)/documents/notes/$(id)).data;
+    }
+
+    function canUseNote(id) {
+      return signedIn()
+        && (uid() in parentNote(id).memberIds || parentNote(id).access == 'link-edit');
+    }
+
+    match /notes/{noteId}/updates/{updateId} {
+      allow read: if canUseNote(noteId);
+
+      allow create: if canUseNote(noteId)
+        && request.resource.data.keys().hasOnly(['data', 'clientId', 'createdAt'])
+        && isString(request.resource.data.data)
+        && request.resource.data.data.size() <= 400000
+        && request.resource.data.clientId is int
+        && isTimestamp(request.resource.data.createdAt);
+
+      // Compaction: any editor may prune updates already folded into the snapshot.
+      allow delete: if canUseNote(noteId);
+
+      allow update: if false;
+    }
+
+    match /notes/{noteId}/collab/{documentId} {
+      allow read: if canUseNote(noteId);
+
+      allow write: if canUseNote(noteId)
+        && documentId == 'state'
+        && request.resource.data.keys().hasOnly(['state', 'clientId', 'updatedAt'])
+        && isString(request.resource.data.state)
+        && request.resource.data.state.size() <= 700000
+        && request.resource.data.clientId is int
+        && isTimestamp(request.resource.data.updatedAt);
+    }
+
+    match /notes/{noteId}/presence/{presenceId} {
+      allow read: if canUseNote(noteId);
+
+      allow write: if canUseNote(noteId)
+        && presenceId == uid()
+        && request.resource.data.keys().hasOnly([
+            'userId', 'clientId', 'name', 'color', 'cursor', 'selection', 'updatedAt'
+          ])
+        && request.resource.data.userId == uid()
+        && request.resource.data.clientId is int
+        && isString(request.resource.data.name)
+        && request.resource.data.name.size() <= 120
+        && isString(request.resource.data.color)
+        && request.resource.data.color.size() <= 32
+        && isString(request.resource.data.cursor)
+        && request.resource.data.cursor.size() <= 4096
+        && isString(request.resource.data.selection)
+        && request.resource.data.selection.size() <= 8192
+        && isTimestamp(request.resource.data.updatedAt);
+
+      allow delete: if presenceId == uid();
+    }
+
+    // ---------- legacy schema (read-only, migration) ----------
+    // Old v1 data: users/{uid}/notes/{noteId}. Kept so existing notes can be
+    // migrated by their owner. Writes are denied.
     match /users/{userId}/notes/{noteId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, delete: if signedIn() && uid() == userId;
+      allow create, update: if false;
+    }
+
+    // Everything else is denied.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
