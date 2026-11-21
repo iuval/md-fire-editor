@@ -79,6 +79,27 @@ service cloud.firestore {
       return signedIn() && acl.ownerId == uid();
     }
 
+    // ---------- plans ----------
+    // Plans are granted by an admin (no payment integration yet), so a client
+    // can never upgrade itself. An absent entitlement means the free plan.
+
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(uid()));
+    }
+
+    function hasPaidPlan(user) {
+      let path = /databases/$(database)/documents/entitlements/$(user);
+      return exists(path)
+        && get(path).data.plan == 'paid'
+        && (!get(path).data.keys().hasAny(['expiresAt'])
+          || get(path).data.expiresAt == null
+          || get(path).data.expiresAt > request.time);
+    }
+
+    function sharingUnlocked() {
+      return signedIn() && hasPaidPlan(uid());
+    }
+
     // ---------- shared validation ----------
 
     function validAcl(d) {
@@ -138,7 +159,9 @@ service cloud.firestore {
       allow update: if resource != null
         && validFolder(request.resource.data)
         && (
-          (isAclOwner(resource.data) && aclUpdateValid(resource.data, request.resource.data))
+          (isAclOwner(resource.data)
+            && aclUpdateValid(resource.data, request.resource.data)
+            && (nameOnlyChange() || sharingUnlocked()))
           || (canWrite(resource.data) && nameOnlyChange())
         );
 
@@ -211,8 +234,11 @@ service cloud.firestore {
         && validNote(request.resource.data)
         && ownershipUnchanged(resource.data, request.resource.data)
         && (
-          // Owner: sharing, moving between folders, or content.
-          (isAclOwner(resource.data) && ownerUpdateValid(resource.data, request.resource.data))
+          // Owner: sharing, moving between folders, or content. Changing who can
+          // access a note is a paid feature; content edits are not gated.
+          (isAclOwner(resource.data)
+            && ownerUpdateValid(resource.data, request.resource.data)
+            && (contentOnlyChange() || sharingUnlocked()))
           // Editor / link-editor: content only.
           || (canWrite(aclOf(resource.data)) && contentOnlyChange())
           // Any writer of the folder may resync an inheriting note's ACL copy
@@ -365,6 +391,43 @@ service cloud.firestore {
         && isTimestamp(request.resource.data.updatedAt);
 
       allow delete: if profileId == uid();
+    }
+
+    // ---------- plans ----------
+    match /admins/{adminId} {
+      allow get: if signedIn();
+      allow list, write: if false;
+    }
+
+    match /entitlements/{userId} {
+      allow get: if signedIn() && (uid() == userId || isAdmin());
+      allow list: if false;
+
+      allow write: if isAdmin()
+        && request.resource.data.keys().hasOnly(['plan', 'source', 'expiresAt', 'updatedAt'])
+        && request.resource.data.plan in ['free', 'paid']
+        && isString(request.resource.data.source)
+        && request.resource.data.source.size() <= 40
+        && isTimestamp(request.resource.data.updatedAt);
+    }
+
+    // ---------- product analytics ----------
+    // Fixed event names, own events only, never listable across users.
+    match /analytics/{userId}/events/{eventId} {
+      allow read: if signedIn() && uid() == userId;
+
+      allow create: if signedIn()
+        && uid() == userId
+        && request.resource.data.keys().hasOnly(['name', 'props', 'at'])
+        && request.resource.data.name in [
+            'app_open', 'note_created', 'note_shared', 'collab_session',
+            'agent_linked', 'export', 'import'
+          ]
+        && request.resource.data.props is map
+        && request.resource.data.props.size() <= 5
+        && isTimestamp(request.resource.data.at);
+
+      allow update, delete: if false;
     }
 
     // ---------- legacy v1 schema (read-only, migration) ----------

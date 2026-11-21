@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   assertFails,
   assertSucceeds,
@@ -70,6 +70,17 @@ async function seedNote(id: string, overrides: Record<string, unknown> = {}) {
   })
 }
 
+async function grantPaid(uid: string, plan: 'paid' | 'free' = 'paid') {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'entitlements', uid), {
+      plan,
+      source: 'test',
+      expiresAt: null,
+      updatedAt: ts(),
+    })
+  })
+}
+
 async function seedFolder(id: string, overrides: Record<string, unknown> = {}) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'folders', id), folderDoc(overrides))
@@ -98,6 +109,12 @@ afterEach(async () => {
 
 afterAll(async () => {
   await env.cleanup()
+})
+
+beforeEach(async () => {
+  // Sharing is a paid feature; tests exercise it by default.
+  await grantPaid(OWNER)
+  await grantPaid(EDITOR)
 })
 
 describe('notes: create', () => {
@@ -651,6 +668,127 @@ describe('profiles', () => {
       await setDoc(doc(ctx.firestore(), 'profiles', OWNER), { name: 'Ana', updatedAt: ts() })
     })
     await assertFails(getDoc(doc(db(), 'profiles', OWNER)))
+  })
+})
+
+describe('plans gate sharing', () => {
+  it('a free owner cannot change the ACL of a note', async () => {
+    await grantPaid(OWNER, 'free')
+    await seedNote('n1')
+    await assertFails(updateDoc(doc(db(OWNER), 'notes', 'n1'), { access: 'link-view', updatedAt: ts() }))
+    await assertFails(
+      updateDoc(doc(db(OWNER), 'notes', 'n1'), {
+        memberIds: [OWNER, VIEWER],
+        roles: { [OWNER]: 'owner', [VIEWER]: 'viewer' },
+        updatedAt: ts(),
+      })
+    )
+  })
+
+  it('a free owner can still edit content and the title', async () => {
+    await grantPaid(OWNER, 'free')
+    await seedNote('n1')
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { markdown: 'nuevo', updatedAt: ts() }))
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { title: 'Otro', updatedAt: ts() }))
+  })
+
+  it('a free owner cannot reshare a folder, but can rename it', async () => {
+    await grantPaid(OWNER, 'free')
+    await seedFolder('f1')
+    await assertFails(updateDoc(doc(db(OWNER), 'folders', 'f1'), { access: 'link-view', updatedAt: ts() }))
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'folders', 'f1'), { name: 'Nuevo', updatedAt: ts() }))
+  })
+
+  it('an expired plan behaves like free', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'entitlements', OWNER), {
+        plan: 'paid',
+        source: 'test',
+        expiresAt: new Date('2020-01-01T00:00:00Z'),
+        updatedAt: ts(),
+      })
+    })
+    await seedNote('n1')
+    await assertFails(updateDoc(doc(db(OWNER), 'notes', 'n1'), { access: 'link-view', updatedAt: ts() }))
+  })
+
+  it('a client cannot grant itself a plan', async () => {
+    await assertFails(
+      setDoc(doc(db(VIEWER), 'entitlements', VIEWER), {
+        plan: 'paid',
+        source: 'self',
+        expiresAt: null,
+        updatedAt: ts(),
+      })
+    )
+    await assertFails(
+      setDoc(doc(db(OWNER), 'entitlements', OWNER), {
+        plan: 'paid',
+        source: 'self',
+        expiresAt: null,
+        updatedAt: ts(),
+      })
+    )
+  })
+
+  it('only an admin can grant a plan', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'admins', OWNER), { createdAt: ts() })
+    })
+    await assertSucceeds(
+      setDoc(doc(db(OWNER), 'entitlements', EDITOR), {
+        plan: 'paid',
+        source: 'manual',
+        expiresAt: null,
+        updatedAt: ts(),
+      })
+    )
+    await assertFails(
+      setDoc(doc(db(EDITOR), 'entitlements', VIEWER), {
+        plan: 'paid',
+        source: 'manual',
+        expiresAt: null,
+        updatedAt: ts(),
+      })
+    )
+  })
+
+  it('users can read their own entitlement but not somebody else\'s', async () => {
+    await assertSucceeds(getDoc(doc(db(OWNER), 'entitlements', OWNER)))
+    await assertFails(getDoc(doc(db(VIEWER), 'entitlements', OWNER)))
+  })
+})
+
+describe('analytics events', () => {
+  const event = (overrides: Record<string, unknown> = {}) => ({
+    name: 'app_open',
+    props: { platform: 'web' },
+    at: ts(),
+    ...overrides,
+  })
+
+  it('a user can log a known event on their own path', async () => {
+    await assertSucceeds(addDoc(collection(db(OWNER), 'analytics', OWNER, 'events'), event()))
+  })
+
+  it('rejects unknown event names and foreign paths', async () => {
+    await assertFails(
+      addDoc(collection(db(OWNER), 'analytics', OWNER, 'events'), event({ name: 'paid_upgrade' }))
+    )
+    await assertFails(addDoc(collection(db(EDITOR), 'analytics', OWNER, 'events'), event()))
+  })
+
+  it('rejects oversized props maps and events are immutable', async () => {
+    await assertFails(
+      addDoc(
+        collection(db(OWNER), 'analytics', OWNER, 'events'),
+        event({ props: { a: '1', b: '2', c: '3', d: '4', e: '5', f: '6' } })
+      )
+    )
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'analytics', OWNER, 'events', 'e1'), event())
+    })
+    await assertFails(deleteDoc(doc(db(OWNER), 'analytics', OWNER, 'events', 'e1')))
   })
 })
 

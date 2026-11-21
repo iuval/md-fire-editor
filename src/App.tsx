@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bot, FolderPlus, Link2, LogOut, Move, Pencil, Trash2 } from 'lucide-react'
+import { Bot, Download, FileDown, FolderPlus, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { Menu, type MenuItem } from './components/Menu'
@@ -8,8 +8,12 @@ import { ShareDialog } from './components/ShareDialog'
 import { MoveDialog } from './components/MoveDialog'
 import { InputDialog } from './components/InputDialog'
 import { AgentsDialog } from './components/AgentsDialog'
+import { UpgradeDialog } from './components/UpgradeDialog'
 import { useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
+import { download, noteToMarkdown, notesToFiles, safeFileName, suggestExportName, zipStored } from './lib/export'
+import { track } from './lib/analytics'
+import { isPaid, subscribeEntitlement } from './lib/entitlements'
 import {
   isAclOwner,
   moveNoteTo,
@@ -39,6 +43,7 @@ type Dialog =
   | { kind: 'new-folder' }
   | { kind: 'rename-folder'; folderId: string }
   | { kind: 'agents' }
+  | { kind: 'upgrade' }
 
 function initialNoteId(): string | null {
   const fromUrl = new URLSearchParams(window.location.search).get('note')
@@ -96,6 +101,8 @@ function App() {
   })
   const [title, setTitle] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [paid, setPaid] = useState(false)
+  const importRef = useRef<HTMLInputElement>(null)
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -116,6 +123,24 @@ function App() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    if (!user) {
+      setPaid(false)
+      return
+    }
+    return subscribeEntitlement(user.uid, (entitlement) => setPaid(isPaid(entitlement)))
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    track('app_open', user.uid, { platform: isMobile ? 'mobile' : 'desktop' })
+  }, [user, isMobile])
+
+  useEffect(() => {
+    if (!user || presence.length === 0) return
+    track('collab_session', user.uid, { peers: presence.length })
+  }, [user, presence.length])
 
   useEffect(() => {
     if (!activeId || !user) {
@@ -191,6 +216,39 @@ function App() {
     [editable, persist]
   )
 
+  const handleExportAll = useCallback(() => {
+    const files = notesToFiles(notes, folders)
+    if (files.length === 0) return
+    download(zipStored(files), suggestExportName(), 'application/zip')
+    track('export', user?.uid, { kind: 'zip' })
+  }, [notes, folders, user?.uid])
+
+  const handleExportNote = useCallback(() => {
+    if (!activeNote) return
+    download(noteToMarkdown(activeNote), `${safeFileName(activeNote.title)}.md`, 'text/markdown')
+    track('export', user?.uid, { kind: 'md' })
+  }, [activeNote, user?.uid])
+
+  const handleImportFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!files || !user) return
+      const list = Array.from(files).slice(0, 20)
+      let first: string | null = null
+      for (const file of list) {
+        const text = await file.text()
+        const heading = text.match(/^#\s+(.+)$/m)?.[1]?.trim()
+        const title = (heading || file.name.replace(/\.md$/i, '')).slice(0, 300)
+        const note = await addNote()
+        if (!note) continue
+        await saveNoteContent(note.id, { title, markdown: text.slice(0, 250_000), version: 1 })
+        if (!first) first = note.id
+      }
+      track('import', user.uid, { count: list.length })
+      if (first) selectNote(first)
+    },
+    [addNote, selectNote, user]
+  )
+
   const toggleFolder = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -205,6 +263,7 @@ function App() {
       const note = await addNote(folder)
       if (!note) return
       if (folder) setExpanded((prev) => new Set(prev).add(folder.id))
+      track('note_created', user?.uid, { folder: folder ? 'yes' : 'root' })
       setPresence([])
       selectNote(note.id)
       if (isMobile) setSidebarOpen(false)
@@ -276,9 +335,20 @@ function App() {
         label: sharedFolder ? 'Permisos de la carpeta…' : 'Compartir…',
         icon: <Link2 size={14} />,
         onSelect: () =>
-          setDialog(sharedFolder ? { kind: 'share-folder', folderId: sharedFolder.id } : { kind: 'share-note' }),
+          setDialog(
+            !paid
+              ? { kind: 'upgrade' }
+              : sharedFolder
+                ? { kind: 'share-folder', folderId: sharedFolder.id }
+                : { kind: 'share-note' }
+          ),
       })
     }
+    noteMenu.push({
+      label: 'Exportar .md',
+      icon: <FileDown size={14} />,
+      onSelect: handleExportNote,
+    })
     if (noteOwner) {
       noteMenu.push({
         label: 'Mover a…',
@@ -313,7 +383,9 @@ function App() {
                 label: 'Compartir…',
                 icon: <Link2 size={14} />,
                 onSelect: () =>
-                  setDialog({ kind: 'share-folder', folderId: folderMenu!.folder.id }),
+                  setDialog(
+                    paid ? { kind: 'share-folder', folderId: folderMenu!.folder.id } : { kind: 'upgrade' }
+                  ),
               },
             ]
           : []),
@@ -464,9 +536,20 @@ function App() {
           <Menu
             items={[
               {
-                label: 'Agentes de IA…',
+                label: 'Exportar todo (.zip)',
+                icon: <Download size={14} />,
+                onSelect: handleExportAll,
+              },
+              {
+                label: 'Importar .md…',
+                icon: <Upload size={14} />,
+                onSelect: () => importRef.current?.click(),
+              },
+              {
+                label: paid ? 'Agentes de IA…' : 'Agentes de IA (plan pago)…',
                 icon: <Bot size={14} />,
-                onSelect: () => setDialog({ kind: 'agents' }),
+                onSelect: () => setDialog(paid ? { kind: 'agents' } : { kind: 'upgrade' }),
+                separatorBefore: true,
               },
               {
                 label: 'Cerrar sesión',
@@ -493,7 +576,10 @@ function App() {
           }}
           currentUid={user.uid}
           onClose={() => setDialog({ kind: 'none' })}
-          onChangeAccess={(access: Access) => updateNoteSharing(activeNote, { access })}
+          onChangeAccess={(access: Access) => {
+            track('note_shared', user.uid, { kind: 'note', access })
+            return updateNoteSharing(activeNote, { access })
+          }}
           onAddMember={(uid: string, role: Role) =>
             updateNoteSharing(activeNote, { addMember: { uid, role } })
           }
@@ -520,7 +606,10 @@ function App() {
           }}
           currentUid={user.uid}
           onClose={() => setDialog({ kind: 'none' })}
-          onChangeAccess={(access: Access) => updateFolderSharing(shareFolderTarget, { access })}
+          onChangeAccess={(access: Access) => {
+            track('note_shared', user.uid, { kind: 'folder', access })
+            return updateFolderSharing(shareFolderTarget, { access })
+          }}
           onAddMember={(uid: string, role: Role) =>
             updateFolderSharing(shareFolderTarget, { addMember: { uid, role } })
           }
@@ -543,12 +632,29 @@ function App() {
         />
       )}
 
+      {dialog.kind === 'upgrade' && (
+        <UpgradeDialog onClose={() => setDialog({ kind: 'none' })} onExport={handleExportAll} />
+      )}
+
+      <input
+        ref={importRef}
+        type="file"
+        accept=".md,text/markdown,text/plain"
+        multiple
+        hidden
+        onChange={(e) => {
+          void handleImportFiles(e.target.files)
+          e.target.value = ''
+        }}
+      />
+
       {dialog.kind === 'agents' && (
         <AgentsDialog
           folders={folders}
           onClose={() => setDialog({ kind: 'none' })}
           onLink={async (agentUid, folder, role) => {
             await updateFolderSharing(folder, { addMember: { uid: agentUid, role } })
+            track('agent_linked', user.uid, { role })
           }}
         />
       )}

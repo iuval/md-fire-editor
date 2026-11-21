@@ -38,6 +38,13 @@ Al mover una nota a una carpeta hereda su ACL; al sacarla vuelve a ser privada d
 nombre para mostrarlo en el panel. Si alguien nunca entró con Google, no existe en el
 directorio y el panel lo avisa.
 
+## Roadmap
+
+Las features pedidas y todavía no implementadas (tags, vault de Obsidian, sync local,
+página de uso, auto top-up) están especificadas en [`docs/roadmap.md`](docs/roadmap.md), con
+modelo de datos, cambios de reglas, riesgos y orden sugerido. La revisión del plan comercial
+está en [`docs/comercial-review.md`](docs/comercial-review.md).
+
 ## Cómo funciona la colaboración
 
 El diseño está justificado en [`docs/sync-algorithms.md`](docs/sync-algorithms.md): cómo
