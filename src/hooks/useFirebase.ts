@@ -48,10 +48,9 @@ export function useAuth() {
   }, [user])
 
   const doGoogleSignIn = useCallback(async () => {
-    const u = await signInWithGoogle()
-    if (!u) setError('No se pudo iniciar sesión con Google')
-    else setError(null)
-    return u
+    const result = await signInWithGoogle()
+    setError(result.user ? null : (result.message ?? 'No se pudo iniciar sesión con Google'))
+    return result.user
   }, [])
 
   const doSignOut = useCallback(async () => {

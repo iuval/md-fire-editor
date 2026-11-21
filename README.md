@@ -252,6 +252,16 @@ cp .env.example .env    # completar con la config del proyecto Firebase
 npm run dev
 ```
 
+Dos cosas rompen el login en desarrollo:
+
+- **La API key está restringida por referrer.** Los puertos autorizados son `localhost:5173`,
+  `4173`, `5198` y `5199` (con y sin `127.0.0.1`). Si corrés el dev server en otro puerto,
+  agregalo en *Google Cloud → APIs & Services → Credentials → Browser key → HTTP referrers*;
+  si no, vas a ver `auth/requests-from-referer-http://localhost:PORT/-are-blocked`.
+- **Google rechaza el login dentro de navegadores embebidos** (Electron, vistas previas de
+  IDE, webviews). El síntoma es *"Ce navigateur ou cette application ne sont peut-être pas
+  sécurisés"*. Abrí la app en Chrome o Safari: la pantalla de login lo detecta y lo explica.
+
 ```bash
 npm run build
 firebase deploy --only firestore:rules,firestore:indexes,hosting

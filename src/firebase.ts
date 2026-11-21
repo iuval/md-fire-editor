@@ -64,14 +64,51 @@ export interface AuthUser {
 const provider = new GoogleAuthProvider()
 provider.setCustomParameters({ prompt: 'select_account' })
 
-export async function signInWithGoogle(): Promise<User | null> {
-  if (!auth) return null
+export type SignInFailure =
+  | 'blocked-referer'
+  | 'popup-blocked'
+  | 'cancelled'
+  | 'unsupported'
+  | 'unknown'
+
+export interface SignInResult {
+  user: User | null
+  failure: SignInFailure | null
+  message: string | null
+}
+
+function classifySignInError(error: unknown): { failure: SignInFailure; message: string } {
+  const code = (error as { code?: string })?.code ?? ''
+  const message = (error as Error)?.message ?? String(error)
+
+  if (code.includes('requests-from-referer') || message.includes('requests-from-referer')) {
+    return {
+      failure: 'blocked-referer',
+      message:
+        'Este origen no está autorizado en la API key de Firebase. Agregá este puerto a los referrers de la key (ver README).',
+    }
+  }
+  if (code === 'auth/popup-blocked') {
+    return { failure: 'popup-blocked', message: 'El navegador bloqueó la ventana de Google. Permití popups para este sitio.' }
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return { failure: 'cancelled', message: 'Se cerró la ventana de Google antes de terminar.' }
+  }
+  if (code === 'auth/operation-not-supported-in-this-environment') {
+    return { failure: 'unsupported', message: 'Este navegador no permite el login con Google.' }
+  }
+  return { failure: 'unknown', message }
+}
+
+export async function signInWithGoogle(): Promise<SignInResult> {
+  if (!auth) return { user: null, failure: 'unknown', message: 'Firebase no está configurado' }
   try {
     const cred = await signInWithPopup(auth, provider)
-    return cred.user
+    return { user: cred.user, failure: null, message: null }
   } catch (e) {
     console.error('Google sign-in error:', e)
-    return null
+    const { failure, message } = classifySignInError(e)
+    return { user: null, failure, message }
   }
 }
 

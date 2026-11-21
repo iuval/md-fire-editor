@@ -15,6 +15,7 @@ import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, safeFileName } from './lib/export'
 import { buildVault, readVault } from './lib/vault'
 import { track } from './lib/analytics'
+import { currentBrowser, embeddedBrowserHint } from './lib/browser'
 import { buildTagTree, extractTags, matchesTagFilter, parseTagInput } from './lib/tags'
 import { flattenFolders, folderPath } from './lib/folders'
 import { applyOrder, setFolderSort, setRootSort, subscribeUserSettings } from './lib/notes'
@@ -752,6 +753,9 @@ function App() {
   if (authLoading) return <div className="empty">Cargando…</div>
 
   if (!user) {
+    const browser = currentBrowser()
+    const appUrl = typeof window !== 'undefined' ? window.location.origin : ''
+
     return (
       <div className="empty" style={{ gap: 14 }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, letterSpacing: '-0.01em' }}>FireMD</h1>
@@ -761,7 +765,20 @@ function App() {
         <button className="btn" onClick={() => void doGoogleSignIn()}>
           Entrar con Google
         </button>
-        {authError && <p className="hint" style={{ color: '#e05252' }}>{authError}</p>}
+
+        {browser.embedded && (
+          <div className="share-hint-box" style={{ maxWidth: 380, textAlign: 'left' }}>
+            <strong>Google va a rechazar este navegador.</strong>
+            <br />
+            {embeddedBrowserHint(browser.reason)}
+            <br />
+            Abrí esta dirección en Chrome o Safari:
+            <br />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5 }}>{appUrl}</span>
+          </div>
+        )}
+
+        {authError && <p className="hint" style={{ color: '#e05252', maxWidth: 360 }}>{authError}</p>}
       </div>
     )
   }
