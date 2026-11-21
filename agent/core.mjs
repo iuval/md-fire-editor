@@ -62,7 +62,8 @@ function normalizeTag(raw) {
     .replace(/[^\p{L}\p{N}_/-]/gu, '')
     .replace(/\/{2,}/g, '/')
     .replace(/^\/+|\/+$/g, '')
-  return !clean || clean.length > MAX_TAG_LENGTH ? null : clean
+  // Obsidian requires at least one non-numerical character: `#123` is not a tag.
+  return !clean || clean.length > MAX_TAG_LENGTH || !/\p{L}/u.test(clean) ? null : clean
 }
 
 export function extractTags(markdown) {
@@ -74,19 +75,33 @@ export function extractTags(markdown) {
     const end = String(markdown).indexOf('\n---', 3)
     if (end !== -1) {
       const block = String(markdown).slice(3, end)
-      const inline = block.match(/^tags:\s*\[(.*?)\]\s*$/m)
+      const inline = block.match(/^tags?:\s*\[(.*?)\]\s*$/m)
       if (inline) {
         inline[1].split(',').forEach((tag) => {
           const normalized = normalizeTag(tag)
           if (normalized) found.add(normalized)
         })
       } else {
-        const list = block.match(/^tags:[ \t]*\n((?:[ \t]*-[ \t]*.+\n?)+)/m)
+        const list = block.match(/^tags?:[ \t]*\n((?:[ \t]*-[ \t]*.+\n?)+)/m)
         if (list) {
           list[1].split('\n').forEach((line) => {
             const normalized = normalizeTag(line.replace(/^[ \t]*-[ \t]*/, ''))
             if (normalized) found.add(normalized)
           })
+        }
+      }
+      if (!inline && !list) {
+        const single = block.match(/^tag:[ \t]*(.+)$/m)
+        if (single) {
+          single[1]
+            .trim()
+            .replace(/^["']|["']$/g, '')
+            .split(/[,\s]+/)
+            .filter(Boolean)
+            .forEach((tag) => {
+              const normalized = normalizeTag(tag)
+              if (normalized) found.add(normalized)
+            })
         }
       }
     }

@@ -34,6 +34,15 @@ describe('tag extraction', () => {
     expect(extractTags(md)).toHaveLength(MAX_TAGS)
   })
 
+  it('rejects tags made only of digits, like Obsidian', () => {
+    expect(extractTags('issue #123 y #2026/a')).toEqual(['2026/a'])
+  })
+
+  it('reads the legacy singular `tag:` key', () => {
+    expect(extractTags('---\ntag: producto\n---\ncuerpo')).toEqual(['producto'])
+    expect(extractTags('---\ntag:\n  - uno\n  - dos\n---\ncuerpo')).toEqual(['dos', 'uno'])
+  })
+
   it('ignores tags longer than the limit', () => {
     expect(extractTags(`#${'a'.repeat(MAX_TAG_LENGTH + 1)}`)).toEqual([])
   })

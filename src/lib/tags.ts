@@ -25,7 +25,8 @@ export function normalizeTag(raw: string): string | null {
     .replace(/\/{2,}/g, '/')
     .replace(/^\/+|\/+$/g, '')
 
-  if (!clean || clean.length > MAX_TAG_LENGTH) return null
+  // Obsidian requires at least one non-numerical character: `#123` is not a tag.
+  if (!clean || clean.length > MAX_TAG_LENGTH || !/\p{L}/u.test(clean)) return null
   return clean
 }
 
@@ -35,7 +36,7 @@ function frontmatterTags(markdown: string): string[] {
   if (end === -1) return []
   const block = markdown.slice(3, end)
 
-  const inline = block.match(/^tags:\s*\[(.*?)\]\s*$/m)
+  const inline = block.match(/^tags?:\s*\[(.*?)\]\s*$/m)
   if (inline) {
     return inline[1]
       .split(',')
@@ -43,11 +44,21 @@ function frontmatterTags(markdown: string): string[] {
       .filter(Boolean)
   }
 
-  const list = block.match(/^tags:[ \t]*\n((?:[ \t]*-[ \t]*.+\n?)+)/m)
+  const list = block.match(/^tags?:[ \t]*\n((?:[ \t]*-[ \t]*.+\n?)+)/m)
   if (list) {
     return list[1]
       .split('\n')
       .map((line) => line.replace(/^[ \t]*-[ \t]*/, '').trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean)
+  }
+
+  // Legacy singular form: `tag: producto` (one value, may be space separated).
+  const single = block.match(/^tag:[ \t]*(.+)$/m)
+  if (single) {
+    return single[1]
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .split(/[,\s]+/)
       .filter(Boolean)
   }
 
