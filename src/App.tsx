@@ -15,7 +15,10 @@ import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, safeFileName } from './lib/export'
 import { buildVault, readVault } from './lib/vault'
 import { track } from './lib/analytics'
-import { extractTags, parseTagInput } from './lib/tags'
+import { buildTagTree, extractTags, matchesTagFilter, parseTagInput } from './lib/tags'
+import { parseProperties, setProperty } from './lib/properties'
+import { NotePanels, type PropertyChange } from './components/NotePanels'
+import { RenameTagDialog } from './components/RenameTagDialog'
 import { isPaid, subscribeEntitlement } from './lib/entitlements'
 import {
   recordUsage,
@@ -59,6 +62,7 @@ type Dialog =
   | { kind: 'agents' }
   | { kind: 'upgrade' }
   | { kind: 'usage' }
+  | { kind: 'rename-tag' }
 
 function initialNoteId(): string | null {
   const fromUrl = new URLSearchParams(window.location.search).get('note')
@@ -117,7 +121,7 @@ function App() {
   const [title, setTitle] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [paid, setPaid] = useState(false)
-  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [notice, setNotice] = useState<string | null>(null)
   const [usage, setUsage] = useState<UsageTotals | null>(null)
   const [credits, setCredits] = useState<Credits | null>(null)
@@ -343,6 +347,71 @@ function App() {
     [addFolder, addNote, folders, selectNote, user]
   )
 
+  const handlePropertyChange = useCallback(
+    async (change: PropertyChange) => {
+      if (!activeNote) return
+      const next =
+        change.value === null
+          ? setProperty(activeNote.markdown ?? '', { key: change.key, value: null })
+          : setProperty(activeNote.markdown ?? '', {
+              key: change.key,
+              type: change.type ?? 'text',
+              value: change.value,
+            })
+      await saveNoteContent(activeNote.id, {
+        markdown: next,
+        tags: extractTags(next),
+        version: activeNote.version + 1,
+      })
+    },
+    [activeNote]
+  )
+
+  const handleRenameTag = useCallback(
+    async (from: string, to: string) => {
+      if (!user) return
+      const source = from.replace(/^#/, '')
+      const target = to.replace(/^#/, '')
+      const affected = notes.filter((note) =>
+        note.tags.some((tag) => tag.toLowerCase() === source.toLowerCase())
+      )
+      let changed = 0
+      for (const note of affected) {
+        const pattern = new RegExp(`#${source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w/.-])`, 'gi')
+        let next = (note.markdown ?? '').replace(pattern, `#${target}`)
+        // frontmatter list / array entries
+        next = next.replace(
+          /^(tags?:\s*\[)([^\]]*)(\])$/gim,
+          (_match, open: string, body: string, close: string) =>
+            `${open}${body
+              .split(',')
+              .map((item) =>
+                item.trim().toLowerCase() === source.toLowerCase() ? target : item.trim()
+              )
+              .join(', ')}${close}`
+        )
+        next = next.replace(
+          /^([ \t]*-[ \t]*)([^\n#]+)$/gm,
+          (match: string, prefix: string, value: string) =>
+            value.trim().toLowerCase() === source.toLowerCase() ? `${prefix}${target}` : match
+        )
+        if (next === note.markdown) continue
+        await saveNoteContent(note.id, {
+          markdown: next,
+          tags: extractTags(next),
+          version: note.version + 1,
+        })
+        changed++
+      }
+      setSelectedTags((current) =>
+        current.map((tag) => (tag === source.toLowerCase() ? target.toLowerCase() : tag))
+      )
+      setNotice(`Etiqueta renombrada en ${changed} ${changed === 1 ? 'nota' : 'notas'}.`)
+      track('note_shared', user.uid, { kind: 'tag-rename' })
+    },
+    [notes, user]
+  )
+
   const toggleFolder = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -504,8 +573,10 @@ function App() {
 
   const userName = user?.displayName || user?.email?.split('@')[0] || ''
 
-  const availableTags = Array.from(new Set(notes.flatMap((note) => note.tags))).sort()
-  const visibleNotes = tagFilter ? notes.filter((note) => note.tags.includes(tagFilter)) : notes
+  const tagTree = buildTagTree(notes)
+  const visibleNotes = selectedTags.length
+    ? notes.filter((note) => matchesTagFilter(note.tags, selectedTags))
+    : notes
 
   if (authLoading) return <div className="empty">Cargando…</div>
 
@@ -547,9 +618,13 @@ function App() {
         isMobile={isMobile}
         isOpen={isMobile ? sidebarOpen : !collapsed}
         loading={dataLoading}
-        availableTags={availableTags}
-        tagFilter={tagFilter}
-        onToggleTag={(tag) => setTagFilter((current) => (current === tag ? null : tag))}
+        tagTree={tagTree}
+        selectedTags={selectedTags}
+        onToggleTag={(key) =>
+          setSelectedTags((current) =>
+            current.includes(key) ? current.filter((t) => t !== key) : [...current, key]
+          )
+        }
         uid={user.uid}
         userName={userName}
         photoURL={user.photoURL}
@@ -610,15 +685,18 @@ function App() {
                 aria-label="Título de la nota"
                 spellCheck={false}
               />
-              {activeNote.tags.length > 0 && (
-                <div className="doc-tags">
-                  {activeNote.tags.map((tag) => (
-                    <span key={tag} className="tag-chip">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              )}
+              <NotePanels
+                tags={activeNote.tags}
+                properties={parseProperties(activeNote.markdown ?? '')}
+                editable={editable}
+                onTagClick={(tag) =>
+                  setSelectedTags((current) =>
+                    current.includes(tag.toLowerCase()) ? current : [...current, tag.toLowerCase()]
+                  )
+                }
+                onRenameTag={() => setDialog({ kind: 'rename-tag' })}
+                onPropertyChange={(change) => void handlePropertyChange(change)}
+              />
               {sharedFolder && (
                 <p className="readonly-note">
                   En la carpeta «{sharedFolder.name}» · permisos heredados de la carpeta
@@ -761,6 +839,15 @@ function App() {
           folders={folders}
           currentFolderId={activeNote.folderId}
           onMove={(folder) => void moveNoteTo(activeNote, folder)}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
+      {dialog.kind === 'rename-tag' && (
+        <RenameTagDialog
+          current={selectedTags[0] ?? ''}
+          knownTags={tagTree.map((node) => node.display)}
+          onRename={(from, to) => void handleRenameTag(from, to)}
           onClose={() => setDialog({ kind: 'none' })}
         />
       )}

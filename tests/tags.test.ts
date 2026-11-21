@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { extractTags, normalizeTag, parseTagInput, MAX_TAG_LENGTH, MAX_TAGS } from '../src/lib/tags'
+import {
+  MAX_TAG_LENGTH,
+  MAX_TAGS,
+  extractTags,
+  normalizeTag,
+  parseTagInput,
+  sameTag,
+  tagKey,
+} from '../src/lib/tags'
 
 describe('tag extraction', () => {
   it('finds inline tags and nested tags', () => {
@@ -25,8 +33,9 @@ describe('tag extraction', () => {
     expect(extractTags('---\ntags:\n  - tres\n  - cuatro\n---\n\ncuerpo')).toEqual(['cuatro', 'tres'])
   })
 
-  it('normalizes case, accents survive, duplicates collapse', () => {
-    expect(extractTags('#Trabajo #trabajo #diseño')).toEqual(['diseño', 'trabajo'])
+  it('keeps the typed case, groups case-insensitively and keeps accents', () => {
+    expect(extractTags('#Trabajo #trabajo #diseño')).toEqual(['diseño', 'Trabajo'])
+    expect(extractTags('#ACME y #acme/x')).toEqual(['ACME', 'acme/x'])
   })
 
   it('caps the number of tags', () => {
@@ -48,9 +57,17 @@ describe('tag extraction', () => {
   })
 })
 
+describe('tag identity', () => {
+  it('compares case-insensitively without losing the display form', () => {
+    expect(tagKey('Trabajo')).toBe('trabajo')
+    expect(sameTag('ACME/x', 'acme/X')).toBe(true)
+    expect(sameTag('a', 'b')).toBe(false)
+  })
+})
+
 describe('tag normalization', () => {
   it('strips hashes, spaces and empty segments', () => {
-    expect(normalizeTag('###Trabajo')).toBe('trabajo')
+    expect(normalizeTag('###Trabajo')).toBe('Trabajo')
     expect(normalizeTag('clientes//acme/')).toBe('clientes/acme')
     expect(normalizeTag('a b')).toBe('ab')
     expect(normalizeTag('   ')).toBeNull()
@@ -59,9 +76,37 @@ describe('tag normalization', () => {
   it('parses a comma or space separated input', () => {
     expect(parseTagInput('trabajo, clientes/acme  ideas #Diseño')).toEqual([
       'clientes/acme',
-      'diseño',
+      'Diseño',
       'ideas',
       'trabajo',
     ])
+  })
+})
+
+describe('tag tree', () => {
+  it('counts descendants and orders like a tree', async () => {
+    const { buildTagTree } = await import('../src/lib/tags')
+    const tree = buildTagTree([
+      { tags: ['clientes/acme', 'Trabajo'] },
+      { tags: ['clientes/acme', 'clientes/beta'] },
+      { tags: ['trabajo'] },
+    ])
+
+    expect(tree.map((n) => [n.key, n.count, n.depth])).toEqual([
+      ['clientes', 2, 0],
+      ['clientes/acme', 2, 1],
+      ['clientes/beta', 1, 1],
+      ['trabajo', 2, 0],
+    ])
+  })
+
+  it('filters by a parent tag and by every selected tag (AND)', async () => {
+    const { matchesTagFilter } = await import('../src/lib/tags')
+    const note = { tags: ['clientes/acme', 'Trabajo'] }
+
+    expect(matchesTagFilter(note.tags, [])).toBe(true)
+    expect(matchesTagFilter(note.tags, ['clientes'])).toBe(true) // parent matches children
+    expect(matchesTagFilter(note.tags, ['trabajo', 'clientes/acme'])).toBe(true)
+    expect(matchesTagFilter(note.tags, ['trabajo', 'otra'])).toBe(false)
   })
 })

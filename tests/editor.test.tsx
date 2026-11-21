@@ -9,6 +9,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { Markdown } from 'tiptap-markdown'
 import { CollaborativeEditor } from '../src/components/CollaborativeEditor'
+import { TagHighlight } from '../src/components/extensions/tagHighlight'
 import { FirestoreAwareness } from '../src/lib/collab/awareness'
 import type { Note } from '../src/lib/notes'
 
@@ -35,6 +36,33 @@ afterEach(() => {
   roots.forEach((r) => act(() => r.unmount()))
   roots = []
   document.body.innerHTML = ''
+})
+
+describe('inline tag rendering', () => {
+  it('turns #tags into pills without touching code', () => {
+    const ydoc = new Y.Doc()
+    const awareness = fakeAwareness()
+    const element = document.createElement('div')
+
+    const editor = new Editor({
+      element,
+      extensions: [
+        StarterKit.configure({ undoRedo: false }),
+        Collaboration.configure({ document: ydoc, field: 'content' }),
+        CollaborationCaret.configure({ provider: { awareness }, user: { name: 'Ana' } }),
+        TagHighlight,
+        Markdown.configure({ html: false }),
+      ],
+    })
+
+    editor.commands.setContent('texto #Trabajo y #clientes/acme\n\n```\n#no-es-tag\n```')
+
+    const pills = Array.from(element.querySelectorAll('.tag-pill')).map((el) => el.textContent)
+    expect(pills).toEqual(['#Trabajo', '#clientes/acme'])
+
+    editor.destroy()
+    ydoc.destroy()
+  })
 })
 
 describe('Tiptap + Yjs + Markdown wiring', () => {

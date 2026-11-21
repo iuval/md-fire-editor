@@ -1,5 +1,6 @@
 import { ChevronRight, Folder, FolderPlus, Link2, MoreHorizontal, PanelLeftClose, Plus, User } from 'lucide-react'
 import type { Folder as FolderType, Note } from '../lib/notes'
+import type { TagNode } from '../lib/tags'
 
 interface SidebarProps {
   notes: Note[]
@@ -16,9 +17,9 @@ interface SidebarProps {
   isMobile: boolean
   isOpen: boolean
   loading: boolean
-  availableTags: string[]
-  tagFilter: string | null
-  onToggleTag: (tag: string) => void
+  tagTree: TagNode[]
+  selectedTags: string[]
+  onToggleTag: (tagKey: string) => void
   uid?: string
   userName?: string
   photoURL?: string | null
@@ -53,8 +54,8 @@ export function Sidebar({
   isMobile,
   isOpen,
   loading,
-  availableTags,
-  tagFilter,
+  tagTree,
+  selectedTags,
   onToggleTag,
   uid,
   userName,
@@ -107,23 +108,35 @@ export function Sidebar({
         </button>
       </div>
 
-      {availableTags.length > 0 && (
-        <div className="tag-row" aria-label="Filtrar por etiqueta">
-          {availableTags.slice(0, 12).map((tag) => (
-            <button
-              key={tag}
-              className={`tag-chip${tagFilter === tag ? ' active' : ''}`}
-              aria-pressed={tagFilter === tag}
-              onClick={() => onToggleTag(tag)}
-            >
-              #{tag}
-            </button>
-          ))}
-          {tagFilter && (
-            <button className="tag-chip" onClick={() => onToggleTag(tagFilter)} aria-label="Quitar filtro">
-              ✕
-            </button>
-          )}
+      {tagTree.length > 0 && (
+        <div className="tag-panel" aria-label="Filtrar por etiqueta">
+          <div className="sidebar-section" style={{ padding: '6px 8px 2px' }}>
+            <span className="sidebar-section-label">Etiquetas</span>
+            {selectedTags.length > 0 && (
+              <button
+                className="icon-btn"
+                style={{ width: 20, height: 20 }}
+                onClick={() => selectedTags.forEach((tag) => onToggleTag(tag))}
+                aria-label="Quitar filtro de etiquetas"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <div className="tag-tree">
+            {tagTree.map((node) => (
+              <button
+                key={node.key}
+                className={`tag-tree-row${selectedTags.includes(node.key) ? ' active' : ''}`}
+                style={{ paddingLeft: 8 + node.depth * 10 }}
+                aria-pressed={selectedTags.includes(node.key)}
+                onClick={() => onToggleTag(node.key)}
+              >
+                <span className="tag-tree-name">#{node.display}</span>
+                <span className="tag-tree-count">{node.count}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

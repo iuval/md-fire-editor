@@ -16,11 +16,14 @@ const INLINE_CODE = /`[^`\n]*`/g
 // "#" inside a URL is preceded by a path character so it does not match either.
 const INLINE_TAG = /(^|[\s([{,;:'"])#([\p{L}\p{N}_/-]+)/gu
 
+/**
+ * Obsidian keeps the case you typed and groups case-insensitively, so the tag is
+ * stored as written and compared through `tagKey`.
+ */
 export function normalizeTag(raw: string): string | null {
   const clean = String(raw)
     .trim()
     .replace(/^#+/, '')
-    .toLowerCase()
     .replace(/[^\p{L}\p{N}_/-]/gu, '')
     .replace(/\/{2,}/g, '/')
     .replace(/^\/+|\/+$/g, '')
@@ -28,6 +31,15 @@ export function normalizeTag(raw: string): string | null {
   // Obsidian requires at least one non-numerical character: `#123` is not a tag.
   if (!clean || clean.length > MAX_TAG_LENGTH || !/\p{L}/u.test(clean)) return null
   return clean
+}
+
+/** Comparison key: tags are case-insensitive but displayed as typed. */
+export function tagKey(tag: string): string {
+  return tag.toLowerCase()
+}
+
+export function sameTag(a: string, b: string): boolean {
+  return tagKey(a) === tagKey(b)
 }
 
 function frontmatterTags(markdown: string): string[] {
@@ -70,19 +82,21 @@ export function extractTags(markdown: string): string[] {
   if (!markdown) return []
 
   const withoutCode = markdown.replace(FENCED_CODE, ' ').replace(INLINE_CODE, ' ')
-  const found = new Set<string>()
+  const found = new Map<string, string>() // lower-case key -> display form
 
-  for (const tag of frontmatterTags(markdown)) {
-    const normalized = normalizeTag(tag)
-    if (normalized) found.add(normalized)
+  const add = (raw: string) => {
+    const normalized = normalizeTag(raw)
+    if (!normalized) return
+    const key = tagKey(normalized)
+    if (!found.has(key)) found.set(key, normalized)
   }
 
-  for (const match of withoutCode.matchAll(INLINE_TAG)) {
-    const normalized = normalizeTag(match[2])
-    if (normalized) found.add(normalized)
-  }
+  for (const tag of frontmatterTags(markdown)) add(tag)
+  for (const match of withoutCode.matchAll(INLINE_TAG)) add(match[2])
 
-  return Array.from(found).sort().slice(0, MAX_TAGS)
+  return Array.from(found.values())
+    .sort((a, b) => tagKey(a).localeCompare(tagKey(b)))
+    .slice(0, MAX_TAGS)
 }
 
 /** Validates a user-provided tag list (folder tags are edited by hand). */
@@ -92,5 +106,64 @@ export function parseTagInput(input: string): string[] {
     .map((tag) => normalizeTag(tag))
     .filter((tag): tag is string => !!tag)
 
-  return Array.from(new Set(parts)).sort().slice(0, MAX_TAGS)
+  const unique = new Map<string, string>()
+  for (const tag of parts) {
+    const key = tagKey(tag)
+    if (!unique.has(key)) unique.set(key, tag)
+  }
+  return Array.from(unique.values())
+    .sort((a, b) => tagKey(a).localeCompare(tagKey(b)))
+    .slice(0, MAX_TAGS)
+}
+
+export interface TagNode {
+  /** Lower-case key, also the filter value. */
+  key: string
+  /** Display form as typed by the user. */
+  display: string
+  count: number
+  depth: number
+}
+
+/**
+ * Flattens tags into a tree ordered like Obsidian's tag pane: `clientes`
+ * followed by its children, counts include descendants.
+ */
+export function buildTagTree(notes: Array<{ tags: string[] }>): TagNode[] {
+  const totals = new Map<string, { display: string; count: number }>()
+  const bump = (key: string, display: string) => {
+    const current = totals.get(key)
+    if (current) current.count++
+    else totals.set(key, { display, count: 1 })
+  }
+
+  for (const note of notes) {
+    const seen = new Set<string>()
+    for (const tag of note.tags) {
+      const parts = tag.split('/')
+      // Count the tag itself and every ancestor once per note.
+      for (let i = 1; i <= parts.length; i++) {
+        const path = parts.slice(0, i).join('/')
+        const key = path.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        bump(key, path)
+      }
+    }
+  }
+
+  return Array.from(totals.entries())
+    .map(([key, { display, count }]) => ({ key, display, count, depth: key.split('/').length - 1 }))
+    .sort((a, b) => a.key.localeCompare(b.key))
+}
+
+/** True when a note carries the selected tag or any tag nested under it. */
+export function matchesTagFilter(noteTags: string[], selected: string[]): boolean {
+  if (selected.length === 0) return true
+  return selected.every((key) =>
+    noteTags.some((tag) => {
+      const lower = tag.toLowerCase()
+      return lower === key || lower.startsWith(`${key}/`)
+    })
+  )
 }

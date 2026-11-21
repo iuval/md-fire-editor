@@ -5,6 +5,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
+import { TagHighlight } from './extensions/tagHighlight'
 import * as Y from 'yjs'
 import { Loader2 } from 'lucide-react'
 import { FirestoreYjsProvider, type ProviderStatus, type SyncStats } from '../lib/collab/provider'
@@ -109,6 +110,7 @@ export function CollaborativeEditor({
           },
         }),
         Placeholder.configure({ placeholder: 'Empezá a escribir…' }),
+        TagHighlight,
         Markdown.configure({ html: false, transformPastedText: true }),
       ],
       editorProps: {

@@ -36,6 +36,14 @@ independientes, para no confundir con la ACL). ¿Los tags entran en la búsqueda
 
 **Tamaño**: M · **Depende de**: nada.
 
+**Paridad con Obsidian**: resaltado inline en el editor (`TagHighlight`, decoración de
+ProseMirror), mayúsculas conservadas con agrupación case-insensitive (`tagKey`), árbol de
+etiquetas en el sidebar con conteos de descendientes, filtro múltiple con semántica **AND** y
+prefijo (`#clientes` incluye `#clientes/acme`), renombrado/fusión de etiqueta en todas las notas
+editables, y **paneles colapsados por defecto** (etiquetas y propiedades). Verificado: `#123` no
+es tag, `tag:` singular soportado. **Falta**: autocompletado al escribir `#` (el único punto de
+paridad pendiente).
+
 **Implementado**: `src/lib/tags.ts` (parseo de `#tag`, `#a/b`, frontmatter, código y URLs
 excluidos), `tags: string[]` denormalizado en notas y carpetas, chips de filtro en el sidebar,
 etiquetas visibles bajo el título, "Etiquetas…" en el menú de carpeta, y en el CLI
