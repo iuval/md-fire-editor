@@ -224,9 +224,13 @@ function App() {
     )
   }, [activeId, user])
 
+  const titleFocused = useRef(false)
+
   useEffect(() => {
-    if (activeNote) setTitle(activeNote.title)
-  }, [activeNote?.id])
+    if (!activeNote) return
+    // Follow external renames (agent, another device) unless the user is typing.
+    if (!titleFocused.current) setTitle(activeNote.title)
+  }, [activeNote?.id, activeNote?.title])
 
   useEffect(() => {
     if (!activeId && notes.length > 0) selectNote(notes[0].id)
@@ -724,6 +728,12 @@ function App() {
                 placeholder="Sin título"
                 aria-label="Título de la nota"
                 spellCheck={false}
+                onFocus={() => {
+                  titleFocused.current = true
+                }}
+                onBlur={() => {
+                  titleFocused.current = false
+                }}
               />
               <NotePanels
                 tags={activeNote.tags}

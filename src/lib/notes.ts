@@ -204,14 +204,35 @@ export async function createNote(uid: string, folder?: Folder): Promise<Note> {
   }
 }
 
+/**
+ * Partial update: only the fields present in the patch are written.
+ *
+ * This used to always write `title`, defaulting to an empty string, so saving
+ * markdown (which does not carry the title) wiped the note's title on every
+ * save — one second after opening it.
+ */
+/** Only the fields present in the patch end up in the write. */
+export function buildNoteUpdate(patch: {
+  title?: string
+  markdown?: string
+  tags?: string[]
+  version?: number
+}): Record<string, unknown> {
+  const update: Record<string, unknown> = {}
+  if (patch.title !== undefined) update.title = patch.title.slice(0, MAX_TITLE_LENGTH)
+  if (patch.markdown !== undefined) update.markdown = patch.markdown
+  if (patch.tags !== undefined) update.tags = patch.tags
+  if (patch.version !== undefined) update.version = patch.version
+  return update
+}
+
 export async function saveNoteContent(
   noteId: string,
-  patch: { title?: string; markdown?: string; tags?: string[]; version: number }
+  patch: { title?: string; markdown?: string; tags?: string[]; version?: number }
 ): Promise<void> {
   if (!db) return
   await updateDoc(doc(db, 'notes', noteId), {
-    ...patch,
-    title: (patch.title ?? '').slice(0, MAX_TITLE_LENGTH),
+    ...buildNoteUpdate(patch),
     updatedAt: serverTimestamp(),
   })
 }
