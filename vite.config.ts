@@ -10,11 +10,13 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'FireMD Editor',
+        name: 'FireMD — notas en Markdown',
         short_name: 'FireMD',
-        description: 'Markdown editor with Firebase sync',
-        theme_color: '#faf9f6',
-        background_color: '#faf9f6',
+        description: 'Notas en Markdown con carpetas, etiquetas y edición colaborativa en tiempo real.',
+        // Matches the actual canvas (#ffffff / #1e1e1e); the old #faf9f6 was
+        // never a color in the palette, so the installed app flashed off-brand.
+        theme_color: '#ffffff',
+        background_color: '#ffffff',
         display: 'standalone',
         start_url: '/',
         icons: [

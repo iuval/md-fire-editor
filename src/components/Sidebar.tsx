@@ -1,6 +1,7 @@
 import { ChevronRight, Folder, Link2, MoreHorizontal, PanelLeftClose, Plus, User } from 'lucide-react'
 import type { Folder as FolderType, Note } from '../lib/notes'
 import { buildFolderTree, type FolderNode } from '../lib/folders'
+import { notePreview } from '../lib/markdown'
 import { sortFolders, sortNotes, type SortMode } from '../lib/sorting'
 import type { TagNode } from '../lib/tags'
 
@@ -34,12 +35,8 @@ function formatDate(ts?: { seconds: number } | null) {
   return new Date(ts.seconds * 1000).toLocaleDateString('es', { day: '2-digit', month: '2-digit' })
 }
 
-function preview(markdown: string): string {
-  return markdown.replace(/[#*`[\]!>_~-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 56)
-}
-
 function fileMeta(note: Note) {
-  return [formatDate(note.updatedAt), preview(note.markdown)].filter(Boolean).join(' · ') || 'Vacía'
+  return [formatDate(note.updatedAt), notePreview(note.markdown)].filter(Boolean).join(' · ') || 'Vacía'
 }
 
 export function Sidebar({
@@ -145,8 +142,7 @@ export function Sidebar({
             <span className="sidebar-section-label">Etiquetas</span>
             {selectedTags.length > 0 && (
               <button
-                className="icon-btn"
-                style={{ width: 20, height: 20 }}
+                className="icon-btn icon-btn--sm"
                 onClick={() => selectedTags.forEach((tag) => onToggleTag(tag))}
                 aria-label="Quitar filtro de etiquetas"
               >
@@ -202,16 +198,17 @@ export function Sidebar({
                   </span>
                   {shared && <Link2 size={10} style={{ opacity: 0.55, flexShrink: 0 }} />}
                   {folder.tags.length > 0 && (
-                    <span className="folder-count" title={folder.tags.map((t) => `#${t}`).join(' ')}>
+                    <span className="folder-tag" title={folder.tags.map((t) => `#${t}`).join(' ')}>
                       #{folder.tags[0]}
                       {folder.tags.length > 1 ? `+${folder.tags.length - 1}` : ''}
                     </span>
                   )}
-                  <span className="folder-count">{children.length}</span>
+                  {/* The count is only useful while the children are hidden; when the
+                      folder is open it repeats what you can already see. */}
+                  {!isOpenFolder && <span className="folder-count">{children.length}</span>}
                 </button>
                 <button
-                  className="icon-btn"
-                  style={{ width: 22, height: 22 }}
+                  className="icon-btn icon-btn--sm"
                   aria-label={`Acciones de ${folder.name}`}
                   onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect()

@@ -1,9 +1,8 @@
-import { MoreHorizontal, PanelLeftOpen, Menu } from 'lucide-react'
+import { MoreHorizontal, PanelLeftOpen, Menu, X } from 'lucide-react'
 import type { AwarenessUser } from '../lib/collab/awareness'
 import type { ProviderStatus } from '../lib/collab/provider'
 
 interface PaneBarProps {
-  title: string
   status: ProviderStatus
   presence: AwarenessUser[]
   sidebarCollapsed: boolean
@@ -11,15 +10,31 @@ interface PaneBarProps {
   onToggleSidebar: () => void
   onMenu: () => void
   menuOpen: boolean
+  selectedTags?: string[]
+  onClearTags?: () => void
 }
 
-function statusColor(status: ProviderStatus) {
-  if (status.error) return '#e05252'
-  if (status.pendingWrites > 0 || !status.connected) return '#d9a13b'
-  return '#3fa65c'
+type Tone = 'ok' | 'pending' | 'error'
+
+function tone(status: ProviderStatus): Tone {
+  if (status.error) return 'error'
+  if (status.pendingWrites > 0 || !status.connected) return 'pending'
+  return 'ok'
 }
 
-function statusText(status: ProviderStatus) {
+/**
+ * Sync state is the one thing you cannot see in the document, so it earns a
+ * word when it is *not* fine. When everything is saved it collapses to a dot:
+ * silence is the success state.
+ */
+function statusLabel(status: ProviderStatus): string | null {
+  if (status.error) return 'Sin conexión'
+  if (status.pendingWrites > 0) return 'Guardando…'
+  if (!status.connected) return 'Conectando…'
+  return null
+}
+
+function statusText(status: ProviderStatus): string {
   if (status.error) return 'Sin conexión'
   if (status.pendingWrites > 0) return 'Guardando'
   if (!status.connected) return 'Conectando'
@@ -27,7 +42,6 @@ function statusText(status: ProviderStatus) {
 }
 
 export function PaneBar({
-  title,
   status,
   presence,
   sidebarCollapsed,
@@ -35,7 +49,11 @@ export function PaneBar({
   onToggleSidebar,
   onMenu,
   menuOpen,
+  selectedTags = [],
+  onClearTags,
 }: PaneBarProps) {
+  const label = statusLabel(status)
+
   return (
     <div className="pane-head">
       {(isMobile || sidebarCollapsed) && (
@@ -49,36 +67,41 @@ export function PaneBar({
         </button>
       )}
 
-      <span className="pane-title">{title || 'Sin título'}</span>
+      {selectedTags.length > 0 && (
+        <div className="pane-filter" aria-label="Filtro por etiqueta activo">
+          {selectedTags.map((tag) => (
+            <span className="tag-chip active" key={tag}>
+              #{tag}
+            </span>
+          ))}
+          <button
+            className="icon-btn icon-btn--sm"
+            onClick={onClearTags}
+            aria-label="Quitar filtro de etiquetas"
+            title="Quitar filtro"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
+      <span style={{ flex: 1 }} />
 
       {presence.length > 0 && (
-        <span style={{ display: 'flex', alignItems: 'center' }} aria-label="Editando ahora">
-          {presence.slice(0, 3).map((p, i) => (
-            <span
-              key={p.uid}
-              title={p.name}
-              className="avatar"
-              style={{
-                background: p.color,
-                color: '#fff',
-                marginLeft: i === 0 ? 0 : -5,
-                border: '1px solid light-dark(var(--color-bg), var(--color-bg-dark))',
-                boxShadow: 'none',
-              }}
-            >
+        <span className="avatar-stack" aria-label="Editando ahora">
+          {presence.slice(0, 3).map((p) => (
+            <span key={p.uid} title={p.name} className="avatar" style={{ background: p.color, color: '#fff' }}>
               {p.name.slice(0, 1).toUpperCase()}
             </span>
           ))}
         </span>
       )}
 
-      <span
-        className="status-dot"
-        style={{ background: statusColor(status) }}
-        role="img"
-        title={statusText(status)}
-        aria-label={statusText(status)}
-      />
+      <span className={`sync sync--${tone(status)}`} role="status" title={statusText(status)}>
+        <span className="sync-dot" aria-hidden="true" />
+        {label && <span className="sync-text">{label}</span>}
+        <span className="sr-only">{statusText(status)}</span>
+      </span>
 
       <button
         className="icon-btn"

@@ -145,8 +145,7 @@ export function NotePanels({
                   </select>
 
                   <button
-                    className="icon-btn"
-                    style={{ width: 20, height: 20 }}
+                    className="icon-btn icon-btn--sm"
                     aria-label={`Quitar ${property.key}`}
                     onClick={() => onPropertyChange({ key: property.key, value: null })}
                   >
@@ -191,8 +190,7 @@ export function NotePanels({
                 onChange={(e) => setNewValue(e.target.value)}
               />
               <button
-                className="icon-btn"
-                style={{ width: 22, height: 22 }}
+                className="icon-btn icon-btn--sm"
                 aria-label="Agregar propiedad"
                 onClick={addProperty}
                 disabled={!newKey.trim()}

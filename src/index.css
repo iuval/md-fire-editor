@@ -10,12 +10,33 @@
   --color-bg-3-dark: #2a2a2a;
   --color-text: #22222a;
   --color-text-dark: #dadada;
-  --color-muted: #6b6b76;
-  --color-muted-dark: #9a9a9a;
+  /* Muted is the text you read second (meta lines, hints). It is measured
+     against the tinted active row, not against white: 5.1:1 there, 6.4:1 on
+     the sidebar. */
+  --color-muted: #5c5c66;
+  --color-muted-dark: #a8a8a8;
   --color-border: #e3e3e6;
-  --color-border-dark: #333333;
+  --color-border-dark: #3a3a3a;
   --color-accent: #6f5ce0;
   --color-accent-dark: #8b7cf8;
+  /* Accent used as *text* (tags, pills). The raw accent is 3.9:1 on its own
+     tint; this is the same hue, dark enough to read. */
+  --color-accent-ink: #4a37c4;
+  --color-accent-ink-dark: #c3b9ff;
+  /* Filled surfaces carry white text, so they need their own value: the bright
+     dark-mode accent (#8b7cf8) is only 3.3:1 against white. */
+  --color-accent-solid: #6f5ce0;
+  --color-accent-solid-dark: #5b48d6;
+  /* Semantic colors. Before this they were hard-coded hex in four components,
+     so dark mode could not tune them and "Borrar nota" sat at 3.8:1. */
+  --color-danger: #b3271f;
+  --color-danger-dark: #ff9b94;
+  --color-success: #1f7a45;
+  --color-success-dark: #6ee7a0;
+  --color-warning: #8a5a00;
+  --color-warning-dark: #e8b45a;
+  --radius-control: 4px;
+  --radius-panel: 8px;
   --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -69,8 +90,11 @@ button {
   transition: margin-left 0.16s ease, transform 0.16s ease;
 }
 
+/* Off-canvas must also leave the tab order: aria-hidden alone still lets
+   keyboard users tab through 26 invisible controls. */
 .sidebar.collapsed {
   margin-left: -240px;
+  visibility: hidden;
 }
 
 .sidebar-head {
@@ -98,11 +122,11 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: none;
   color: light-dark(var(--color-muted), var(--color-muted-dark));
   cursor: pointer;
@@ -112,6 +136,13 @@ button {
 .icon-btn:hover {
   background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
   color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+/* Secondary icon buttons (row actions, dismissers). 28px keeps the WCAG 2.5.8
+   minimum of 24px; the mobile block below raises every icon button to 44px. */
+.icon-btn--sm {
+  width: 28px;
+  height: 28px;
 }
 
 .file-list {
@@ -126,8 +157,8 @@ button {
   text-align: left;
   border: none;
   background: none;
-  border-radius: 5px;
-  padding: 5px 8px 6px;
+  border-radius: var(--radius-control);
+  padding: 6px 8px 7px;
   cursor: pointer;
   color: light-dark(var(--color-text), var(--color-text-dark));
 }
@@ -136,8 +167,11 @@ button {
   background: light-dark(rgba(0, 0, 0, 0.045), rgba(255, 255, 255, 0.055));
 }
 
+/* The active note used to be accent-on-accent-tint (3.65:1 in dark). The name
+   keeps full text contrast and a 2px inset bar carries the accent instead. */
 .file-item.active {
-  background: light-dark(rgba(111, 92, 224, 0.1), rgba(139, 124, 248, 0.16));
+  background: light-dark(rgba(111, 92, 224, 0.07), rgba(139, 124, 248, 0.13));
+  box-shadow: inset 2px 0 0 light-dark(var(--color-accent), var(--color-accent-dark));
 }
 
 .file-name {
@@ -150,13 +184,12 @@ button {
 }
 
 .file-item.active .file-name {
-  color: light-dark(var(--color-accent), var(--color-accent-dark));
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .file-meta {
   display: block;
-  font-size: 11px;
+  font-size: 11.5px;
   line-height: 1.3;
   margin-top: 1px;
   color: light-dark(var(--color-muted), var(--color-muted-dark));
@@ -228,13 +261,90 @@ button {
 .pane-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 34px;
+  gap: 4px;
+  height: 40px;
   flex-shrink: 0;
   padding: 0 6px;
   border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   color: light-dark(var(--color-muted), var(--color-muted-dark));
   font-size: 12.5px;
+}
+
+/* A filter that lives only in the sidebar is invisible once the sidebar is
+   closed, so the active tags travel with the bar. */
+.pane-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.avatar-stack {
+  display: flex;
+  align-items: center;
+  padding-right: 2px;
+}
+
+.avatar-stack .avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 10.5px;
+  font-weight: 700;
+  margin-left: -6px;
+  border: 1px solid light-dark(var(--color-bg), var(--color-bg-dark));
+}
+
+.avatar-stack .avatar:first-child {
+  margin-left: 0;
+}
+
+.sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sync--ok .sync-dot {
+  background: light-dark(var(--color-success), var(--color-success-dark));
+}
+
+.sync--pending {
+  color: light-dark(var(--color-warning), var(--color-warning-dark));
+}
+
+.sync--pending .sync-dot {
+  background: currentColor;
+}
+
+.sync--error {
+  color: light-dark(var(--color-danger), var(--color-danger-dark));
+}
+
+.sync--error .sync-dot {
+  background: currentColor;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .pane-title {
@@ -364,7 +474,7 @@ button {
 }
 
 .md-editor-content a {
-  color: light-dark(var(--color-accent), var(--color-accent-dark));
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
   text-decoration: none;
 }
 
@@ -381,6 +491,7 @@ button {
 .md-editor-content table {
   border-collapse: collapse;
   width: 100%;
+  max-width: 100%;
   font-size: 0.94em;
 }
 
@@ -389,6 +500,30 @@ button {
   border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   padding: 5px 9px;
   text-align: left;
+  /* Long unbreakable strings wrap instead of pushing the table past the page
+     measure, but normal words keep their shape. */
+  overflow-wrap: break-word;
+}
+
+.md-editor-content th {
+  background: light-dark(var(--color-bg-2), var(--color-bg-3-dark));
+  font-weight: 600;
+}
+
+.md-editor-content .tableWrapper {
+  overflow-x: auto;
+}
+
+.md-editor-content .selectedCell {
+  position: relative;
+}
+
+.md-editor-content .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: light-dark(rgba(111, 92, 224, 0.12), rgba(139, 124, 248, 0.18));
 }
 
 .md-editor-content ::selection {
@@ -400,16 +535,19 @@ button {
 .scrim {
   position: fixed;
   inset: 0;
-  z-index: 40;
-  background: light-dark(rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.45));
+  /* Above the off-canvas sidebar (50) so an open dialog dims it too, below
+     menus (60) so a menu opened over a dialog still works. */
+  z-index: 55;
+  background: light-dark(rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0.6));
 }
 
 .menu {
   position: fixed;
   z-index: 60;
-  min-width: 196px;
+  min-width: 200px;
+  max-width: calc(100vw - 16px);
   padding: 4px;
-  border-radius: 7px;
+  border-radius: 6px;
   background: light-dark(var(--color-bg), var(--color-bg-2-dark));
   border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
@@ -420,9 +558,10 @@ button {
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 32px;
   padding: 6px 9px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: none;
   color: light-dark(var(--color-text), var(--color-text-dark));
   font-size: 13px;
@@ -435,7 +574,7 @@ button {
 }
 
 .menu-item.danger {
-  color: #e05252;
+  color: light-dark(var(--color-danger), var(--color-danger-dark));
 }
 
 .menu-sep {
@@ -452,9 +591,11 @@ button {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(420px, calc(100vw - 32px));
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(85svh, 720px);
+  overflow-y: auto;
   padding: 18px;
-  border-radius: 9px;
+  border-radius: var(--radius-panel);
   background: light-dark(var(--color-bg), var(--color-bg-2-dark));
   border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
@@ -502,8 +643,9 @@ button {
   flex: 1;
   min-width: 0;
   font-size: 12px;
+  min-height: 32px;
   padding: 7px 9px;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   background: light-dark(var(--color-bg-2), var(--color-bg-3-dark));
   color: light-dark(var(--color-text), var(--color-text-dark));
@@ -512,11 +654,13 @@ button {
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 7px 11px;
-  border-radius: 5px;
+  min-height: 32px;
+  padding: 7px 12px;
+  border-radius: var(--radius-control);
   border: none;
-  background: light-dark(var(--color-accent), var(--color-accent-dark));
+  background: light-dark(var(--color-accent-solid), var(--color-accent-solid-dark));
   color: #fff;
   font-size: 12.5px;
   font-weight: 500;
@@ -529,8 +673,13 @@ button {
   color: light-dark(var(--color-text), var(--color-text-dark));
 }
 
+/* A disabled primary used to be the accent at 60% opacity: it read as "faded
+   but clickable" and dropped to 2.8:1. Neutral surface, muted label, no
+   ambiguity about whether it can be pressed. */
 .btn:disabled {
-  opacity: 0.6;
+  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  opacity: 1;
   cursor: default;
 }
 
@@ -540,8 +689,86 @@ button {
   color: light-dark(var(--color-muted), var(--color-muted-dark));
 }
 
+.tone-danger {
+  color: light-dark(var(--color-danger), var(--color-danger-dark));
+}
+
+.tone-ok {
+  color: light-dark(var(--color-success), var(--color-success-dark));
+}
+
+.empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
 .empty h1 {
   color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+/* ---------- sign-in ---------- */
+
+.auth {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+}
+
+.auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(380px, 100%);
+}
+
+.auth-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.auth-mark {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.auth-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+.auth-sub {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.auth-sub code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.auth-btn {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 8px 16px;
 }
 
 .empty {
@@ -563,6 +790,12 @@ button {
 }
 
 /* ---------- misc ---------- */
+
+/* Standard properties first (Firefox), WebKit as the fallback. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.2)) transparent;
+}
 
 ::-webkit-scrollbar {
   width: 8px;
@@ -592,6 +825,57 @@ button {
   }
 }
 
+/* ---------- mobile formatting bar ---------- */
+
+.editor-toolbar {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 30;
+  display: none;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+  background: light-dark(var(--color-bg), var(--color-bg-2-dark));
+  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.editor-toolbar.is-visible {
+  display: flex;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.editor-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 44px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  cursor: pointer;
+}
+
+.editor-toolbar-btn:hover {
+  background: light-dark(var(--color-bg-2), var(--color-bg-3-dark));
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+.editor-toolbar-btn[aria-pressed='true'] {
+  background: light-dark(rgba(111, 92, 224, 0.12), rgba(139, 124, 248, 0.2));
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
+}
+
 .collaboration-caret {
   position: relative;
   margin-left: -1px;
@@ -600,30 +884,7 @@ button {
   word-break: normal;
 }
 
-@media (max-width: 767px) {
-  .sidebar {
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 50;
-    transform: translateX(-100%);
-    margin-left: 0;
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.25);
-  }
 
-  .sidebar.open {
-    transform: translateX(0);
-  }
-
-  .doc {
-    padding: 24px 18px 40vh;
-  }
-
-  .inline-title {
-    font-size: 1.6em;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   * {
@@ -669,10 +930,11 @@ button {
   gap: 5px;
   flex: 1;
   min-width: 0;
+  min-height: 32px;
   border: none;
   background: none;
   padding: 5px 4px 5px 6px;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   font-size: 13px;
   color: light-dark(var(--color-text), var(--color-text-dark));
@@ -692,6 +954,18 @@ button {
   margin-left: auto;
   padding-right: 2px;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tags live in the folder row as a single muted token, not a second count. */
+.folder-tag {
+  font-size: 10.5px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  flex-shrink: 0;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chev {
@@ -742,8 +1016,9 @@ button {
 
 .role-select {
   font-size: 11.5px;
+  min-height: 30px;
   padding: 3px 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   background: light-dark(var(--color-bg), var(--color-bg-3-dark));
   color: light-dark(var(--color-text), var(--color-text-dark));
@@ -794,14 +1069,14 @@ button {
 
 .tag-chip:hover {
   border-color: light-dark(var(--color-accent), var(--color-accent-dark));
-  color: light-dark(var(--color-accent), var(--color-accent-dark));
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
 }
 
 .tag-chip.active {
   background: light-dark(rgba(111, 92, 224, 0.1), rgba(139, 124, 248, 0.16));
   border-color: light-dark(var(--color-accent), var(--color-accent-dark));
-  color: light-dark(var(--color-accent), var(--color-accent-dark));
-  font-weight: 500;
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
+  font-weight: 600;
 }
 
 .doc-tags {
@@ -817,6 +1092,34 @@ button {
 }
 
 /* ---------- usage ---------- */
+
+.usage-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 2px;
+}
+
+.usage-hero-value {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-hero-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.usage-sep {
+  height: 1px;
+  background: light-dark(var(--color-border), var(--color-border-dark));
+}
 
 .usage-grid {
   display: flex;
@@ -847,7 +1150,7 @@ button {
 
 /* inline tags inside the editor, like Obsidian */
 .md-editor-content .tag-pill {
-  color: light-dark(var(--color-accent), var(--color-accent-dark));
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
   background: light-dark(rgba(111, 92, 224, 0.09), rgba(139, 124, 248, 0.14));
   border-radius: 3px;
   padding: 0 2px;
@@ -866,13 +1169,14 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 6px 2px 2px;
+  min-height: 28px;
+  padding: 4px 8px 4px 4px;
   border: none;
   background: none;
   color: light-dark(var(--color-muted), var(--color-muted-dark));
-  font-size: 11.5px;
+  font-size: 12px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 .panel-toggle:hover {
@@ -946,10 +1250,11 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 30px;
   border: none;
   background: none;
-  border-radius: 4px;
-  padding: 3px 6px;
+  border-radius: var(--radius-control);
+  padding: 4px 6px;
   cursor: pointer;
   font-size: 12px;
   color: light-dark(var(--color-text), var(--color-text-dark));
@@ -962,8 +1267,8 @@ button {
 
 .tag-tree-row.active {
   background: light-dark(rgba(111, 92, 224, 0.1), rgba(139, 124, 248, 0.16));
-  color: light-dark(var(--color-accent), var(--color-accent-dark));
-  font-weight: 500;
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
+  font-weight: 600;
 }
 
 .tag-tree-name {
@@ -978,4 +1283,93 @@ button {
   font-size: 10.5px;
   color: light-dark(var(--color-muted), var(--color-muted-dark));
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 767px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    margin-left: 0;
+    visibility: hidden;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.25);
+    transition: transform 0.16s ease, visibility 0.16s ease;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+    visibility: visible;
+  }
+
+  .doc {
+    padding: 24px 18px 40vh;
+  }
+
+  .inline-title {
+    font-size: 1.6em;
+  }
+
+  /* Touch targets: 44px minimum, no exceptions. Desktop keeps 32px so the
+     sidebar stays dense where a mouse is pointing. */
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .file-item {
+    padding: 10px 8px;
+  }
+
+  .folder-toggle,
+  .tag-tree-row {
+    min-height: 44px;
+  }
+
+  .panel-toggle {
+    min-height: 44px;
+    font-size: 13px;
+  }
+
+  .inline-title {
+    min-height: 44px;
+  }
+
+  .tag-chip {
+    min-height: 32px;
+    padding: 5px 9px;
+  }
+
+  .menu-item {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .btn,
+  .field,
+  .role-select {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .account {
+    min-height: 44px;
+  }
+
+  /* A centered 440px dialog on a 390px phone is a squeezed card; from the
+     bottom it is reachable with a thumb and never covers the whole page. */
+  .share {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 88svh;
+    transform: none;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 12px 12px 0 0;
+    border-bottom: none;
+  }
 }

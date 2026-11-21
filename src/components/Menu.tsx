@@ -36,8 +36,10 @@ export function Menu({ items, onClose, anchor = 'top-right', pos }: MenuProps) {
   const style: React.CSSProperties =
     anchor === 'pointer' && pos
       ? {
-          top: Math.min(pos.y, window.innerHeight - 220),
-          left: Math.min(pos.x, window.innerWidth - 220),
+          // Callers pass a preferred anchor; clamping here keeps the panel on
+          // screen at both edges instead of relying on magic offsets.
+          top: Math.max(8, Math.min(pos.y, window.innerHeight - 240)),
+          left: Math.max(8, Math.min(pos.x, window.innerWidth - 220)),
         }
       : anchor === 'top-right'
         ? { top: 38, right: 8 }

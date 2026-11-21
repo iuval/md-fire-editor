@@ -62,3 +62,22 @@ export function normalizeMarkdown(markdown: string): string {
 export function sameMarkdown(a: string, b: string): boolean {
   return normalizeMarkdown(a) === normalizeMarkdown(b)
 }
+
+/**
+ * One-line summary for the sidebar.
+ *
+ * The sidebar used to strip markdown punctuation from the *whole* file, so a
+ * note with properties showed `19/11 · status: en curso prioridad: alta` — raw
+ * YAML where the first sentence should be. Frontmatter and a leading H1 (which
+ * repeats the title shown right above it) are dropped before the text is
+ * flattened.
+ */
+export function notePreview(markdown: string, max = 56): string {
+  const { body } = splitFrontmatter(markdown)
+  const withoutHeading = body.replace(/^\s{0,3}#\s+.*(\r?\n|$)/, '')
+  return withoutHeading
+    .replace(/[#*`[\]!>_~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
+}

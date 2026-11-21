@@ -757,14 +757,20 @@ function App() {
     const appUrl = typeof window !== 'undefined' ? window.location.origin : ''
 
     return (
-      <div className="empty" style={{ gap: 14 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, letterSpacing: '-0.01em' }}>FireMD</h1>
-        <p style={{ maxWidth: 320, margin: 0, lineHeight: 1.6, textAlign: 'center' }}>
-          Notas en Markdown, en carpetas, compartibles para leer o editar.
-        </p>
-        <button className="btn" onClick={() => void doGoogleSignIn()}>
-          Entrar con Google
-        </button>
+      <div className="auth">
+        <div className="auth-panel">
+          <span className="auth-wordmark">
+            <img className="auth-mark" src="/favicon.svg" alt="" width={20} height={20} />
+            FireMD
+          </span>
+          <h1 className="auth-title">Tus notas en Markdown, en carpetas, compartidas.</h1>
+          <p className="auth-sub">
+            Edición en tiempo real sobre tu vault de Obsidian. Lo que escribís sigue siendo un{' '}
+            <code>.md</code>.
+          </p>
+          <button className="btn auth-btn" onClick={() => void doGoogleSignIn()}>
+            Entrar con Google
+          </button>
 
         {browser.embedded && (
           <div className="share-hint-box" style={{ maxWidth: 380, textAlign: 'left' }}>
@@ -778,7 +784,8 @@ function App() {
           </div>
         )}
 
-        {authError && <p className="hint" style={{ color: '#e05252', maxWidth: 360 }}>{authError}</p>}
+          {authError && <p className="hint tone-danger">{authError}</p>}
+        </div>
       </div>
     )
   }
@@ -822,7 +829,6 @@ function App() {
 
       <main className="pane">
         <PaneBar
-          title={activeNote?.title || ''}
           status={status}
           presence={presence}
           sidebarCollapsed={!isMobile && collapsed}
@@ -832,6 +838,8 @@ function App() {
             setDialog(dialog.kind === 'note-menu' ? { kind: 'none' } : { kind: 'note-menu' })
           }
           menuOpen={dialog.kind === 'note-menu'}
+          selectedTags={selectedTags}
+          onClearTags={() => setSelectedTags([])}
         />
 
         <div className="scroll">
@@ -848,17 +856,37 @@ function App() {
           )}
 
           {loadError && (
-            <p className="hint" style={{ padding: '16px 24px', color: '#e05252' }}>
+            <p className="hint tone-danger" style={{ padding: '16px 24px' }}>
               {loadError}
             </p>
           )}
 
           {!activeNote && !loadError && (
             <div className="empty" style={{ minHeight: '60vh' }}>
-              <p style={{ margin: 0 }}>No hay ninguna nota abierta</p>
-              <button className="btn ghost" onClick={() => void handleNewNote()}>
-                Crear nota
-              </button>
+              {notes.length === 0 ? (
+                <>
+                  <p className="empty-title">Todavía no hay notas</p>
+                  <p className="hint" style={{ maxWidth: 340, textAlign: 'center' }}>
+                    Creá una nota nueva, o importá un vault de Obsidian (.zip o .md) y seguí donde
+                    estabas.
+                  </p>
+                  <div className="row">
+                    <button className="btn" onClick={() => void handleNewNote()}>
+                      Crear nota
+                    </button>
+                    <button className="btn ghost" onClick={() => importRef.current?.click()}>
+                      Importar vault
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="empty-title">Elegí una nota</p>
+                  <button className="btn ghost" onClick={() => void handleNewNote()}>
+                    Crear nota
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -908,6 +936,7 @@ function App() {
                 onPresence={setPresence}
                 onStatus={setStatus}
                 onStats={handleStats}
+                isMobile={isMobile}
               />
             </div>
           )}
