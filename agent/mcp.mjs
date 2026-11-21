@@ -11,6 +11,7 @@ import {
   openStore,
   listNotes,
   listFolders,
+  listTags,
   readNote,
   patchNote,
   appendNote,
@@ -67,7 +68,12 @@ const TOOLS = [
     description: 'Busca texto en las notas: id:línea: texto.',
     inputSchema: {
       type: 'object',
-      properties: { query: { type: 'string' }, limit: { type: 'number' }, context: { type: 'number' } },
+      properties: {
+        query: { type: 'string' },
+        tag: { type: 'string' },
+        limit: { type: 'number' },
+        context: { type: 'number' },
+      },
       required: ['query'],
     },
   },
@@ -79,6 +85,11 @@ const TOOLS = [
       properties: { title: { type: 'string' }, folder: { type: 'string' }, body: { type: 'string' } },
       required: ['title'],
     },
+  },
+  {
+    name: 'tags_list',
+    description: 'Etiquetas con cantidad de notas: etiqueta\\tnotas.',
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'folders_list',
@@ -113,11 +124,16 @@ async function callTool(db, name, a) {
       return text(`ok ${result.delta >= 0 ? '+' : ''}${result.delta} ${result.etag}`)
     }
     case 'notes_search':
-      return text((await searchNotes(db, a.query, { limit: a.limit, context: a.context })) || '(sin resultados)')
+      return text(
+        (await searchNotes(db, a.query, { limit: a.limit, context: a.context, tag: a.tag })) ||
+          '(sin resultados)'
+      )
     case 'notes_create': {
       const result = await createNote(db, { title: a.title, folder: a.folder, body: a.body })
       return text(result.short)
     }
+    case 'tags_list':
+      return text((await listTags(db)) || '(sin etiquetas)')
     case 'folders_list':
       return text((await listFolders(db)) || '(sin carpetas)')
     default:

@@ -28,6 +28,8 @@ export interface Note extends Acl {
   aclSource: AclSource
   title: string
   markdown: string
+  /** Derived from the markdown on save; used to filter without downloading bodies. */
+  tags: string[]
   version: number
   createdAt?: Timestampish | null
   updatedAt?: Timestampish | null
@@ -37,6 +39,7 @@ export interface Folder extends Acl {
   id: string
   ownerId: string
   name: string
+  tags: string[]
   createdAt?: Timestampish | null
   updatedAt?: Timestampish | null
 }
@@ -68,6 +71,7 @@ export function toNote(id: string, data: Record<string, unknown>): Note {
     ...aclFrom(data),
     title: (data.title as string) ?? '',
     markdown: (data.markdown as string) ?? '',
+    tags: (data.tags as string[]) ?? [],
     version: (data.version as number) ?? 0,
     createdAt: (data.createdAt as Timestampish) ?? null,
     updatedAt: (data.updatedAt as Timestampish) ?? null,
@@ -79,6 +83,7 @@ export function toFolder(id: string, data: Record<string, unknown>): Folder {
     id,
     ownerId: (data.ownerId as string) ?? '',
     name: (data.name as string) ?? '',
+    tags: (data.tags as string[]) ?? [],
     ...aclFrom(data),
     createdAt: (data.createdAt as Timestampish) ?? null,
     updatedAt: (data.updatedAt as Timestampish) ?? null,
@@ -178,6 +183,7 @@ export async function createNote(uid: string, folder?: Folder): Promise<Note> {
     ...acl,
     title: 'Sin título',
     markdown: '',
+    tags: [],
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -191,13 +197,14 @@ export async function createNote(uid: string, folder?: Folder): Promise<Note> {
     ...acl,
     title: 'Sin título',
     markdown: '',
+    tags: [],
     version: 1,
   }
 }
 
 export async function saveNoteContent(
   noteId: string,
-  patch: { title?: string; markdown?: string; version: number }
+  patch: { title?: string; markdown?: string; tags?: string[]; version: number }
 ): Promise<void> {
   if (!db) return
   await updateDoc(doc(db, 'notes', noteId), {
@@ -232,7 +239,7 @@ export async function deleteNote(noteId: string): Promise<void> {
 
 // ---------- folders ----------
 
-export async function createFolder(uid: string, name: string): Promise<Folder> {
+export async function createFolder(uid: string, name: string, tags: string[] = []): Promise<Folder> {
   if (!db) throw new Error('Firebase no está configurado')
   const ref = doc(collection(db, 'folders'))
   const now = serverTimestamp()
@@ -240,6 +247,7 @@ export async function createFolder(uid: string, name: string): Promise<Folder> {
   await setDoc(ref, {
     ownerId: uid,
     name: clean,
+    tags,
     memberIds: [uid],
     roles: { [uid]: 'owner' },
     access: 'restricted',
@@ -250,10 +258,16 @@ export async function createFolder(uid: string, name: string): Promise<Folder> {
     id: ref.id,
     ownerId: uid,
     name: clean,
+    tags,
     memberIds: [uid],
     roles: { [uid]: 'owner' },
     access: 'restricted',
   }
+}
+
+export async function updateFolderTags(folderId: string, tags: string[]): Promise<void> {
+  if (!db) return
+  await updateDoc(doc(db, 'folders', folderId), { tags, updatedAt: serverTimestamp() })
 }
 
 export async function renameFolder(folderId: string, name: string): Promise<void> {

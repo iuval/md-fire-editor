@@ -206,11 +206,37 @@ describe('agent writes through the rules', () => {
     ).rejects.toThrow(/etag/i)
   })
 
-  it('appends and searches the new text', async () => {
+  it('keeps tags in sync when it edits, and lists them', async () => {
     asAgent(editorToken)
     const db = await core.openStore()
-    await core.appendNote(db, 'noteideas', '- tres\n')
+
+    const before = await core.readNote(db, 'noteideas')
+    await core.patchNote(
+      db,
+      'noteideas',
+      [{ find: '- dos\n', replace: '- dos #revisar\n' }],
+      { etag: before.etag }
+    )
+
+    const note = await db.get('notes', 'noteideas01')
+    expect(note.data.tags).toContain('revisar')
+
+    const inventory = await core.listTags(db)
+    expect(inventory).toContain('revisar')
+
+    const byTag = await core.searchNotes(db, '', { tag: 'revisar' })
+    expect(byTag).toContain('noteidea')
+  })
+
+  it('appends text, updates tags and can be found again', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    await core.appendNote(db, 'noteideas', '- tres #idea\n')
     expect(await core.searchNotes(db, 'tres')).toContain('noteidea')
+
+    const note = await db.get('notes', 'noteideas01')
+    expect(note.data.tags).toContain('idea')
+    expect(await core.searchNotes(db, '', { tag: 'idea' })).toContain('noteidea')
   })
 
   it('creates a note inside a folder it can write, owned by the agent', async () => {

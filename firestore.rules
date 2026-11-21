@@ -133,13 +133,21 @@ service cloud.firestore {
 
     // ---------- folders ----------
 
+    // Rules cannot iterate a list, so tags are validated structurally: it must
+    // be a list of bounded size. Content is sanitized by the client (tags never
+    // affect permissions, only filtering).
+    function validTags(d) {
+      return !d.keys().hasAny(['tags']) || (d.tags is list && d.tags.size() <= 30);
+    }
+
     function validFolder(d) {
       return d.keys().hasOnly([
-          'ownerId', 'name', 'memberIds', 'roles', 'access', 'createdAt', 'updatedAt'
+          'ownerId', 'name', 'tags', 'memberIds', 'roles', 'access', 'createdAt', 'updatedAt'
         ])
         && isString(d.ownerId)
         && isString(d.name)
         && d.name.size() <= 120
+        && validTags(d)
         && validAcl(d);
     }
 
@@ -178,7 +186,7 @@ service cloud.firestore {
 
     function nameOnlyChange() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['name', 'updatedAt']);
+        .hasOnly(['name', 'tags', 'updatedAt']);
     }
 
     // ---------- notes ----------
@@ -186,7 +194,7 @@ service cloud.firestore {
     function validNote(d) {
       return d.keys().hasOnly([
           'ownerId', 'folderId', 'aclSource', 'memberIds', 'roles', 'access',
-          'title', 'markdown', 'version', 'createdAt', 'updatedAt'
+          'title', 'markdown', 'tags', 'version', 'createdAt', 'updatedAt'
         ])
         && isString(d.ownerId)
         // Notes created before folders existed omit both fields: treat as 'own'.
@@ -197,12 +205,13 @@ service cloud.firestore {
         && d.title.size() <= 300
         && isString(d.markdown)
         && d.markdown.size() <= 250000
+        && validTags(d)
         && (!d.keys().hasAny(['version']) || d.version is int);
     }
 
     function contentOnlyChange() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['title', 'markdown', 'updatedAt', 'version']);
+        .hasOnly(['title', 'markdown', 'tags', 'updatedAt', 'version']);
     }
 
     function ownershipUnchanged(current, next) {

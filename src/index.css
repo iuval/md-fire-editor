@@ -763,3 +763,55 @@ button {
   align-items: center;
   gap: 6px;
 }
+
+/* ---------- tags ---------- */
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 6px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  background: none;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-chip:hover {
+  border-color: light-dark(var(--color-accent), var(--color-accent-dark));
+  color: light-dark(var(--color-accent), var(--color-accent-dark));
+}
+
+.tag-chip.active {
+  background: light-dark(rgba(111, 92, 224, 0.1), rgba(139, 124, 248, 0.16));
+  border-color: light-dark(var(--color-accent), var(--color-accent-dark));
+  color: light-dark(var(--color-accent), var(--color-accent-dark));
+  font-weight: 500;
+}
+
+.doc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 12px;
+}
+
+.doc-tags .tag-chip {
+  cursor: default;
+  font-size: 11.5px;
+}

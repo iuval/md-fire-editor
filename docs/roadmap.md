@@ -11,7 +11,7 @@ Blaze + Functions, cualquier medición hecha en el cliente se puede falsear y si
 
 ---
 
-## 1. Tags en notas y carpetas (estilo Obsidian)
+## 1. Tags en notas y carpetas (estilo Obsidian) — ✅ implementado (21-nov-2026)
 
 **Qué**: `#tag`, `#a/b` anidados y `tags:` en frontmatter, con filtro en el sidebar.
 
@@ -35,6 +35,12 @@ independientes, para no confundir con la ACL). ¿Los tags entran en la búsqueda
 (propuesta: sí, `mdfire find --tag`).
 
 **Tamaño**: M · **Depende de**: nada.
+
+**Implementado**: `src/lib/tags.ts` (parseo de `#tag`, `#a/b`, frontmatter, código y URLs
+excluidos), `tags: string[]` denormalizado en notas y carpetas, chips de filtro en el sidebar,
+etiquetas visibles bajo el título, "Etiquetas…" en el menú de carpeta, y en el CLI
+`mdfire tags`, `mdfire find --tag` (también como `tags_list` en MCP). El CLI mantiene el campo
+al parchear; reglas validan lista y tope de 30 (no pueden recorrer elementos).
 
 ---
 

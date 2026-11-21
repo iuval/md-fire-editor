@@ -671,6 +671,53 @@ describe('profiles', () => {
   })
 })
 
+describe('tags', () => {
+  it('a note can carry a bounded tag list', async () => {
+    await seedNote('n1')
+    await assertSucceeds(
+      updateDoc(doc(db(OWNER), 'notes', 'n1'), {
+        tags: ['trabajo', 'clientes/acme'],
+        updatedAt: ts(),
+      })
+    )
+  })
+
+  it('rejects a tag field that is not a list, or is too long', async () => {
+    await seedNote('n1')
+    await assertFails(updateDoc(doc(db(OWNER), 'notes', 'n1'), { tags: 'trabajo', updatedAt: ts() }))
+    await assertFails(
+      updateDoc(doc(db(OWNER), 'notes', 'n1'), {
+        tags: Array.from({ length: 31 }, (_, i) => `t${i}`),
+        updatedAt: ts(),
+      })
+    )
+  })
+
+  it('a viewer cannot tag a note, an editor can', async () => {
+    await seedNote('n1', everyRole)
+    await assertFails(updateDoc(doc(db(VIEWER), 'notes', 'n1'), { tags: ['x'], updatedAt: ts() }))
+    await assertSucceeds(updateDoc(doc(db(EDITOR), 'notes', 'n1'), { tags: ['x'], updatedAt: ts() }))
+  })
+
+  it('folders accept tags from their editor without unlocking sharing', async () => {
+    await seedFolder('f1', everyRole)
+    await assertSucceeds(
+      updateDoc(doc(db(EDITOR), 'folders', 'f1'), { tags: ['equipo'], updatedAt: ts() })
+    )
+    await assertFails(
+      updateDoc(doc(db(EDITOR), 'folders', 'f1'), { access: 'link-view', updatedAt: ts() })
+    )
+  })
+
+  it('tagging does not require a paid plan', async () => {
+    await grantPaid(OWNER, 'free')
+    await seedNote('n1')
+    await assertSucceeds(
+      updateDoc(doc(db(OWNER), 'notes', 'n1'), { tags: ['gratis'], updatedAt: ts() })
+    )
+  })
+})
+
 describe('plans gate sharing', () => {
   it('a free owner cannot change the ACL of a note', async () => {
     await grantPaid(OWNER, 'free')

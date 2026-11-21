@@ -3,7 +3,7 @@
 // Firebase account (paired from the web app). Security rules apply.
 
 import { login, logout, whoami, pairingCode } from './auth.mjs'
-import { AgentError, openStore, listNotes, listFolders, readNote, patchNote, appendNote, createNote, deleteNote, searchNotes } from './core.mjs'
+import { AgentError, openStore, listNotes, listFolders, listTags, readNote, patchNote, appendNote, createNote, deleteNote, searchNotes } from './core.mjs'
 import { parseArgs } from './args.mjs'
 
 const HELP = `mdfire — notas FireMD desde la terminal (con permisos del agente)
@@ -14,7 +14,8 @@ const HELP = `mdfire — notas FireMD desde la terminal (con permisos del agente
   ls [--folder <f|root>] [--limit n]         id\\ttítulo\\tfecha\\tcarpeta
   folders                                   id\\tnombre
   cat <id> [--max-bytes n] [--etag]          markdown crudo
-  find <texto> [--limit n] [--context n]     id:línea: texto
+  find <texto> [--tag t] [--limit n]         id:línea: texto
+  tags                                      etiqueta\tnotas
   patch <id> [--etag e] [--find a --replace b]... [--all]
   append <id> [--text t]                     agrega al final (o stdin)
   new --folder f --title t [--body t]
@@ -88,10 +89,15 @@ try {
           break
         }
 
+        case 'tags':
+          process.stdout.write(withNewline(await listTags(db)))
+          break
+
         case 'find': {
           const out = await searchNotes(db, args._.join(' '), {
             limit: Number(args.limit) || 20,
             context: Number(args.context) || 0,
+            tag: typeof args.tag === 'string' ? args.tag : undefined,
           })
           process.stdout.write(withNewline(out))
           break

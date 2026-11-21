@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bot, Download, FileDown, FolderPlus, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
+import { Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { Menu, type MenuItem } from './components/Menu'
@@ -13,6 +13,7 @@ import { useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, notesToFiles, safeFileName, suggestExportName, zipStored } from './lib/export'
 import { track } from './lib/analytics'
+import { extractTags, parseTagInput } from './lib/tags'
 import { isPaid, subscribeEntitlement } from './lib/entitlements'
 import {
   isAclOwner,
@@ -22,6 +23,7 @@ import {
   saveNoteContent,
   subscribeNote,
   updateFolderSharing,
+  updateFolderTags,
   updateNoteSharing,
   type Access,
   type Folder,
@@ -42,6 +44,7 @@ type Dialog =
   | { kind: 'move' }
   | { kind: 'new-folder' }
   | { kind: 'rename-folder'; folderId: string }
+  | { kind: 'folder-tags'; folderId: string }
   | { kind: 'agents' }
   | { kind: 'upgrade' }
 
@@ -102,6 +105,7 @@ function App() {
   const [title, setTitle] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [paid, setPaid] = useState(false)
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -189,7 +193,7 @@ function App() {
   const noteOwner = !!user && !!activeNote && activeNote.ownerId === user.uid
 
   const persist = useCallback(
-    (patch: { title?: string; markdown?: string }) => {
+    (patch: { title?: string; markdown?: string; tags?: string[] }) => {
       if (!activeNote) return
       void saveNoteContent(activeNote.id, { ...patch, version: activeNote.version + 1 }).catch(
         () => undefined
@@ -201,7 +205,7 @@ function App() {
   const handleMarkdownChange = useCallback(
     (markdown: string) => {
       if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => persist({ markdown }), 1200)
+      saveTimer.current = setTimeout(() => persist({ markdown, tags: extractTags(markdown) }), 1200)
     },
     [persist]
   )
@@ -240,7 +244,13 @@ function App() {
         const title = (heading || file.name.replace(/\.md$/i, '')).slice(0, 300)
         const note = await addNote()
         if (!note) continue
-        await saveNoteContent(note.id, { title, markdown: text.slice(0, 250_000), version: 1 })
+        const markdown = text.slice(0, 250_000)
+        await saveNoteContent(note.id, {
+          title,
+          markdown,
+          tags: extractTags(markdown),
+          version: 1,
+        })
         if (!first) first = note.id
       }
       track('import', user.uid, { count: list.length })
@@ -377,6 +387,11 @@ function App() {
           icon: <Pencil size={14} />,
           onSelect: () => setDialog({ kind: 'rename-folder', folderId: folderMenu.folder.id }),
         },
+        {
+          label: 'Etiquetas…',
+          icon: <Hash size={14} />,
+          onSelect: () => setDialog({ kind: 'folder-tags', folderId: folderMenu.folder.id }),
+        },
         ...(isAclOwner(folderMenu.folder, user?.uid)
           ? [
               {
@@ -405,6 +420,9 @@ function App() {
 
   const userName = user?.displayName || user?.email?.split('@')[0] || ''
 
+  const availableTags = Array.from(new Set(notes.flatMap((note) => note.tags))).sort()
+  const visibleNotes = tagFilter ? notes.filter((note) => note.tags.includes(tagFilter)) : notes
+
   if (authLoading) return <div className="empty">Cargando…</div>
 
   if (!user) {
@@ -427,7 +445,7 @@ function App() {
       {isMobile && sidebarOpen && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
 
       <Sidebar
-        notes={notes}
+        notes={visibleNotes}
         folders={folders}
         activeId={activeId}
         onSelect={(id) => {
@@ -445,6 +463,9 @@ function App() {
         isMobile={isMobile}
         isOpen={isMobile ? sidebarOpen : !collapsed}
         loading={dataLoading}
+        availableTags={availableTags}
+        tagFilter={tagFilter}
+        onToggleTag={(tag) => setTagFilter((current) => (current === tag ? null : tag))}
         uid={user.uid}
         userName={userName}
         photoURL={user.photoURL}
@@ -493,6 +514,15 @@ function App() {
                 aria-label="Título de la nota"
                 spellCheck={false}
               />
+              {activeNote.tags.length > 0 && (
+                <div className="doc-tags">
+                  {activeNote.tags.map((tag) => (
+                    <span key={tag} className="tag-chip">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
               {sharedFolder && (
                 <p className="readonly-note">
                   En la carpeta «{sharedFolder.name}» · permisos heredados de la carpeta
@@ -665,6 +695,18 @@ function App() {
           label="Nombre"
           confirmLabel="Crear"
           onConfirm={(name) => void handleNewFolder(name)}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
+      {dialog.kind === 'folder-tags' && (
+        <InputDialog
+          title="Etiquetas de la carpeta"
+          label="Separadas por coma o espacio (ej. trabajo, clientes/acme)"
+          initialValue={folders.find((f) => f.id === dialog.folderId)?.tags.join(', ') ?? ''}
+          confirmLabel="Guardar"
+          maxLength={200}
+          onConfirm={(value) => void updateFolderTags(dialog.folderId, parseTagInput(value))}
           onClose={() => setDialog({ kind: 'none' })}
         />
       )}

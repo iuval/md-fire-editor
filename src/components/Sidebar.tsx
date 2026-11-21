@@ -16,6 +16,9 @@ interface SidebarProps {
   isMobile: boolean
   isOpen: boolean
   loading: boolean
+  availableTags: string[]
+  tagFilter: string | null
+  onToggleTag: (tag: string) => void
   uid?: string
   userName?: string
   photoURL?: string | null
@@ -50,6 +53,9 @@ export function Sidebar({
   isMobile,
   isOpen,
   loading,
+  availableTags,
+  tagFilter,
+  onToggleTag,
   uid,
   userName,
   photoURL,
@@ -101,6 +107,26 @@ export function Sidebar({
         </button>
       </div>
 
+      {availableTags.length > 0 && (
+        <div className="tag-row" aria-label="Filtrar por etiqueta">
+          {availableTags.slice(0, 12).map((tag) => (
+            <button
+              key={tag}
+              className={`tag-chip${tagFilter === tag ? ' active' : ''}`}
+              aria-pressed={tagFilter === tag}
+              onClick={() => onToggleTag(tag)}
+            >
+              #{tag}
+            </button>
+          ))}
+          {tagFilter && (
+            <button className="tag-chip" onClick={() => onToggleTag(tagFilter)} aria-label="Quitar filtro">
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="file-list">
         {loading && <p className="hint" style={{ padding: '10px 8px' }}>Cargando…</p>}
 
@@ -126,6 +152,12 @@ export function Sidebar({
                   <Folder size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
                   <span className="folder-name">{folder.name}</span>
                   {shared && <Link2 size={10} style={{ opacity: 0.55, flexShrink: 0 }} />}
+                  {folder.tags.length > 0 && (
+                    <span className="folder-count" title={folder.tags.map((t) => `#${t}`).join(' ')}>
+                      #{folder.tags[0]}
+                      {folder.tags.length > 1 ? `+${folder.tags.length - 1}` : ''}
+                    </span>
+                  )}
                   <span className="folder-count">{children.length}</span>
                 </button>
                 <button

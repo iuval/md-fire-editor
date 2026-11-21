@@ -45,6 +45,61 @@ export function etagOf(data) {
   return `${data.version ?? 0}-${hash(String(data.markdown ?? ''))}`
 }
 
+// --- tags (mirrors src/lib/tags.ts; the CLI must keep the denormalized field
+// in sync because the app filters on it without downloading note bodies) ---
+
+const MAX_TAGS = 30
+const MAX_TAG_LENGTH = 50
+const FENCED_CODE = /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[^\n]*$/gm
+const INLINE_CODE = /`[^`\n]*`/g
+const INLINE_TAG = /(^|[\s([{,;:'"])#([\p{L}\p{N}_/-]+)/gu
+
+function normalizeTag(raw) {
+  const clean = String(raw)
+    .trim()
+    .replace(/^#+/, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}_/-]/gu, '')
+    .replace(/\/{2,}/g, '/')
+    .replace(/^\/+|\/+$/g, '')
+  return !clean || clean.length > MAX_TAG_LENGTH ? null : clean
+}
+
+export function extractTags(markdown) {
+  if (!markdown) return []
+  const withoutCode = String(markdown).replace(FENCED_CODE, ' ').replace(INLINE_CODE, ' ')
+  const found = new Set()
+
+  if (String(markdown).startsWith('---')) {
+    const end = String(markdown).indexOf('\n---', 3)
+    if (end !== -1) {
+      const block = String(markdown).slice(3, end)
+      const inline = block.match(/^tags:\s*\[(.*?)\]\s*$/m)
+      if (inline) {
+        inline[1].split(',').forEach((tag) => {
+          const normalized = normalizeTag(tag)
+          if (normalized) found.add(normalized)
+        })
+      } else {
+        const list = block.match(/^tags:[ \t]*\n((?:[ \t]*-[ \t]*.+\n?)+)/m)
+        if (list) {
+          list[1].split('\n').forEach((line) => {
+            const normalized = normalizeTag(line.replace(/^[ \t]*-[ \t]*/, ''))
+            if (normalized) found.add(normalized)
+          })
+        }
+      }
+    }
+  }
+
+  for (const match of withoutCode.matchAll(INLINE_TAG)) {
+    const normalized = normalizeTag(match[2])
+    if (normalized) found.add(normalized)
+  }
+
+  return Array.from(found).sort().slice(0, MAX_TAGS)
+}
+
 export function shortId(id) {
   return id.slice(0, 8)
 }
@@ -122,7 +177,13 @@ export async function listNotes(db, { folder, limit = 50 } = {}) {
     where: memberFilter(db),
     orderBy: [{ field: { fieldPath: 'updatedAt' }, direction: 'DESCENDING' }],
     select: {
-      fields: [{ fieldPath: 'title' }, { fieldPath: 'updatedAt' }, { fieldPath: 'folderId' }, { fieldPath: 'memberIds' }],
+      fields: [
+        { fieldPath: 'title' },
+        { fieldPath: 'updatedAt' },
+        { fieldPath: 'folderId' },
+        { fieldPath: 'tags' },
+        { fieldPath: 'memberIds' },
+      ],
     },
     limit: 200,
   })
@@ -222,7 +283,7 @@ export async function patchNote(db, ref, edits, { etag, replaceAll = false } = {
     await db.patch(
       'notes',
       doc.id,
-      { markdown: next },
+      { markdown: next, tags: extractTags(next) },
       {
         // Compare-and-swap on the read revision: a concurrent edit fails here
         // instead of silently overwriting.
@@ -254,7 +315,7 @@ export async function appendNote(db, ref, text) {
   await db.patch(
     'notes',
     doc.id,
-    { markdown: next },
+    { markdown: next, tags: extractTags(next) },
     {
       updateTime: doc.updateTime,
       transforms: [{ fieldPath: 'version', increment: 1 }, { fieldPath: 'updatedAt' }],
@@ -294,6 +355,7 @@ export async function createNote(db, { title = 'Sin título', folder, body = '' 
       ...acl,
       title: String(title).slice(0, 300),
       markdown: String(body),
+      tags: extractTags(String(body)),
       version: 1,
     },
     { transforms: [{ fieldPath: 'createdAt' }, { fieldPath: 'updatedAt' }] }
@@ -308,23 +370,54 @@ export async function deleteNote(db, ref) {
   return { id: doc.id }
 }
 
+/** Tag inventory with counts, from the notes this identity can see. */
+export async function listTags(db) {
+  const docs = await db.query('notes', {
+    where: memberFilter(db),
+    select: { fields: [{ fieldPath: 'tags' }, { fieldPath: 'memberIds' }] },
+    limit: 300,
+  })
+
+  const counts = new Map()
+  for (const doc of docs) {
+    for (const tag of doc.data.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+  }
+  if (counts.size === 0) return ''
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([tag, count]) => `${tag}\t${count}`)
+    .join('\n')
+}
+
 /** Searches bodies; returns `id:line: text` with no surrounding context by default. */
-export async function searchNotes(db, query, { limit = 20, context = 0, notes = 200 } = {}) {
-  if (!query) throw new AgentError('falta la búsqueda', 'E_USAGE')
-  const needle = String(query).toLowerCase()
+export async function searchNotes(db, query, { limit = 20, context = 0, notes = 200, tag } = {}) {
+  if (!query && !tag) throw new AgentError('falta la búsqueda', 'E_USAGE')
+  const needle = String(query ?? '').toLowerCase()
+  const wantedTag = tag ? String(tag).replace(/^#/, '').toLowerCase() : null
 
   const docs = await db.query('notes', {
     where: memberFilter(db),
     orderBy: [{ field: { fieldPath: 'updatedAt' }, direction: 'DESCENDING' }],
     select: {
-      fields: [{ fieldPath: 'title' }, { fieldPath: 'markdown' }, { fieldPath: 'memberIds' }],
+      fields: [
+        { fieldPath: 'title' },
+        { fieldPath: 'markdown' },
+        { fieldPath: 'tags' },
+        { fieldPath: 'memberIds' },
+      ],
     },
     limit: Math.min(Number(notes) || 200, 300),
   })
 
   const out = []
   for (const doc of docs) {
+    if (wantedTag && !(doc.data.tags ?? []).includes(wantedTag)) continue
     const lines = String(doc.data.markdown ?? '').split('\n')
+    if (!needle) {
+      out.push(`${shortId(doc.id)}: ${doc.data.title ?? ''}`)
+      if (out.length >= limit) return out.join('\n')
+      continue
+    }
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i].toLowerCase().includes(needle)) continue
       if (context > 0) {
