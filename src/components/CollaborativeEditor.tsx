@@ -37,6 +37,11 @@ export function CollaborativeEditor({
     changeRef.current = onMarkdownChange
   }, [onMarkdownChange])
 
+  // Last markdown this editor emitted. Anything else arriving on the note
+  // document is an external edit (e.g. the agent CLI) and must be applied to
+  // the shared Y document so every client converges on it.
+  const emittedRef = useRef(note.markdown)
+
   const userInfo: CollabUser = useMemo(
     () => ({ name: userName, color: colorForUid(uid) }),
     [userName, uid]
@@ -104,11 +109,23 @@ export function CollaborativeEditor({
       onUpdate: ({ editor: instance }) => {
         const storage = instance.storage as unknown as { markdown: { getMarkdown(): string } }
         const markdown = storage.markdown.getMarkdown()
+        emittedRef.current = markdown
         if (markdown.length <= MAX_MARKDOWN_BYTES) changeRef.current(markdown)
       },
     },
     [session, userInfo]
   )
+
+  // Reconcile external writes (agent CLI, another device, an import).
+  useEffect(() => {
+    if (!editor) return
+    const incoming = note.markdown ?? ''
+    const storage = editor.storage as unknown as { markdown: { getMarkdown(): string } }
+    const current = storage.markdown.getMarkdown()
+    if (!incoming || incoming === current || incoming === emittedRef.current) return
+    emittedRef.current = incoming
+    editor.commands.setContent(incoming)
+  }, [editor, note.markdown])
 
   useEffect(() => {
     if (!editor) return

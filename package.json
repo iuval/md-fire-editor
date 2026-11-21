@@ -11,8 +11,11 @@
     "test": "vitest run tests/collab.test.ts tests/editor.test.tsx",
     "test:rules": "firebase emulators:exec --only firestore --project demo-mdfire \"vitest run tests/firestore.rules.test.ts\"",
     "test:collab": "firebase emulators:exec --only firestore --project demo-mdfire \"vitest run tests/collab.integration.test.ts\"",
-    "test:all": "npm run test:unit && npm run test:rules && npm run test:collab",
-    "test:unit": "vitest run tests/collab.test.ts tests/editor.test.tsx"
+    "test:all": "npm run test:unit && npm run test:rules && npm run test:collab && npm run test:agent",
+    "test:unit": "vitest run tests/collab.test.ts tests/editor.test.tsx",
+    "test:agent": "firebase emulators:exec --only firestore --project demo-mdfire \"vitest run tests/agent.test.ts\"",
+    "mdfire": "node agent/cli.mjs",
+    "mdfire-mcp": "node agent/mcp.mjs"
   },
   "dependencies": {
     "@tiptap/extension-collaboration": "^3.35.0",
@@ -36,6 +39,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "autoprefixer": "^10.7.0",
+    "firebase-admin": "^14.5.1",
     "jsdom": "^31.0.1",
     "oxlint": "^1.90.0",
     "postcss": "^8.5.33",
@@ -44,5 +48,8 @@
     "vite": "^8.3.6",
     "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.1.1"
+  },
+  "bin": {
+    "mdfire": "agent/cli.mjs"
   }
 }

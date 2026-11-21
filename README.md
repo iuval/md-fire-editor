@@ -132,12 +132,70 @@ aunque el cliente lo intente a mano.
    mientras se escribe (agrupados a 400 ms). Con uso intensivo conviene subir el
    debounce en `src/lib/collab/provider.ts` o mover el transporte a RTDB.
 
+## Agentes de IA
+
+Hay una CLI y un servidor MCP pensados para que un agente lea y edite gastando lo mínimo.
+Ambos usan el mismo núcleo (`agent/core.mjs`) y **no devuelven JSON**: TSV para listados,
+markdown crudo para lectura, y deltas para escritura.
+
+```bash
+npm run mdfire -- ls                 # id	título	fecha	carpeta
+npm run mdfire -- cat 3f9a1c2b       # markdown crudo
+npm run mdfire -- find harina        # id:línea: texto
+npm run mdfire -- patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find '- dos' --replace '- dos
+- tres'
+npm run mdfire -- append 3f9a1c2b --text '- sal'
+```
+
+### Por qué es barato
+
+| Operación | Salida | Costo |
+|---|---|---|
+| `ls` (20 notas) | una línea por nota, 4 campos | ~10 tok/nota |
+| `cat` | solo el markdown | = documento |
+| `patch` | `ok 1 edits +7 4-9f2c1a` | ~12 tok |
+| `find` | `id:línea: texto` | ~15 tok/hit |
+
+Para las mismas dos notas, el listado completo como JSON con todos los campos son ~201
+tokens; la salida TSV son ~20 (medido con los fixtures de `tests/agent.test.ts`). Y como
+`cat` entrega un **etag**, el agente puede editar sin volver a leer el documento: el parche
+se rechaza si el etag quedó viejo (`E_ETAG`), si el `find` no existe (`E_NO_MATCH`) o si
+aparece más de una vez (`E_AMBIGUOUS`, hay que agregar contexto).
+
+### Conectarlo
+
+```jsonc
+// .mcp.json de tu agente (Claude Code, T3, etc.)
+{
+  "mcpServers": {
+    "mdfire": {
+      "command": "node",
+      "args": ["/ruta/al/repo/agent/mcp.mjs"],
+      "env": { "GOOGLE_APPLICATION_CREDENTIALS": "/ruta/service-account.json", "MDFIRE_UID": "<tu-uid>" }
+    }
+  }
+}
+```
+
+Autenticación: `GOOGLE_APPLICATION_CREDENTIALS` (ADC) o `MDFIRE_ACCESS_TOKEN`
+(`gcloud auth print-access-token`). Usa el **Admin SDK**, así que **omite las reglas**:
+corrélo como el dueño del proyecto, en tu máquina. `MDFIRE_UID` solo hace falta para crear
+notas.
+
+### Escrituras concurrentes
+
+El editor sigue siendo la fuente de verdad del CRDT. Cuando el documento cambia por fuera
+(agente, otra app), el editor detecta el markdown distinto al que él emitió y lo aplica al
+documento Yjs (`tests/editor.test.tsx` cubre ese camino). Si alguien está tipeando en ese
+momento, el último que escribe gana: por eso el `--etag` existe.
+
 ## Tests
 
 ```bash
 npm test             # 19 tests: convergencia CRDT, ACL/carpetas, editor en jsdom
 npm run test:rules   # 63 tests de firestore.rules contra el emulador
 npm run test:collab  # 7 tests de colaboración real (2 clientes, presencia, viewer)
+npm run test:agent   # 13 tests de la CLI/MCP (listado, etag, parches, búsqueda)
 npm run test:all     # todo (requiere Java para el emulador)
 ```
 
@@ -185,7 +243,8 @@ src/
 ├── firebase.ts                   init, App Check, cache persistente
 └── firebaseConfig.ts             config desde env
 firestore.rules                   reglas (fuente de verdad de la seguridad)
-tests/                            reglas + colaboración + editor
+agent/                            CLI + servidor MCP para agentes de IA
+tests/                            reglas + colaboración + editor + agente
 ```
 
 ## UI

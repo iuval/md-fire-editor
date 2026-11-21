@@ -121,6 +121,45 @@ describe('<CollaborativeEditor />', () => {
     expect(container.querySelector('.md-editor-content')).not.toBeNull()
   })
 
+  it('applies external markdown edits to the shared document', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    roots.push(root)
+
+    const props = {
+      note: { ...note, markdown: '# Original\n\ncontenido viejo' },
+      uid: 'u1',
+      userName: 'Ana',
+      editable: true,
+      onMarkdownChange: () => undefined,
+      onPresence: () => undefined,
+      onStatus: () => undefined,
+    }
+
+    await act(async () => {
+      root.render(<CollaborativeEditor {...props} />)
+      await Promise.resolve()
+    })
+    expect(container.querySelector('.ProseMirror')?.textContent).toContain('Original')
+
+    // The agent CLI rewrote the note document behind our back.
+    await act(async () => {
+      root.render(
+        <CollaborativeEditor
+          {...props}
+          note={{ ...props.note, markdown: '# Actualizado por el agente\n\ncontenido nuevo', version: 9 }}
+        />
+      )
+      await Promise.resolve()
+    })
+
+    const text = container.querySelector('.ProseMirror')?.textContent ?? ''
+    expect(text).toContain('Actualizado por el agente')
+    expect(text).toContain('contenido nuevo')
+    expect(text).not.toContain('contenido viejo')
+  })
+
   it('renders read-only when the user cannot edit', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
