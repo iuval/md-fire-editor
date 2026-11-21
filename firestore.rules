@@ -2,22 +2,26 @@ rules_version = '2';
 
 // FireMD Editor — security rules
 //
-// Data model
+// Model
+//   folders/{folderId}
+//     ownerId, name, memberIds[], roles{uid: owner|editor|viewer},
+//     access: restricted | link-view | link-edit, createdAt, updatedAt
 //   notes/{noteId}
-//     ownerId:   string        (uid, immutable)
-//     memberIds: string[]      (uids with access, <= 50)
-//     roles:     map<uid, 'owner'|'editor'>
-//     access:    'restricted' | 'link-edit'
-//     title:     string        (<= 300 chars)
-//     markdown:  string        (<= 250 KB)
-//     version:   int
-//     createdAt: timestamp     (immutable)
-//     updatedAt: timestamp
-//   notes/{noteId}/updates/{updateId}   Yjs incremental updates
-//   notes/{noteId}/collab/state         Yjs compacted state
-//   notes/{noteId}/presence/{uid}       presence + cursor
+//     ownerId, folderId|null, aclSource: own | folder,
+//     memberIds[], roles{}, access, title, markdown, version, createdAt, updatedAt
+//   notes/{noteId}/updates/{id}      Yjs update log
+//   notes/{noteId}/collab/state      compacted Yjs state
+//   notes/{noteId}/presence/{uid}    presence + caret
+//   userIndex/{sha256(email)}        directory used to add collaborators
 //
-//   users/{uid}/notes/{noteId}          legacy (read/take-out only, for migration)
+// Access model
+//   A note with aclSource == 'folder' takes its ACL from its folder, so revoking
+//   a folder share takes effect immediately (one get() per operation) without
+//   waiting for client-side propagation. Notes with aclSource == 'own' carry
+//   their own ACL, which is what per-file sharing writes.
+//
+// Roles: owner > editor (read+write) > viewer (read only).
+// Link access: link-view (read) / link-edit (write) for any signed-in user.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -38,120 +42,223 @@ service cloud.firestore {
       return v is timestamp;
     }
 
-    // ---------- notes ----------
+    // Simple key guard: map access on a missing key raises, so check first.
+    function roleOf(acl) {
+      return acl.roles.keys().hasAny([uid()]) ? acl.roles[uid()] : 'none';
+    }
 
-    function validNoteFields(d) {
-      return d.keys().hasOnly([
-          'ownerId', 'memberIds', 'roles', 'access',
-          'title', 'markdown', 'version', 'createdAt', 'updatedAt'
-        ])
-        && isString(d.ownerId)
-        && d.memberIds is list
+    function rank(role) {
+      return role == 'owner' ? 3 : role == 'editor' ? 2 : role == 'viewer' ? 1 : 0;
+    }
+
+    function folderDoc(id) {
+      return get(/databases/$(database)/documents/folders/$(id)).data;
+    }
+
+    // Effective ACL of a note: its folder's when it inherits, its own otherwise.
+    function aclOf(note) {
+      return note.keys().hasAny(['aclSource']) && note.aclSource == 'folder'
+        ? folderDoc(note.folderId)
+        : note;
+    }
+
+    function canRead(acl) {
+      return signedIn() && (
+        rank(roleOf(acl)) >= 1
+        || acl.access == 'link-view'
+        || acl.access == 'link-edit'
+      );
+    }
+
+    function canWrite(acl) {
+      return signedIn() && (rank(roleOf(acl)) >= 2 || acl.access == 'link-edit');
+    }
+
+    function isAclOwner(acl) {
+      return signedIn() && acl.ownerId == uid();
+    }
+
+    // ---------- shared validation ----------
+
+    function validAcl(d) {
+      return d.memberIds is list
         && d.memberIds.size() > 0
         && d.memberIds.size() <= 50
         && d.roles is map
         && d.roles.size() <= 50
-        && d.access in ['restricted', 'link-edit']
-        && isString(d.title)
-        && d.title.size() <= 300
-        && isString(d.markdown)
-        && d.markdown.size() <= 250000
-        && (!d.keys().hasAny(['version']) || d.version is int)
+        && d.roles.keys().hasOnly(d.memberIds)
+        && d.memberIds.hasOnly(d.roles.keys())
+        && d.access in ['restricted', 'link-view', 'link-edit']
         && isTimestamp(d.createdAt)
         && isTimestamp(d.updatedAt);
     }
 
-    function canReadNote(d) {
-      return signedIn() && (uid() in d.memberIds || d.access == 'link-edit');
+    function selfOwnedAcl(d) {
+      return d.memberIds.size() == 1
+        && d.memberIds[0] == uid()
+        && d.roles.keys().hasOnly([uid()])
+        && d.roles[uid()] == 'owner'
+        && d.access == 'restricted';
     }
 
-    function canWriteNote(d) {
-      return signedIn() && (uid() in d.memberIds || d.access == 'link-edit');
+    // A note (or folder) whose ACL mirrors its folder's, proven by one get().
+    function mirrorsFolder(folderId, d) {
+      return folderId is string
+        && d.memberIds == folderDoc(folderId).memberIds
+        && d.roles == folderDoc(folderId).roles
+        && d.access == folderDoc(folderId).access;
     }
 
-    function isOwner(d) {
-      return signedIn() && d.ownerId == uid();
+    // ---------- folders ----------
+
+    function validFolder(d) {
+      return d.keys().hasOnly([
+          'ownerId', 'name', 'memberIds', 'roles', 'access', 'createdAt', 'updatedAt'
+        ])
+        && isString(d.ownerId)
+        && isString(d.name)
+        && d.name.size() <= 120
+        && validAcl(d);
     }
 
-    // Fields a collaborator (editor) may touch: content only.
+    match /folders/{folderId} {
+      allow get: if canRead(resource.data);
+
+      allow list: if signedIn() && uid() in resource.data.memberIds;
+
+      allow create: if signedIn()
+        && validFolder(request.resource.data)
+        && request.resource.data.ownerId == uid()
+        && selfOwnedAcl(request.resource.data)
+        && request.resource.data.createdAt == request.resource.data.updatedAt;
+
+      allow update: if validFolder(request.resource.data)
+        && (
+          (isAclOwner(resource.data) && aclUpdateValid(resource.data, request.resource.data))
+          || (canWrite(resource.data) && nameOnlyChange())
+        );
+
+      allow delete: if isAclOwner(resource.data);
+    }
+
+    // Owner may change sharing and members but not the identity of the folder.
+    function aclUpdateValid(current, next) {
+      return next.ownerId == current.ownerId
+        && next.createdAt == current.createdAt
+        && next.roles[uid()] == 'owner'
+        && uid() in next.memberIds;
+    }
+
+    function nameOnlyChange() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['name', 'updatedAt']);
+    }
+
+    // ---------- notes ----------
+
+    function validNote(d) {
+      return d.keys().hasOnly([
+          'ownerId', 'folderId', 'aclSource', 'memberIds', 'roles', 'access',
+          'title', 'markdown', 'version', 'createdAt', 'updatedAt'
+        ])
+        && isString(d.ownerId)
+        // Notes created before folders existed omit both fields: treat as 'own'.
+        && (!d.keys().hasAny(['folderId']) || d.folderId == null || isString(d.folderId))
+        && (!d.keys().hasAny(['aclSource']) || d.aclSource in ['own', 'folder'])
+        && validAcl(d)
+        && isString(d.title)
+        && d.title.size() <= 300
+        && isString(d.markdown)
+        && d.markdown.size() <= 250000
+        && (!d.keys().hasAny(['version']) || d.version is int);
+    }
+
     function contentOnlyChange() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['title', 'markdown', 'updatedAt', 'version']);
     }
 
-    // Fields only the owner may touch, with invariants preserved:
-    // owner never changes, owner stays 'owner', every member has a role and
-    // every role belongs to a member.
-    function aclChangeIsValid() {
-      let next = request.resource.data;
-      let roles = next.roles;
-      return next.ownerId == resource.data.ownerId
-        && next.createdAt == resource.data.createdAt
-        && roles[resource.data.ownerId] == 'owner'
-        && resource.data.ownerId in next.memberIds
-        && roles.keys().hasOnly(next.memberIds)
-        && next.memberIds.hasOnly(roles.keys());
+    function ownershipUnchanged(current, next) {
+      return next.ownerId == current.ownerId && next.createdAt == current.createdAt;
     }
 
     match /notes/{noteId} {
-      allow get: if canReadNote(resource.data);
+      allow get: if canRead(aclOf(resource.data));
 
-      // Listing is only allowed with a `memberIds array-contains <uid>` filter,
-      // which the rules engine can prove implies membership.
       allow list: if signedIn() && uid() in resource.data.memberIds;
 
       allow create: if signedIn()
-        && validNoteFields(request.resource.data)
+        && validNote(request.resource.data)
         && request.resource.data.ownerId == uid()
-        && request.resource.data.memberIds == [uid()]
-        && request.resource.data.roles[uid()] == 'owner'
-        && request.resource.data.roles.size() == 1
-        && request.resource.data.createdAt == request.resource.data.updatedAt;
-
-      allow update: if validNoteFields(request.resource.data)
+        && request.resource.data.createdAt == request.resource.data.updatedAt
         && (
-          // Owner: full control (content + sharing)
-          (isOwner(resource.data) && aclChangeIsValid())
-          // Editor / link-editor: content only, ACL immutable
-          || (canWriteNote(resource.data) && contentOnlyChange())
+          // Root note, owned outright.
+          (request.resource.data.folderId == null
+            && request.resource.data.aclSource == 'own'
+            && selfOwnedAcl(request.resource.data))
+          // Note created inside a folder inherits that folder's ACL.
+          || (request.resource.data.folderId != null
+            && request.resource.data.aclSource == 'folder'
+            && canWrite(folderDoc(request.resource.data.folderId))
+            && mirrorsFolder(request.resource.data.folderId, request.resource.data))
         );
 
-      allow delete: if isOwner(resource.data);
+      allow update: if validNote(request.resource.data)
+        && ownershipUnchanged(resource.data, request.resource.data)
+        && (
+          // Owner: sharing, moving between folders, or content.
+          (isAclOwner(resource.data) && ownerUpdateValid(resource.data, request.resource.data))
+          // Editor / link-editor: content only.
+          || (canWrite(aclOf(resource.data)) && contentOnlyChange())
+          // Any writer of the folder may resync an inheriting note's ACL copy
+          // (only for display/listing; authority always comes from the folder).
+          || (resource.data.keys().hasAny(['aclSource'])
+            && resource.data.aclSource == 'folder'
+            && resource.data.folderId is string
+            && canWrite(folderDoc(resource.data.folderId))
+            && mirrorsFolder(resource.data.folderId, request.resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['memberIds', 'roles', 'access', 'updatedAt']))
+        );
+
+      allow delete: if isAclOwner(resource.data);
+    }
+
+    // Owner edits keep the note consistent: an inheriting note must mirror its
+    // folder, an own-ACL note must keep the owner as owner.
+    function ownerUpdateValid(current, next) {
+      return (next.aclSource == 'own' && next.roles[uid()] == 'owner' && uid() in next.memberIds)
+        || (next.aclSource == 'folder'
+          && next.folderId != null
+          && canWrite(folderDoc(next.folderId))
+          && mirrorsFolder(next.folderId, next));
     }
 
     // ---------- collaboration sub-collections ----------
 
-    // `id` must be passed in: a function declared at this scope cannot see the
-    // `noteId` wildcard captured by a nested match block.
-    function parentNote(id) {
-      return get(/databases/$(database)/documents/notes/$(id)).data;
-    }
-
-    function canUseNote(id) {
-      return signedIn()
-        && (uid() in parentNote(id).memberIds || parentNote(id).access == 'link-edit');
+    function noteAcl(noteId) {
+      return aclOf(get(/databases/$(database)/documents/notes/$(noteId)).data);
     }
 
     match /notes/{noteId}/updates/{updateId} {
-      allow read: if canUseNote(noteId);
+      allow read: if canRead(noteAcl(noteId));
 
-      allow create: if canUseNote(noteId)
+      allow create: if canWrite(noteAcl(noteId))
         && request.resource.data.keys().hasOnly(['data', 'clientId', 'createdAt'])
         && isString(request.resource.data.data)
         && request.resource.data.data.size() <= 400000
         && request.resource.data.clientId is int
         && isTimestamp(request.resource.data.createdAt);
 
-      // Compaction: any editor may prune updates already folded into the snapshot.
-      allow delete: if canUseNote(noteId);
+      allow delete: if canWrite(noteAcl(noteId));
 
       allow update: if false;
     }
 
     match /notes/{noteId}/collab/{documentId} {
-      allow read: if canUseNote(noteId);
+      allow read: if canRead(noteAcl(noteId));
 
-      allow write: if canUseNote(noteId)
+      allow write: if canWrite(noteAcl(noteId))
         && documentId == 'state'
         && request.resource.data.keys().hasOnly(['state', 'clientId', 'updatedAt'])
         && isString(request.resource.data.state)
@@ -161,9 +268,9 @@ service cloud.firestore {
     }
 
     match /notes/{noteId}/presence/{presenceId} {
-      allow read: if canUseNote(noteId);
+      allow read: if canRead(noteAcl(noteId));
 
-      allow write: if canUseNote(noteId)
+      allow write: if canWrite(noteAcl(noteId))
         && presenceId == uid()
         && request.resource.data.keys().hasOnly([
             'userId', 'clientId', 'name', 'color', 'cursor', 'selection', 'updatedAt'
@@ -183,15 +290,47 @@ service cloud.firestore {
       allow delete: if presenceId == uid();
     }
 
-    // ---------- legacy schema (read-only, migration) ----------
-    // Old v1 data: users/{uid}/notes/{noteId}. Kept so existing notes can be
-    // migrated by their owner. Writes are denied.
+    // ---------- collaborator directory ----------
+    // Document id is sha256(lowercased email); entries are readable one by one
+    // but never listable, so the directory cannot be harvested.
+    match /userIndex/{entryId} {
+      allow get: if signedIn();
+
+      allow create, update: if signedIn()
+        && entryId.matches('[0-9a-f]{64}')
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'name', 'updatedAt'])
+        && request.resource.data.uid == uid()
+        && isString(request.resource.data.email)
+        && request.resource.data.email.size() <= 320
+        && isString(request.resource.data.name)
+        && request.resource.data.name.size() <= 120
+        && isTimestamp(request.resource.data.updatedAt);
+
+      allow delete: if signedIn() && resource.data.uid == uid();
+    }
+
+    // ---------- display names ----------
+    // uid -> { name }. Readable by any signed-in user so the share panel can show
+    // who a member is; carries no email or other personal data.
+    match /profiles/{profileId} {
+      allow get: if signedIn();
+
+      allow create, update: if signedIn()
+        && profileId == uid()
+        && request.resource.data.keys().hasOnly(['name', 'updatedAt'])
+        && isString(request.resource.data.name)
+        && request.resource.data.name.size() <= 120
+        && isTimestamp(request.resource.data.updatedAt);
+
+      allow delete: if profileId == uid();
+    }
+
+    // ---------- legacy v1 schema (read-only, migration) ----------
     match /users/{userId}/notes/{noteId} {
       allow read, delete: if signedIn() && uid() == userId;
       allow create, update: if false;
     }
 
-    // Everything else is denied.
     match /{document=**} {
       allow read, write: if false;
     }
