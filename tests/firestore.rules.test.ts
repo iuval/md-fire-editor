@@ -946,3 +946,40 @@ describe('nested folders', () => {
     await assertFails(getDoc(doc(db(VIEWER), 'folders', 'child')))
   })
 })
+
+describe('folder ordering', () => {
+  it('accepts the four sort modes and rejects unknown ones', async () => {
+    await seedFolder('f1')
+    for (const mode of ['name', 'created', 'updated', 'manual']) {
+      await assertSucceeds(updateDoc(doc(db(OWNER), 'folders', 'f1'), { sort: mode, updatedAt: ts() }))
+    }
+    await assertFails(updateDoc(doc(db(OWNER), 'folders', 'f1'), { sort: 'random', updatedAt: ts() }))
+    await assertFails(updateDoc(doc(db(OWNER), 'folders', 'f1'), { order: -1, updatedAt: ts() }))
+  })
+
+  it('an editor can reorder without a paid plan', async () => {
+    await grantPaid(EDITOR, 'free')
+    await seedNote('n1', everyRole)
+    await assertSucceeds(updateDoc(doc(db(EDITOR), 'notes', 'n1'), { order: 20, updatedAt: ts() }))
+  })
+
+  it('notes accept a non-negative order and nothing else', async () => {
+    await seedNote('n1')
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { order: 10, updatedAt: ts() }))
+    await assertFails(updateDoc(doc(db(OWNER), 'notes', 'n1'), { order: -5, updatedAt: ts() }))
+    await assertFails(updateDoc(doc(db(OWNER), 'notes', 'n1'), { order: 'first', updatedAt: ts() }))
+  })
+
+  it('root ordering lives in settings and is own-only', async () => {
+    await assertSucceeds(
+      setDoc(doc(db(OWNER), 'settings', OWNER), { rootSort: 'manual', updatedAt: ts() })
+    )
+    await assertFails(
+      setDoc(doc(db(EDITOR), 'settings', OWNER), { rootSort: 'manual', updatedAt: ts() })
+    )
+    await assertFails(
+      setDoc(doc(db(OWNER), 'settings', OWNER), { rootSort: 'fecha', updatedAt: ts() })
+    )
+    await assertFails(getDoc(doc(db(EDITOR), 'settings', OWNER)))
+  })
+})

@@ -132,9 +132,13 @@ export function useWorkspace(uid: string | undefined) {
   )
 
   const addFolder = useCallback(
-    async (name: string, parentId: string | null = null) => {
+    async (
+      name: string,
+      parentId: string | null = null,
+      options: { sort?: import('../lib/sorting').SortMode; order?: number } = {}
+    ) => {
       if (!uid) return null
-      return createFolder(uid, name, parentId)
+      return createFolder(uid, name, parentId, [], options)
     },
     [uid]
   )

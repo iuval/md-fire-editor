@@ -142,7 +142,8 @@ service cloud.firestore {
 
     function validFolder(d, folderId) {
       return d.keys().hasOnly([
-          'ownerId', 'name', 'parentId', 'tags', 'memberIds', 'roles', 'access', 'createdAt', 'updatedAt'
+          'ownerId', 'name', 'parentId', 'sort', 'order', 'tags', 'memberIds', 'roles', 'access',
+          'createdAt', 'updatedAt'
         ])
         && isString(d.ownerId)
         && isString(d.name)
@@ -153,6 +154,9 @@ service cloud.firestore {
         && (!d.keys().hasAny(['parentId'])
           || d.parentId == null
           || (isString(d.parentId) && d.parentId != folderId))
+        && (!d.keys().hasAny(['sort'])
+          || d.sort in ['name', 'created', 'updated', 'manual'])
+        && (!d.keys().hasAny(['order']) || (d.order is int && d.order >= 0))
         && validTags(d)
         && validAcl(d);
     }
@@ -192,7 +196,7 @@ service cloud.firestore {
 
     function nameOnlyChange() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['name', 'tags', 'updatedAt']);
+        .hasOnly(['name', 'tags', 'sort', 'order', 'updatedAt']);
     }
 
     // ---------- notes ----------
@@ -200,7 +204,7 @@ service cloud.firestore {
     function validNote(d) {
       return d.keys().hasOnly([
           'ownerId', 'folderId', 'aclSource', 'memberIds', 'roles', 'access',
-          'title', 'markdown', 'tags', 'version', 'createdAt', 'updatedAt'
+          'title', 'markdown', 'tags', 'order', 'version', 'createdAt', 'updatedAt'
         ])
         && isString(d.ownerId)
         // Notes created before folders existed omit both fields: treat as 'own'.
@@ -212,12 +216,13 @@ service cloud.firestore {
         && isString(d.markdown)
         && d.markdown.size() <= 250000
         && validTags(d)
+        && (!d.keys().hasAny(['order']) || (d.order is int && d.order >= 0))
         && (!d.keys().hasAny(['version']) || d.version is int);
     }
 
     function contentOnlyChange() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['title', 'markdown', 'tags', 'updatedAt', 'version']);
+        .hasOnly(['title', 'markdown', 'tags', 'order', 'updatedAt', 'version']);
     }
 
     function ownershipUnchanged(current, next) {
@@ -423,6 +428,18 @@ service cloud.firestore {
         && request.resource.data.plan in ['free', 'paid']
         && isString(request.resource.data.source)
         && request.resource.data.source.size() <= 40
+        && isTimestamp(request.resource.data.updatedAt);
+    }
+
+    // ---------- user settings ----------
+    match /settings/{userId} {
+      allow get: if signedIn() && uid() == userId;
+      allow list: if false;
+
+      allow write: if signedIn()
+        && uid() == userId
+        && request.resource.data.keys().hasOnly(['rootSort', 'updatedAt'])
+        && request.resource.data.rootSort in ['name', 'created', 'updated', 'manual']
         && isTimestamp(request.resource.data.updatedAt);
     }
 

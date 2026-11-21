@@ -133,6 +133,7 @@ describe('<CollaborativeEditor />', () => {
       root.render(
         <CollaborativeEditor
           note={note}
+          body={note.markdown}
           uid="u1"
           userName="Ana"
           editable
@@ -157,6 +158,7 @@ describe('<CollaborativeEditor />', () => {
 
     const props = {
       note: { ...note, markdown: '# Original\n\ncontenido viejo' },
+      body: '# Original\n\ncontenido viejo',
       uid: 'u1',
       userName: 'Ana',
       editable: true,
@@ -177,6 +179,7 @@ describe('<CollaborativeEditor />', () => {
         <CollaborativeEditor
           {...props}
           note={{ ...props.note, markdown: '# Actualizado por el agente\n\ncontenido nuevo', version: 9 }}
+          body={'# Actualizado por el agente\n\ncontenido nuevo'}
         />
       )
       await Promise.resolve()
@@ -198,6 +201,7 @@ describe('<CollaborativeEditor />', () => {
       root.render(
         <CollaborativeEditor
           note={{ ...note, access: 'restricted' }}
+          body={note.markdown}
           uid="stranger"
           userName="Otra persona"
           editable={false}
@@ -211,5 +215,45 @@ describe('<CollaborativeEditor />', () => {
 
     expect(container.textContent).toContain('Solo lectura')
     expect(container.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('false')
+  })
+})
+
+describe('frontmatter is never handed to the editor', () => {
+  it('keeps properties alive when the body round-trips', async () => {
+    const { splitFrontmatter, joinFrontmatter } = await import('../src/lib/markdown')
+    const { parseProperties } = await import('../src/lib/properties')
+    const { extractTags } = await import('../src/lib/tags')
+
+    const full = '---\ntags: [proyecto]\nestado: en curso\nvence: 2026-12-01\n---\n\n# Nota\n\ncuerpo #idea\n'
+    const { frontmatter, body } = splitFrontmatter(full)
+
+    // What the editor sees and what it gives back after an edit.
+    const ydoc = new Y.Doc()
+    const awareness = fakeAwareness()
+    const element = document.createElement('div')
+    const editor = new Editor({
+      element,
+      extensions: [
+        StarterKit.configure({ undoRedo: false }),
+        Collaboration.configure({ document: ydoc, field: 'content' }),
+        CollaborationCaret.configure({ provider: { awareness }, user: { name: 'Ana' } }),
+        Markdown.configure({ html: false }),
+      ],
+    })
+    editor.commands.setContent(body)
+    editor.commands.insertContent(' más')
+    const emitted = (editor.storage as any).markdown.getMarkdown() as string
+
+    const saved = joinFrontmatter(frontmatter, emitted)
+
+    expect(parseProperties(saved)).toEqual([
+      { key: 'estado', type: 'text', value: 'en curso' },
+      { key: 'vence', type: 'date', value: '2026-12-01' },
+    ])
+    expect(extractTags(saved)).toEqual(['idea', 'proyecto'])
+    expect(saved).toContain('más')
+
+    editor.destroy()
+    ydoc.destroy()
   })
 })

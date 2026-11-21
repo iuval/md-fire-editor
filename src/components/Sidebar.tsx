@@ -1,6 +1,8 @@
 import { ChevronRight, Folder, FolderPlus, Link2, MoreHorizontal, PanelLeftClose, Plus, User } from 'lucide-react'
 import type { Folder as FolderType, Note } from '../lib/notes'
 import { buildFolderTree, type FolderNode } from '../lib/folders'
+import { sortFolders, sortNotes, type SortMode } from '../lib/sorting'
+import { ArrowDownWideNarrow } from 'lucide-react'
 import type { TagNode } from '../lib/tags'
 
 interface SidebarProps {
@@ -18,6 +20,8 @@ interface SidebarProps {
   isMobile: boolean
   isOpen: boolean
   loading: boolean
+  rootSort: SortMode
+  onOpenSort: (folder: FolderType | null) => void
   tagTree: TagNode[]
   selectedTags: string[]
   onToggleTag: (tagKey: string) => void
@@ -55,6 +59,8 @@ export function Sidebar({
   isMobile,
   isOpen,
   loading,
+  rootSort,
+  onOpenSort,
   tagTree,
   selectedTags,
   onToggleTag,
@@ -63,9 +69,27 @@ export function Sidebar({
   photoURL,
   onAccountClick,
 }: SidebarProps) {
-  const rootNotes = notes.filter((n) => !n.folderId)
-  const notesOf = (folderId: string) => notes.filter((n) => n.folderId === folderId)
+  const rootNotes = sortNotes(notes.filter((n) => !n.folderId), rootSort)
+  const byId = new Map(folders.map((f) => [f.id, f]))
+  const sortOf = (folderId: string | null): SortMode => {
+    let current = folderId
+    let guard = 0
+    while (current && guard++ < 32) {
+      const folder = byId.get(current)
+      if (!folder) break
+      if (folder.sort) return folder.sort
+      current = folder.parentId
+    }
+    return rootSort
+  }
+  const notesOf = (folderId: string) => sortNotes(notes.filter((n) => n.folderId === folderId), sortOf(folderId))
   const tree = buildFolderTree(folders)
+  const sortTree = (nodes: FolderNode[]): FolderNode[] => {
+    const ordered = sortFolders(nodes.map((n) => n.folder), sortOf(nodes[0]?.folder.parentId ?? null))
+      .map((folder) => nodes.find((n) => n.folder.id === folder.id)!)
+      .filter(Boolean)
+    return ordered
+  }
 
   const noteButton = (note: Note, indented: boolean) => {
     const shared = note.memberIds.length > 1 || note.access !== 'restricted'
@@ -99,6 +123,14 @@ export function Sidebar({
         </button>
         <button className="icon-btn" onClick={onNewFolder} aria-label="Nueva carpeta" title="Nueva carpeta">
           <FolderPlus size={15} />
+        </button>
+        <button
+          className="icon-btn"
+          onClick={() => onOpenSort(null)}
+          aria-label="Ordenar notas y carpetas"
+          title={`Orden: ${rootSort}`}
+        >
+          <ArrowDownWideNarrow size={15} />
         </button>
         <button
           className="icon-btn"
@@ -183,6 +215,18 @@ export function Sidebar({
                 <button
                   className="icon-btn"
                   style={{ width: 22, height: 22 }}
+                  aria-label={`Orden de ${folder.name}`}
+                  title={`Orden: ${folder.sort ?? sortOf(folder.parentId)}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onOpenSort(folder)
+                  }}
+                >
+                  <ArrowDownWideNarrow size={13} />
+                </button>
+                <button
+                  className="icon-btn"
+                  style={{ width: 22, height: 22 }}
                   aria-label={`Acciones de ${folder.name}`}
                   onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect()
@@ -198,7 +242,7 @@ export function Sidebar({
                     {node.children.length === 0 && children.length === 0 && (
                       <p className="tree-empty">Vacía</p>
                     )}
-                    {node.children.map((child) => renderNode(child))}
+                    {sortTree(node.children).map((child) => renderNode(child))}
                     {children.map((note) => noteButton(note, true))}
                   </div>
                 )}
@@ -206,7 +250,7 @@ export function Sidebar({
             )
           }
 
-          return tree.map((node) => renderNode(node))
+          return sortTree(tree).map((node) => renderNode(node))
         })()}
 
         {rootNotes.length > 0 && folders.length > 0 && (

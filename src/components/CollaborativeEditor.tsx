@@ -12,9 +12,12 @@ import { FirestoreYjsProvider, type ProviderStatus, type SyncStats } from '../li
 import { FirestoreAwareness, type AwarenessUser, type CollabUser } from '../lib/collab/awareness'
 import { MAX_MARKDOWN_BYTES, type Note } from '../lib/notes'
 import { colorForUid } from '../lib/collab/presenceColors'
+import { sameMarkdown } from '../lib/markdown'
 
 interface CollaborativeEditorProps {
   note: Note
+  /** Markdown body without the frontmatter (the editor must not see it). */
+  body: string
   uid: string
   userName: string
   editable: boolean
@@ -26,6 +29,7 @@ interface CollaborativeEditorProps {
 
 export function CollaborativeEditor({
   note,
+  body,
   uid,
   userName,
   editable,
@@ -43,7 +47,8 @@ export function CollaborativeEditor({
   // Last markdown this editor emitted. Anything else arriving on the note
   // document is an external edit (e.g. the agent CLI) and must be applied to
   // the shared Y document so every client converges on it.
-  const emittedRef = useRef(note.markdown)
+  const emittedRef = useRef(body)
+  const seedingRef = useRef(true)
 
   const userInfo: CollabUser = useMemo(
     () => ({ name: userName, color: colorForUid(uid) }),
@@ -117,15 +122,36 @@ export function CollaborativeEditor({
         attributes: { class: 'md-editor-content', spellcheck: 'true' },
       },
       onCreate: ({ editor: instance }) => {
-        const fragment = session.doc.getXmlFragment('content')
-        if (fragment.length === 0 && note.markdown.trim()) {
-          instance.commands.setContent(note.markdown)
+        seedingRef.current = true
+        try {
+          const fragment = session.doc.getXmlFragment('content')
+          if (fragment.length === 0 && body.trim()) {
+            instance.commands.setContent(body)
+          }
+        } finally {
+          const storage = instance.storage as unknown as { markdown: { getMarkdown(): string } }
+          emittedRef.current = storage.markdown.getMarkdown()
+          seedingRef.current = false
         }
         setReady(true)
       },
       onUpdate: ({ editor: instance }) => {
         const storage = instance.storage as unknown as { markdown: { getMarkdown(): string } }
         const markdown = storage.markdown.getMarkdown()
+        // Seeding the document (and applying a remote change) also fires
+        // `onUpdate`. Emitting that echo made every *open* bump `updatedAt`,
+        // reordering the note inside its folder.
+        if (seedingRef.current) {
+          emittedRef.current = markdown
+          return
+        }
+        // A transient empty document while we already have content is the editor
+        // rebuilding, not the user deleting everything.
+        if (!markdown.trim() && emittedRef.current.trim()) return
+        if (sameMarkdown(markdown, emittedRef.current)) {
+          emittedRef.current = markdown
+          return
+        }
         emittedRef.current = markdown
         if (markdown.length <= MAX_MARKDOWN_BYTES) changeRef.current(markdown)
       },
@@ -136,13 +162,13 @@ export function CollaborativeEditor({
   // Reconcile external writes (agent CLI, another device, an import).
   useEffect(() => {
     if (!editor) return
-    const incoming = note.markdown ?? ''
+    const incoming = body ?? ''
     const storage = editor.storage as unknown as { markdown: { getMarkdown(): string } }
     const current = storage.markdown.getMarkdown()
     if (!incoming || incoming === current || incoming === emittedRef.current) return
     emittedRef.current = incoming
     editor.commands.setContent(incoming)
-  }, [editor, note.markdown])
+  }, [editor, body])
 
   useEffect(() => {
     if (!editor) return

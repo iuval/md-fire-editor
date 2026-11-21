@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { canReadAcl, canWriteAcl, type Access, type Acl, type Role } from './acl'
+import { DEFAULT_SORT, type SortMode } from './sorting'
 
 export type { Access, Acl, Role } from './acl'
 export { ACCESS_LABELS, ROLE_LABELS, aclMembers, canReadAcl, canWriteAcl, isAclOwner, roleOf } from './acl'
@@ -30,6 +31,8 @@ export interface Note extends Acl {
   markdown: string
   /** Derived from the markdown on save; used to filter without downloading bodies. */
   tags: string[]
+  /** Position inside its folder when the folder sorts manually. */
+  order: number
   version: number
   createdAt?: Timestampish | null
   updatedAt?: Timestampish | null
@@ -40,6 +43,10 @@ export interface Folder extends Acl {
   ownerId: string
   name: string
   parentId: string | null
+  /** How this folder orders its children; `undefined` inherits from the parent. */
+  sort?: SortMode
+  /** Position inside its parent when the parent sorts manually. */
+  order: number
   tags: string[]
   createdAt?: Timestampish | null
   updatedAt?: Timestampish | null
@@ -73,6 +80,7 @@ export function toNote(id: string, data: Record<string, unknown>): Note {
     title: (data.title as string) ?? '',
     markdown: (data.markdown as string) ?? '',
     tags: (data.tags as string[]) ?? [],
+    order: (data.order as number) ?? 0,
     version: (data.version as number) ?? 0,
     createdAt: (data.createdAt as Timestampish) ?? null,
     updatedAt: (data.updatedAt as Timestampish) ?? null,
@@ -85,6 +93,8 @@ export function toFolder(id: string, data: Record<string, unknown>): Folder {
     ownerId: (data.ownerId as string) ?? '',
     name: (data.name as string) ?? '',
     parentId: (data.parentId as string | null) ?? null,
+    sort: (data.sort as SortMode | undefined) ?? undefined,
+    order: (data.order as number) ?? 0,
     tags: (data.tags as string[]) ?? [],
     ...aclFrom(data),
     createdAt: (data.createdAt as Timestampish) ?? null,
@@ -200,6 +210,7 @@ export async function createNote(uid: string, folder?: Folder): Promise<Note> {
     title: 'Sin título',
     markdown: '',
     tags: [],
+    order: 0,
     version: 1,
   }
 }
@@ -266,7 +277,8 @@ export async function createFolder(
   uid: string,
   name: string,
   parentId: string | null = null,
-  tags: string[] = []
+  tags: string[] = [],
+  options: { sort?: SortMode; order?: number } = {}
 ): Promise<Folder> {
   if (!db) throw new Error('Firebase no está configurado')
   const ref = doc(collection(db, 'folders'))
@@ -276,6 +288,9 @@ export async function createFolder(
     ownerId: uid,
     name: clean,
     parentId,
+    // A folder created inside another one inherits its ordering.
+    sort: options.sort ?? DEFAULT_SORT,
+    order: options.order ?? 0,
     tags,
     memberIds: [uid],
     roles: { [uid]: 'owner' },
@@ -288,11 +303,59 @@ export async function createFolder(
     ownerId: uid,
     name: clean,
     parentId,
+    sort: options.sort ?? DEFAULT_SORT,
+    order: options.order ?? 0,
     tags,
     memberIds: [uid],
     roles: { [uid]: 'owner' },
     access: 'restricted',
   }
+}
+
+export async function setFolderSort(folderId: string, sort: SortMode): Promise<void> {
+  if (!db) return
+  await updateDoc(doc(db, 'folders', folderId), { sort, updatedAt: serverTimestamp() })
+}
+
+export interface UserSettings {
+  rootSort: SortMode
+}
+
+export function subscribeUserSettings(
+  uid: string,
+  onChange: (settings: UserSettings) => void
+): () => void {
+  if (!db) return () => undefined
+  return onSnapshot(
+    doc(db, 'settings', uid),
+    (snap) => {
+      const sort = snap.data()?.rootSort
+      onChange({ rootSort: (sort as SortMode) ?? DEFAULT_SORT })
+    },
+    () => onChange({ rootSort: DEFAULT_SORT })
+  )
+}
+
+export async function setRootSort(uid: string, rootSort: SortMode): Promise<void> {
+  if (!db) return
+  await setDoc(
+    doc(db, 'settings', uid),
+    { rootSort, updatedAt: serverTimestamp() },
+    { merge: true }
+  )
+}
+
+/** Renumbers siblings after a manual move (ids must be in the wanted order). */
+export async function applyOrder(
+  collection: 'folders' | 'notes',
+  pairs: Array<{ id: string; order: number }>
+): Promise<void> {
+  if (!db) return
+  const batch = writeBatch(db)
+  pairs.forEach(({ id, order }) => {
+    batch.update(doc(db!, collection, id), { order, updatedAt: serverTimestamp() })
+  })
+  await batch.commit()
 }
 
 export async function moveFolder(folderId: string, parentId: string | null): Promise<void> {

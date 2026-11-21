@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { Menu, type MenuItem } from './components/Menu'
@@ -17,7 +17,11 @@ import { buildVault, readVault } from './lib/vault'
 import { track } from './lib/analytics'
 import { buildTagTree, extractTags, matchesTagFilter, parseTagInput } from './lib/tags'
 import { flattenFolders, folderPath } from './lib/folders'
+import { applyOrder, setFolderSort, setRootSort, subscribeUserSettings } from './lib/notes'
+import { DEFAULT_SORT, nextOrder, renumbered, resolveSort, sortFolders, sortNotes, SORT_LABELS, type SortMode } from './lib/sorting'
+import { SortDialog } from './components/SortDialog'
 import { parseProperties, setProperty } from './lib/properties'
+import { joinFrontmatter, sameMarkdown, splitFrontmatter } from './lib/markdown'
 import { MAX_FOLDER_DEPTH } from './lib/folders'
 import { NotePanels, type PropertyChange } from './components/NotePanels'
 import { RenameTagDialog } from './components/RenameTagDialog'
@@ -64,6 +68,7 @@ type Dialog =
   | { kind: 'agents' }
   | { kind: 'upgrade' }
   | { kind: 'usage' }
+  | { kind: 'sort'; folderId: string | null }
   | { kind: 'rename-tag' }
 
 function initialNoteId(): string | null {
@@ -107,6 +112,7 @@ function App() {
 
   const [activeId, setActiveId] = useState<string | null>(initialNoteId)
   const [activeNote, setActiveNote] = useState<Note | null>(null)
+  const foldersById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders])
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -124,7 +130,10 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [paid, setPaid] = useState(false)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [rootSort, setRootSortState] = useState<SortMode>(DEFAULT_SORT)
   const [notice, setNotice] = useState<string | null>(null)
+  const frontmatterRef = useRef('')
+  const markdownRef = useRef('')
   const [usage, setUsage] = useState<UsageTotals | null>(null)
   const [credits, setCredits] = useState<Credits | null>(null)
   const lastStats = useRef<SyncStats | null>(null)
@@ -149,6 +158,11 @@ function App() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    if (!user) return
+    return subscribeUserSettings(user.uid, (settings) => setRootSortState(settings.rootSort))
+  }, [user])
 
   useEffect(() => {
     if (!user) {
@@ -232,6 +246,19 @@ function App() {
     if (!titleFocused.current) setTitle(activeNote.title)
   }, [activeNote?.id, activeNote?.title])
 
+  // The editor never sees the frontmatter: it would turn `---` into a rule and
+  // flatten `key: value` into a paragraph, destroying properties and tags.
+  const noteBody = useMemo(
+    () => splitFrontmatter(activeNote?.markdown ?? '').body,
+    [activeNote?.id, activeNote?.markdown]
+  )
+
+  useEffect(() => {
+    const parts = splitFrontmatter(activeNote?.markdown ?? '')
+    frontmatterRef.current = parts.frontmatter
+    markdownRef.current = activeNote?.markdown ?? ''
+  }, [activeNote?.id, activeNote?.markdown])
+
   useEffect(() => {
     if (!activeId && notes.length > 0) selectNote(notes[0].id)
   }, [notes, activeId, selectNote])
@@ -265,9 +292,16 @@ function App() {
   )
 
   const handleMarkdownChange = useCallback(
-    (markdown: string) => {
+    (body: string) => {
+      const full = joinFrontmatter(frontmatterRef.current, body)
+      // Nothing actually changed (echo of a seed or of a remote apply): do not
+      // touch the document, or opening a note reorders it.
+      if (sameMarkdown(full, markdownRef.current)) return
+
       if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => persist({ markdown, tags: extractTags(markdown) }), 1200)
+      saveTimer.current = setTimeout(() => {
+        persist({ markdown: full, tags: extractTags(full) })
+      }, 1200)
     },
     [persist]
   )
@@ -330,7 +364,11 @@ function App() {
             const key = `${parentId ?? ''}/${normalizeKey(segment)}`
             folder = folderCache.get(key)
             if (!folder) {
-              folder = (await addFolder(segment, parentId)) ?? undefined
+              // Imported folders inherit the ordering of their parent too.
+              const inherited: SortMode = parentId
+                ? resolveSort(parentId, foldersById, rootSort)
+                : rootSort
+              folder = (await addFolder(segment, parentId, { sort: inherited })) ?? undefined
               if (folder) folderCache.set(key, folder)
             }
             if (!folder) break
@@ -392,6 +430,7 @@ function App() {
               type: change.type ?? 'text',
               value: change.value,
             })
+      frontmatterRef.current = splitFrontmatter(next).frontmatter
       await saveNoteContent(activeNote.id, {
         markdown: next,
         tags: extractTags(next),
@@ -399,6 +438,58 @@ function App() {
       })
     },
     [activeNote]
+  )
+
+  const handleChooseSort = useCallback(
+    async (mode: SortMode) => {
+      if (!user || dialog.kind !== 'sort') return
+      if (dialog.folderId) await setFolderSort(dialog.folderId, mode)
+      else {
+        setRootSortState(mode)
+        await setRootSort(user.uid, mode)
+      }
+    },
+    [dialog, user]
+  )
+
+  /** Moves a note one position inside its folder (manual order only). */
+  const handleMoveNote = useCallback(
+    async (direction: -1 | 1) => {
+      if (!activeNote || !user) return
+      const parentId = activeNote.folderId ?? null
+      const mode = resolveSort(parentId, foldersById, rootSort)
+      if (mode !== 'manual') {
+        setNotice('Poné el orden de la carpeta en «Manual» para mover notas.')
+        return
+      }
+      const siblings = sortNotes(notes.filter((n) => (n.folderId ?? null) === parentId), 'manual')
+      const index = siblings.findIndex((n) => n.id === activeNote.id)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= siblings.length) return
+      const ids = siblings.map((n) => n.id)
+      ;[ids[index], ids[target]] = [ids[target], ids[index]]
+      await applyOrder('notes', renumbered(ids))
+    },
+    [activeNote, foldersById, notes, rootSort, user]
+  )
+
+  const handleMoveFolder = useCallback(
+    async (folder: Folder, direction: -1 | 1) => {
+      const parentId = folder.parentId ?? null
+      const mode = resolveSort(parentId, foldersById, rootSort)
+      if (mode !== 'manual') {
+        setNotice('Poné el orden del nivel en «Manual» para mover carpetas.')
+        return
+      }
+      const siblings = sortFolders(folders.filter((f) => (f.parentId ?? null) === parentId), 'manual')
+      const index = siblings.findIndex((f) => f.id === folder.id)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= siblings.length) return
+      const ids = siblings.map((f) => f.id)
+      ;[ids[index], ids[target]] = [ids[target], ids[index]]
+      await applyOrder('folders', renumbered(ids))
+    },
+    [folders, foldersById, rootSort]
   )
 
   const handleRenameTag = useCallback(
@@ -470,14 +561,19 @@ function App() {
 
   const handleNewFolder = useCallback(
     async (name: string, parentId: string | null = null) => {
-      const folder = await addFolder(name, parentId)
+      const inherited = parentId ? resolveSort(parentId, foldersById, rootSort) : rootSort
+      const siblings = folders.filter((f) => (f.parentId ?? null) === parentId)
+      const folder = await addFolder(name, parentId, {
+        sort: inherited,
+        order: nextOrder(siblings),
+      })
       if (folder) {
         setExpanded((prev) => new Set(prev).add(folder.id))
         if (parentId) setExpanded((prev) => new Set(prev).add(parentId))
       }
       return folder
     },
-    [addFolder]
+    [addFolder, folders, foldersById, rootSort]
   )
 
   const handleDeleteNote = useCallback(async () => {
@@ -546,6 +642,16 @@ function App() {
       })
     }
     noteMenu.push({
+      label: 'Subir',
+      icon: <ArrowUp size={14} />,
+      onSelect: () => void handleMoveNote(-1),
+    })
+    noteMenu.push({
+      label: 'Bajar',
+      icon: <ArrowDown size={14} />,
+      onSelect: () => void handleMoveNote(1),
+    })
+    noteMenu.push({
       label: 'Exportar .md',
       icon: <FileDown size={14} />,
       onSelect: handleExportNote,
@@ -588,6 +694,21 @@ function App() {
           icon: <Hash size={14} />,
           onSelect: () => setDialog({ kind: 'folder-tags', folderId: folderMenu.folder.id }),
         },
+        {
+          label: `Orden: ${SORT_LABELS[folderMenu.folder.sort ?? resolveSort(folderMenu.folder.parentId ?? null, foldersById, rootSort)]}…`,
+          icon: <ArrowDownWideNarrow size={14} />,
+          onSelect: () => setDialog({ kind: 'sort', folderId: folderMenu!.folder.id }),
+        },
+        {
+          label: 'Subir',
+          icon: <ArrowUp size={14} />,
+          onSelect: () => void handleMoveFolder(folderMenu!.folder, -1),
+        },
+        {
+          label: 'Bajar',
+          icon: <ArrowDown size={14} />,
+          onSelect: () => void handleMoveFolder(folderMenu!.folder, 1),
+        },
         ...(isAclOwner(folderMenu.folder, user?.uid)
           ? [
               {
@@ -616,7 +737,6 @@ function App() {
 
   const userName = user?.displayName || user?.email?.split('@')[0] || ''
 
-  const foldersById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders])
   const tagTree = buildTagTree(notes)
   const visibleNotes = selectedTags.length
     ? notes.filter((note) => matchesTagFilter(note.tags, selectedTags))
@@ -662,6 +782,8 @@ function App() {
         isMobile={isMobile}
         isOpen={isMobile ? sidebarOpen : !collapsed}
         loading={dataLoading}
+        rootSort={rootSort}
+        onOpenSort={(folder) => setDialog({ kind: 'sort', folderId: folder?.id ?? null })}
         tagTree={tagTree}
         selectedTags={selectedTags}
         onToggleTag={(key) =>
@@ -755,6 +877,7 @@ function App() {
               <CollaborativeEditor
                 key={activeNote.id}
                 note={activeNote}
+                body={noteBody}
                 uid={user.uid}
                 userName={userName || 'Alguien'}
                 editable={editable}
@@ -892,6 +1015,23 @@ function App() {
           }))}
           currentFolderId={activeNote.folderId}
           onMove={(folder) => void moveNoteTo(activeNote, folder)}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
+      {dialog.kind === 'sort' && (
+        <SortDialog
+          target={
+            dialog.folderId
+              ? folderPath(dialog.folderId, foldersById) || 'Carpeta'
+              : 'Sin carpeta'
+          }
+          current={
+            dialog.folderId
+              ? resolveSort(dialog.folderId, foldersById, rootSort)
+              : rootSort
+          }
+          onChoose={(mode) => void handleChooseSort(mode)}
           onClose={() => setDialog({ kind: 'none' })}
         />
       )}
