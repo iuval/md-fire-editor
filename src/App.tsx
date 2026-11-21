@@ -3,11 +3,15 @@ import { Header } from './components/Header'
 import { Sidebar } from './components/Sidebar'
 import { Editor } from './components/Editor'
 import { useAuth, useNotes } from './hooks/useFirebase'
-import type { Note } from './firebase'
+import { isFirebaseReady, type Note } from './firebase'
 
 function App() {
-  const { user, loading: authLoading } = useAuth()
-  const { notes, loading: notesLoading, createNote, updateNote, removeNote } = useNotes(user?.uid)
+  const { user, loading: authLoading, doGoogleSignIn, doSignOut } = useAuth()
+  const isLocalMode = !isFirebaseReady()
+
+  // Use local-user id when not logged in but Firebase is ready (for local storage fallback)
+  const effectiveUserId = user?.uid || (isLocalMode ? 'local-user' : undefined)
+  const { notes, loading: notesLoading, createNote, updateNote, removeNote } = useNotes(effectiveUserId)
 
   const [activeNoteId, setActiveNoteId] = useState<string | null>(() => {
     try { return localStorage.getItem('mdfire-active') || null } catch { return null }
@@ -48,7 +52,7 @@ function App() {
   }, [activeNote?.id])
 
   useEffect(() => {
-    if (!user?.uid || !activeNoteId) return
+    if (!effectiveUserId || !activeNoteId) return
 
     setSyncStatus('syncing')
     if (syncTimer.current) clearTimeout(syncTimer.current)
@@ -70,7 +74,7 @@ function App() {
     return () => {
       if (syncTimer.current) clearTimeout(syncTimer.current)
     }
-  }, [editorValue, noteTitle, activeNoteId, user?.uid, updateNote])
+  }, [editorValue, noteTitle, activeNoteId, effectiveUserId, updateNote])
 
   const handleNewNote = useCallback(async () => {
     const note = await createNote()
@@ -102,6 +106,17 @@ function App() {
   const handleTitleChange = useCallback((title: string) => {
     setNoteTitle(title)
   }, [])
+
+  const handleSignIn = useCallback(async () => {
+    await doGoogleSignIn()
+  }, [doGoogleSignIn])
+
+  const handleSignOut = useCallback(async () => {
+    await doSignOut()
+    handleSetActive(null)
+    setEditorValue('')
+    setNoteTitle('Untitled Note')
+  }, [doSignOut, handleSetActive])
 
   if (authLoading) {
     return (
@@ -138,6 +153,10 @@ function App() {
         onDeleteNote={handleDeleteNote}
         isMobile={isMobile}
         syncStatus={syncStatus}
+        user={user ? { displayName: user.displayName, email: user.email, photoURL: user.photoURL, uid: user.uid } : null}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+        isLocalMode={isLocalMode}
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

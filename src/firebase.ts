@@ -1,6 +1,25 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app'
-import { getAuth, signInAnonymously, onAuthStateChanged, type User } from 'firebase/auth'
-import { getFirestore, collection, doc, setDoc, deleteDoc, getDocs, query, orderBy, serverTimestamp, type Timestamp } from 'firebase/firestore'
+import {
+  getAuth,
+  signInAnonymously,
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signOut,
+  type User,
+} from 'firebase/auth'
+import {
+  getFirestore,
+  collection,
+  doc,
+  setDoc,
+  deleteDoc,
+  getDocs,
+  query,
+  orderBy,
+  serverTimestamp,
+  type Timestamp,
+} from 'firebase/firestore'
 import firebaseConfig from './firebaseConfig'
 
 let app: FirebaseApp | null = null
@@ -37,6 +56,23 @@ export function isFirebaseReady(): boolean {
   return !!app && !!auth && !!db
 }
 
+export async function signInWithGoogle(): Promise<User | null> {
+  if (!auth) return null
+  const provider = new GoogleAuthProvider()
+  try {
+    const cred = await signInWithPopup(auth, provider)
+    return cred.user
+  } catch (e) {
+    console.error('Google sign-in error:', e)
+    return null
+  }
+}
+
+export async function signOutUser(): Promise<void> {
+  if (!auth) return
+  await signOut(auth)
+}
+
 export async function ensureAuth(): Promise<User | null> {
   if (!auth) return null
   return new Promise((resolve) => {
@@ -59,12 +95,16 @@ export async function ensureAuth(): Promise<User | null> {
 export async function saveNote(userId: string, note: Note): Promise<void> {
   if (!db) throw new Error('Firebase not ready')
   const ref = doc(db, 'users', userId, 'notes', note.id)
-  await setDoc(ref, {
-    title: note.title,
-    content: note.content,
-    updatedAt: serverTimestamp(),
-    createdAt: note.createdAt || serverTimestamp(),
-  }, { merge: true })
+  await setDoc(
+    ref,
+    {
+      title: note.title,
+      content: note.content,
+      updatedAt: serverTimestamp(),
+      createdAt: note.createdAt || serverTimestamp(),
+    },
+    { merge: true }
+  )
 }
 
 export async function deleteNote(userId: string, noteId: string): Promise<void> {
@@ -74,15 +114,9 @@ export async function deleteNote(userId: string, noteId: string): Promise<void> 
 
 export async function loadNotes(userId: string): Promise<Note[]> {
   if (!db) return []
-  const q = query(
-    collection(db, 'users', userId, 'notes'),
-    orderBy('updatedAt', 'desc')
-  )
+  const q = query(collection(db, 'users', userId, 'notes'), orderBy('updatedAt', 'desc'))
   const snap = await getDocs(q)
-  return snap.docs.map(d => ({
-    id: d.id,
-    ...d.data(),
-  } as Note))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Note))
 }
 
 export { serverTimestamp }
