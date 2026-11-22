@@ -9,7 +9,7 @@ del bundle de producción.
 | # | Hallazgo | Estado | Medido antes | Medido ahora |
 | --- | --- | --- | --- | --- |
 | H3 | Trabajo y basura por tecla | **hecho** | ~3,2 ms y ~1 MB de basura por tecla (100 KB) | 0 ms de serialización; ~0,3 ms de comparación por edición; 0 basura |
-| H2 | Un editor por panel, sin tope | **hecho (tope 4)** | paneles sin límite (4 paneles de 250 KB = 68 MB) | `MAX_PANES = 4`, acción deshabilitada con el presupuesto agotado |
+| H2 | Un editor por panel, sin tope | **hecho (tope 10)** | paneles sin límite (10 paneles de 250 KB = 170 MB) | `MAX_PANES = 10`, acción deshabilitada con el presupuesto agotado |
 | H5 | Bundle entero sin split | **hecho** | 1.692.553 B en un chunk | 76 KB gzip para el primer pintado; 208 KB (`AppTree`, Firebase) y 212 KB (`NotePane`, editor) diferidos |
 | H6 | Import/export con picos de 2-3× | **hecho** | todas las entradas infladas + todos los cuerpos decodificados | plan de rutas + un cuerpo a la vez; export vía `Blob` |
 | H4 | Cache de Firestore y contabilidad del log | **parcial** | LRU por defecto 40 MB; ids duplicados en `Set` + array | `cacheSizeBytes` 20 MB; un solo `Set` |
@@ -94,12 +94,12 @@ selección y se reconstruye al tipear un tag nuevo).
 ## 4. H2 — un editor por panel, con tope (hecho)
 
 Cada panel monta su propio editor para su pestaña activa (`src/components/NotePane.tsx`), y
-`panes.ts` no limitaba cuántos: sólo la profundidad del árbol (`MAX_DEPTH = 24`). Cuatro paneles con
-notas de 250 KB son ~68 MB.
+`panes.ts` no limitaba cuántos: sólo la profundidad del árbol (`MAX_DEPTH = 24`). El tope es un
+presupuesto: diez paneles con notas chicas son ~30 MB; diez con el máximo de 250 KB, ~170 MB.
 
-Ahora `MAX_PANES = 4` (`src/lib/panes.ts`), `canSplit()` decide, `splitPaneAt` no hace nada si el
+Ahora `MAX_PANES = 10` (`src/lib/panes.ts`), `canSplit()` decide, `splitPaneAt` no hace nada si el
 presupuesto está agotado y los menús muestran la acción deshabilitada con la etiqueta
-`Máximo de paneles (4)` (`MenuItem.disabled` en `src/components/Menu.tsx`). Cerrar un panel devuelve
+`Máximo de paneles (10)` (`MenuItem.disabled` en `src/components/Menu.tsx`). Cerrar un panel devuelve
 el presupuesto (test en `tests/panes.test.ts`).
 
 Queda pendiente, y no es memoria sino política de producto: bajar `MAX_MARKDOWN_BYTES` de 250 KB o

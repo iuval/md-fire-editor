@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FireMD Sync</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 512 512" aria-hidden="true">
+          <g
+            transform="translate(-17.4 -3.4) scale(1.0336)"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="17.41"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M 132 480 C 116 462, 104 444, 95 425 C 83 404, 74 382, 69 362 C 66 340, 63 320, 63 300 C 64 278, 71 246, 86 220 C 98 202, 114 178, 134 152 C 139 172, 142 194, 145 214 C 148 228, 156 240, 168 246 C 173 235, 175 221, 175 206 C 174 190, 176 172, 182 158 C 189 141, 199 128, 209 116 C 220 104, 231 88, 238 72 C 242 60, 244 44, 246 22 C 258 26, 268 32, 276 44 C 290 62, 308 72, 320 88 C 326 104, 334 118, 340 138 C 344 154, 346 170, 347 186 C 348 196, 352 204, 356 200 C 366 190, 377 172, 384 154 L 392 142 C 407 154, 420 172, 431 190 C 437 210, 444 232, 446 256 C 447 274, 447 290, 447 302" />
+            <path d="M 253 196 C 249 212, 244 226, 236 240 C 227 256, 211 270, 195 281 C 180 291, 165 305, 156 322 C 149 338, 148 356, 150 374 C 152 394, 156 412, 161 430 C 165 444, 169 456, 173 466" />
+            <path d="M 144 480 L 340 480 L 470 306 L 260 306 Z" />
+            <path d="M 272 351 L 400 351" />
+            <path d="M 254 385 L 370 385" />
+            <path d="M 238 419 L 335 419" />
+          </g>
+        </svg>
+        <div>
+          <h1>FireMD Sync</h1>
+          <p class="sub">Tu carpeta local y FireMD, en las dos direcciones</p>
+        </div>
+      </div>
+      <span id="pill" class="pill" aria-live="polite">Iniciando…</span>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="account-title">
+        <div class="card-head">
+          <h2 id="account-title">Cuenta</h2>
+          <span id="account-state" class="muted">Sin cuenta</span>
+        </div>
+        <div id="account-out" class="stack">
+          <p class="hint">
+            Generá un código de agente y pegalo en la app web, en
+            <strong>Agentes de IA</strong>, sobre la carpeta que querés sincronizar.
+          </p>
+          <button id="login" class="btn primary" type="button">Generar código de agente</button>
+        </div>
+        <div id="account-in" class="stack" hidden>
+          <div class="row">
+            <code id="uid" class="code"></code>
+            <button id="copy" class="btn ghost" type="button">Copiar uid</button>
+          </div>
+          <p class="hint">
+            Este uid tiene que estar como miembro de la carpeta en <strong>Agentes de IA</strong>.
+            Si no aparece, pedile permiso al dueño de la carpeta.
+          </p>
+          <button id="logout" class="btn ghost danger" type="button">Desconectar</button>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="vault-title">
+        <div class="card-head">
+          <h2 id="vault-title">Carpeta base</h2>
+          <button id="reveal" class="btn ghost" type="button" disabled>Abrir</button>
+        </div>
+        <p id="vault-path" class="path empty">Ninguna carpeta elegida</p>
+        <div class="row">
+          <button id="pick" class="btn primary" type="button">Elegir carpeta…</button>
+        </div>
+        <p class="hint">
+          Ahí se escriben las notas como <code>.md</code> (y los tableros como
+          <code>.canvas</code>). Podés abrirla con Obsidian.
+        </p>
+      </section>
+
+      <section class="card" aria-labelledby="sync-title">
+        <div class="card-head">
+          <h2 id="sync-title">Sincronización</h2>
+          <span id="sync-state" class="muted">Detenida</span>
+        </div>
+        <div class="row">
+          <label class="switch">
+            <input id="auto" type="checkbox" />
+            <span>Automática</span>
+          </label>
+          <label class="field">
+            <span>cada</span>
+            <select id="interval">
+              <option value="5">5 s</option>
+              <option value="15">15 s</option>
+              <option value="30">30 s</option>
+              <option value="60">1 min</option>
+              <option value="300">5 min</option>
+            </select>
+          </label>
+          <button id="sync" class="btn primary" type="button">Sincronizar ahora</button>
+        </div>
+        <p id="last-sync" class="muted small">Todavía no sincronizó</p>
+      </section>
+
+      <section class="card" aria-labelledby="report-title">
+        <div class="card-head">
+          <h2 id="report-title">Último resultado</h2>
+        </div>
+        <dl id="counters" class="counters">
+          <div><dt>Bajadas</dt><dd id="count-pulled">0</dd></div>
+          <div><dt>Subidas</dt><dd id="count-pushed">0</dd></div>
+          <div><dt>Nuevas</dt><dd id="count-created">0</dd></div>
+          <div><dt>Conflictos</dt><dd id="count-conflicts">0</dd></div>
+        </dl>
+        <ul id="conflicts" class="conflicts" hidden></ul>
+        <p id="error" class="error" role="alert" hidden></p>
+      </section>
+    </main>
+
+    <footer>
+      <span id="version" class="muted small"></span>
+      <span class="muted small"
+        >Cerrar la ventana no corta la sincronización: sigue en la bandeja.</span
+      >
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

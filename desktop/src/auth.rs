@@ -1,0 +1,370 @@
+//! Identidad del agente: una cuenta anónima de Firebase emparejada desde la app
+//! web (Agentes de IA → pegar el uid).
+//!
+//! El agente es un usuario normal, así que las reglas de Firestore deciden qué
+//! puede leer y escribir. Sin Admin SDK, sin claves de servicio, sin bypass.
+//!
+//! El archivo de credenciales es el mismo que usa el CLI (`agent/auth.mjs`), de
+//! modo que un `mdfire login` previo ya sirve para la app de escritorio.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::{AppError, Result};
+
+pub const DEFAULT_PROJECT: &str = "md-sync-app";
+pub const DEFAULT_REFERER: &str = "https://md-sync-app.web.app/";
+/// La clave web de Firebase es pública (viaja en el bundle) y está restringida
+/// por referrer. Se puede cambiar con `MDFIRE_API_KEY` o en los ajustes.
+pub const DEFAULT_API_KEY: &str = "AIzaSyAl9EyRLFIni3XliwC_WCc_yRvhIrWX0YQ";
+
+fn default_project() -> String {
+    DEFAULT_PROJECT.to_string()
+}
+
+fn default_referer() -> String {
+    DEFAULT_REFERER.to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Credentials {
+    #[serde(default)]
+    pub uid: String,
+    #[serde(rename = "refreshToken", default)]
+    pub refresh_token: Option<String>,
+    #[serde(rename = "idToken", default)]
+    pub id_token: Option<String>,
+    /// Milisegundos desde epoch, igual que el CLI.
+    #[serde(rename = "expiresAt", default)]
+    pub expires_at: u64,
+    #[serde(rename = "projectId", default = "default_project")]
+    pub project_id: String,
+    #[serde(default = "default_referer")]
+    pub referer: String,
+    #[serde(default)]
+    pub revoked: bool,
+    /// Campos que no conocemos (los escribe el CLI): se conservan al guardar.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Default for Credentials {
+    fn default() -> Self {
+        Self {
+            uid: String::new(),
+            refresh_token: None,
+            id_token: None,
+            expires_at: 0,
+            project_id: default_project(),
+            referer: default_referer(),
+            revoked: false,
+            extra: serde_json::Map::new(),
+        }
+    }
+}
+
+impl Credentials {
+    pub fn has_refresh_token(&self) -> bool {
+        self.refresh_token.as_deref().is_some_and(|t| !t.is_empty())
+    }
+
+    /// Corto y fácil de dictar; el uid completo va en "copiar".
+    pub fn pairing_code(&self) -> String {
+        self.uid.chars().take(12).collect()
+    }
+}
+
+pub fn home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Mismo directorio que el CLI: `$XDG_CONFIG_HOME/mdfire` o `~/.config/mdfire`.
+pub fn config_dir() -> PathBuf {
+    match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("mdfire"),
+        _ => home_dir().join(".config").join("mdfire"),
+    }
+}
+
+pub fn credentials_path() -> PathBuf {
+    config_dir().join("credentials.json")
+}
+
+pub fn settings_path() -> PathBuf {
+    config_dir().join("desktop.json")
+}
+
+pub fn load_credentials() -> Option<Credentials> {
+    load_credentials_at(&credentials_path())
+}
+
+pub fn load_credentials_at(path: &Path) -> Option<Credentials> {
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+pub fn save_credentials(creds: &Credentials) -> Result<()> {
+    save_credentials_at(&credentials_path(), creds)
+}
+
+pub fn save_credentials_at(path: &Path, creds: &Credentials) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut body = serde_json::to_string_pretty(creds)?;
+    body.push('\n');
+    fs::write(path, body)?;
+    restrict_permissions(path)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn restrict_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+/// Revoca el refresh token (best effort) y deja el archivo sin credenciales.
+pub fn logout() -> Result<()> {
+    let Some(mut creds) = load_credentials() else {
+        return Ok(());
+    };
+    if let Some(refresh) = creds.refresh_token.clone() {
+        let _ = revoke(&refresh);
+    }
+    creds.refresh_token = None;
+    creds.id_token = None;
+    creds.revoked = true;
+    save_credentials(&creds)
+}
+
+pub fn api_key() -> String {
+    if let Ok(key) = std::env::var("MDFIRE_API_KEY") {
+        if !key.is_empty() {
+            return key;
+        }
+    }
+    DEFAULT_API_KEY.to_string()
+}
+
+fn auth_base() -> String {
+    match std::env::var("FIREBASE_AUTH_EMULATOR_HOST") {
+        Ok(host) if !host.is_empty() => format!("http://{host}/identitytoolkit.googleapis.com"),
+        _ => "https://identitytoolkit.googleapis.com".to_string(),
+    }
+}
+
+fn token_base() -> String {
+    match std::env::var("FIREBASE_AUTH_EMULATOR_HOST") {
+        Ok(host) if !host.is_empty() => format!("http://{host}/securetoken.googleapis.com"),
+        _ => "https://securetoken.googleapis.com".to_string(),
+    }
+}
+
+fn is_emulator() -> bool {
+    std::env::var("FIREBASE_AUTH_EMULATOR_HOST").is_ok_and(|h| !h.is_empty())
+}
+
+fn client() -> Result<reqwest::blocking::Client> {
+    Ok(reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?)
+}
+
+fn post_json(url: &str, body: serde_json::Value, referer: &str) -> Result<serde_json::Value> {
+    let mut request = client()?
+        .post(url)
+        .header("Content-Type", "application/json")
+        .json(&body);
+    // El referrer es la única razón por la que existe la restricción de la clave.
+    if !is_emulator() {
+        request = request.header("Referer", referer);
+    }
+    let response = request.send()?;
+    let status = response.status();
+    let text = response.text().unwrap_or_default();
+    let parsed: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+    if !status.is_success() {
+        let message = parsed
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(|message| message.as_str())
+            .unwrap_or("error desconocido");
+        return Err(AppError::Auth(format!("{message} (HTTP {status})")));
+    }
+    Ok(parsed)
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Crea una cuenta anónima nueva y devuelve las credenciales a persistir.
+pub fn login_anonymous(project_id: &str, referer: &str) -> Result<Credentials> {
+    let url = format!("{}/v1/accounts:signUp?key={}", auth_base(), api_key());
+    let data = post_json(
+        &url,
+        serde_json::json!({ "returnSecureToken": true }),
+        referer,
+    )?;
+
+    let uid = data
+        .get("localId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::Auth("la respuesta no trae localId".into()))?
+        .to_string();
+    let refresh_token = data
+        .get("refreshToken")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let id_token = data
+        .get("idToken")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let expires_in = data
+        .get("expiresIn")
+        .and_then(|v| v.as_str())
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(3600);
+
+    Ok(Credentials {
+        uid,
+        refresh_token,
+        id_token,
+        expires_at: now_ms() + expires_in * 1000,
+        project_id: project_id.to_string(),
+        referer: referer.to_string(),
+        revoked: false,
+        extra: serde_json::Map::new(),
+    })
+}
+
+fn revoke(refresh_token: &str) -> Result<()> {
+    let url = format!("{}/v1/token?key={}", token_base(), api_key());
+    post_json(
+        &url,
+        serde_json::json!({
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        }),
+        DEFAULT_REFERER,
+    )
+    .map(|_| ())
+}
+
+/// Devuelve un ID token válido, refrescándolo si está por vencer.
+pub fn id_token(force: bool) -> Result<(String, Credentials)> {
+    if let Ok(token) = std::env::var("MDFIRE_ID_TOKEN") {
+        if !token.is_empty() {
+            let mut creds = load_credentials().unwrap_or_default();
+            if creds.uid.is_empty() {
+                creds.uid = "token-externo".to_string();
+            }
+            return Ok((token, creds));
+        }
+    }
+
+    let mut creds = load_credentials().ok_or(AppError::NotLoggedIn)?;
+    if !creds.has_refresh_token() {
+        return Err(AppError::NotLoggedIn);
+    }
+    if !force
+        && creds.id_token.as_deref().is_some_and(|t| !t.is_empty())
+        && creds.expires_at > now_ms() + 60_000
+    {
+        return Ok((creds.id_token.clone().unwrap_or_default(), creds));
+    }
+
+    let url = format!("{}/v1/token?key={}", token_base(), api_key());
+    let data = post_json(
+        &url,
+        serde_json::json!({
+            "grant_type": "refresh_token",
+            "refresh_token": creds.refresh_token,
+        }),
+        &creds.referer,
+    )?;
+
+    let id_token = data
+        .get("id_token")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::Auth("la respuesta no trae id_token".into()))?
+        .to_string();
+    let refresh = data
+        .get("refresh_token")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .or_else(|| creds.refresh_token.clone());
+    let expires_in = data
+        .get("expires_in")
+        .and_then(|v| v.as_str())
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(3600);
+
+    creds.id_token = Some(id_token.clone());
+    creds.refresh_token = refresh;
+    creds.expires_at = now_ms() + expires_in * 1000;
+    creds.revoked = false;
+    save_credentials(&creds)?;
+    Ok((id_token, creds))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn credenciales_sobreviven_el_round_trip_con_campos_extra() {
+        let dir = std::env::temp_dir().join(format!("mdfire-auth-test-{}", std::process::id()));
+        let path = dir.join("credentials.json");
+        let mut creds = Credentials {
+            uid: "abc123".into(),
+            refresh_token: Some("refresh".into()),
+            id_token: Some("id".into()),
+            expires_at: 42,
+            ..Default::default()
+        };
+        creds
+            .extra
+            .insert("algoDelCli".into(), serde_json::json!("se conserva"));
+
+        save_credentials_at(&path, &creds).unwrap();
+        let loaded = load_credentials_at(&path).unwrap();
+        assert_eq!(loaded.uid, "abc123");
+        assert_eq!(loaded.expires_at, 42);
+        assert_eq!(
+            loaded.extra.get("algoDelCli").and_then(|v| v.as_str()),
+            Some("se conserva")
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn el_codigo_de_emparejamiento_es_los_primeros_12() {
+        let creds = Credentials {
+            uid: "abcdefghijklmnop".into(),
+            ..Default::default()
+        };
+        assert_eq!(creds.pairing_code(), "abcdefghijkl");
+    }
+
+    #[test]
+    fn sin_refresh_token_no_hay_sesion() {
+        let creds = Credentials::default();
+        assert!(!creds.has_refresh_token());
+    }
+}

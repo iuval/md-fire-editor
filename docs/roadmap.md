@@ -99,7 +99,7 @@ ZIP que generamos.
 
 ---
 
-## 3. Archivos locales: CLI o mini app de sync (Windows/Mac) — ✅ CLI implementado
+## 3. Archivos locales: CLI o app de sync (Windows/Mac) — ✅ CLI y app implementados
 
 **Qué**: mantener una carpeta local (el vault) espejada con la nube, para editar con cualquier
 editor y con Obsidian.
@@ -114,9 +114,12 @@ editor y con Obsidian.
   - `mdfire vault watch` → `fs.watch` + debounce 500 ms; cada archivo modificado se aplica con
     `patch` sobre el documento (no reescritura completa) para no romper el CRDT del editor.
   - Manifiesto local `.mdfire/sync.json` con `{ ruta: { id, etag, updatedAt } }`.
-- **Mini app** (después): envoltorio de escritorio (Tauri, ~5 MB) con bandeja del sistema,
-  login del agente, start/stop, log y conflictos. Windows: instalador MSI; Mac: DMG firmado
-  (requiere cuenta Apple Developer, $99/año — costo a presupuestar).
+- **App de escritorio** (hecha): Tauri 2 con bandeja del sistema, login del agente, selector
+  de carpeta base, start/stop y vista de conflictos. Ciclo automático cada 15 s (pull y
+  después push) en vez de `fs.watch`: menos casos raros con los guardados atómicos de Obsidian
+  y el mismo resultado para el usuario. Windows: MSI/NSIS; Mac: DMG (firmar requiere cuenta
+  Apple Developer, $99/año — costo a presupuestar; el build sin firmar funciona con Gatekeeper
+  avisando la primera vez).
 - **Conflictos**: gana el último etag; si los dos lados cambiaron, se guarda
   `nota.conflicto-YYYYMMDD.md` con la versión local en vez de perderla.
 - **Convivencia con el editor**: escribir desde disco es una edición externa; el editor ya
@@ -133,7 +136,13 @@ certificados y de decidir adjuntos.
 `.mdfire/manifest.json`, escritura por `replaceNote` con precondición de `updateTime`, y
 **archivo de conflicto** `<nota>.conflicto-YYYYMMDD-HHMM.md` si el remoto cambió: nunca pisa ni
 descarta. Los archivos nuevos solo se aceptan dentro de una carpeta compartida (el agente no
-puede crear notas sueltas ajenas). Falta el `watch` y la mini app de escritorio.
+puede crear notas sueltas ajenas).
+
+**Implementado (app de escritorio)**: `desktop/` (Rust + Tauri 2), mismo manifiesto y mismos
+archivos de conflicto que el CLI, así que se puede usar la misma carpeta con los dos. El motor
+en Rust reusa el modelo de datos y las reglas de Firestore tal cual (identidad anónima del
+agente, sin Admin SDK). Ciclo automático: pull (no toca archivos con cambios locales sin subir)
+y push (etag viejo → conflicto, nunca pisa). Ver `desktop/README.md`.
 
 ---
 

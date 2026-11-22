@@ -38,3 +38,7 @@ firestore-debug.log
 
 # local visual-review screenshots
 .shots/
+
+# App de escritorio (Rust + Tauri)
+desktop/target
+desktop/gen
