@@ -14,6 +14,7 @@ import {
   subscribeMyNotes,
   type Folder,
   type Note,
+  type NoteKind,
 } from '../lib/notes'
 import { publishOwnDirectoryEntry } from '../lib/directory'
 
@@ -169,9 +170,9 @@ export function useWorkspace(uid: string | undefined) {
   }, [uid])
 
   const addNote = useCallback(
-    async (folder?: Folder, id?: string) => {
+    async (folder?: Folder, id?: string, kind: NoteKind = 'note') => {
       if (!uid) return null
-      return createNote(uid, folder, id)
+      return createNote(uid, folder, id, kind)
     },
     [uid]
   )

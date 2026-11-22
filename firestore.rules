@@ -206,9 +206,12 @@ service cloud.firestore {
     function validNote(d) {
       return d.keys().hasOnly([
           'ownerId', 'folderId', 'aclSource', 'memberIds', 'roles', 'access',
-          'title', 'markdown', 'markdownBytes', 'tags', 'order', 'version',
+          'title', 'markdown', 'markdownBytes', 'tags', 'order', 'version', 'kind',
           'createdAt', 'updatedAt'
         ])
+        // A canvas stores JSON Canvas in the same body field; the kind decides
+        // how the client renders it. Absent on notes written before canvases.
+        && (!d.keys().hasAny(['kind']) || d.kind in ['note', 'canvas'])
         && isString(d.ownerId)
         // Notes created before folders existed omit both fields: treat as 'own'.
         && (!d.keys().hasAny(['folderId']) || d.folderId == null || isString(d.folderId))

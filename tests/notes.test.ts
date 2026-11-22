@@ -5,6 +5,8 @@ import {
   buildNoteDocument,
   bodyDocument,
   buildNoteUpdate,
+  mergeDeferred,
+  newNoteDraft,
   optimisticFolder,
   reserveFolderId,
   reserveNoteId,
@@ -122,6 +124,73 @@ describe('note creation with content (vault import)', () => {
       serverTimestamp()
     )
     expect(document.markdownBytes).toBe(MAX_MARKDOWN_BYTES)
+  })
+})
+
+describe('optimistic note (the tab paints before the write lands)', () => {
+  const folder: Folder = {
+    id: 'f1',
+    ownerId: 'u1',
+    name: 'Guiones',
+    parentId: null,
+    order: 0,
+    tags: [],
+    memberIds: ['u1', 'u2'],
+    roles: { u1: 'owner', u2: 'editor' },
+    access: 'restricted',
+  }
+
+  it('carries exactly the fields createNote writes', () => {
+    const draft = newNoteDraft('u1', folder, 'n1', 'canvas')
+    const written = buildNoteDocument(
+      'u1',
+      { title: draft.title, markdown: draft.markdown, tags: draft.tags, folder, kind: 'canvas' },
+      serverTimestamp()
+    )
+    expect(written).toMatchObject({
+      ownerId: draft.ownerId,
+      folderId: draft.folderId,
+      aclSource: draft.aclSource,
+      memberIds: draft.memberIds,
+      roles: draft.roles,
+      access: draft.access,
+      title: draft.title,
+      tags: draft.tags,
+      version: draft.version,
+      order: draft.order,
+      kind: 'canvas',
+    })
+    expect(draft.title).toBe('Canvas sin título')
+    // An empty body, so the pane renders an empty document instead of waiting.
+    expect(draft.markdown).toBe('')
+  })
+
+  it('leaves markdown notes without a kind field, like every note ever written', () => {
+    const draft = newNoteDraft('u1', null, 'n2')
+    const written = buildNoteDocument(
+      'u1',
+      { title: draft.title, markdown: '', tags: [], folder: null },
+      serverTimestamp()
+    )
+    expect('kind' in written).toBe(false)
+    expect(draft.kind).toBe('note')
+    expect(draft.aclSource).toBe('own')
+    expect(draft.roles).toEqual({ u1: 'owner' })
+  })
+})
+
+describe('edits typed before the note exists', () => {
+  it('keeps the last value per field, so a rename and a body edit both survive', () => {
+    const first = mergeDeferred(null, { title: 'Mapa' }, MAX_MARKDOWN_BYTES)
+    const second = mergeDeferred(first, { markdown: '{"nodes": []}', tags: [] }, 600_000)
+    expect(second).toEqual({
+      patch: { title: 'Mapa', markdown: '{"nodes": []}', tags: [] },
+      maxChars: 600_000,
+    })
+    // A later rename does not drop the queued body.
+    expect(mergeDeferred(second, { title: 'Mapa POV' }, 600_000).patch.markdown).toBe(
+      '{"nodes": []}'
+    )
   })
 })
 

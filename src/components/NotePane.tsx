@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CollaborativeEditor } from './CollaborativeEditor'
+import { CanvasEditor } from './CanvasEditor'
 import { NotePanels, type PropertyChange } from './NotePanels'
 import { TabStrip } from './TabStrip'
 import {
+  mergeDeferred,
   noteCanEdit,
   saveNoteContent,
+  MAX_MARKDOWN_BYTES,
+  type DeferredWrite,
   type Folder,
   type Note,
 } from '../lib/notes'
+import { MAX_CANVAS_CHARS, canvasTagsOf } from '../lib/canvas/model'
+import type { CanvasFileRef } from '../lib/canvas/files'
 import { folderPath, sharedFolderOf } from '../lib/folders'
 import { joinFrontmatter, sameMarkdown, splitFrontmatter } from '../lib/markdown'
 import { extractTags } from '../lib/tags'
@@ -22,6 +28,11 @@ interface NoteDocumentProps {
   userName: string
   folders: Folder[]
   isMobile: boolean
+  /** The note document is still being written: edits wait for it. */
+  creating: boolean
+  /** Every note as an Obsidian vault path: `file` cards resolve against it. */
+  canvasFiles: CanvasFileRef[]
+  onOpenNote: (noteId: string) => void
   onTagClick: (tag: string) => void
   onRenameTag: () => void
   onPresence: (users: AwarenessUser[]) => void
@@ -40,6 +51,9 @@ function NoteDocument({
   userName,
   folders,
   isMobile,
+  creating,
+  canvasFiles,
+  onOpenNote,
   onTagClick,
   onRenameTag,
   onPresence,
@@ -52,9 +66,22 @@ function NoteDocument({
   const markdownRef = useRef('')
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * Edits made between opening the tab and the note document landing. The
+   * document does not exist yet, so writing would be rejected; they are merged
+   * here and flushed the moment it exists.
+   */
+  const deferred = useRef<DeferredWrite | null>(null)
+  /**
+   * Read at write time, not captured: a debounce armed before the document
+   * existed must still be able to write once it does (a closure would defer the
+   * edit forever and lose it).
+   */
+  const creatingRef = useRef(creating)
 
   const foldersById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders])
   const editable = noteCanEdit(note, folders, uid)
+  const isCanvas = note.kind === 'canvas'
   const sharedFolder = sharedFolderOf(note, folders)
 
   useEffect(() => {
@@ -63,8 +90,12 @@ function NoteDocument({
   }, [note.id, note.title])
 
   // The editor never sees the frontmatter: it would turn `---` into a rule and
-  // flatten `key: value` into a paragraph, destroying properties and tags.
-  const body = useMemo(() => splitFrontmatter(note.markdown ?? '').body, [note.markdown])
+  // flatten `key: value` into a paragraph, destroying properties and tags. A
+  // canvas body is JSON, so it travels whole.
+  const body = useMemo(
+    () => (isCanvas ? (note.markdown ?? '') : splitFrontmatter(note.markdown ?? '').body),
+    [isCanvas, note.markdown]
+  )
 
   useEffect(() => {
     const parts = splitFrontmatter(note.markdown ?? '')
@@ -80,11 +111,35 @@ function NoteDocument({
   }, [])
 
   const persist = useCallback(
-    (patch: { title?: string; markdown?: string; tags?: string[] }) => {
-      void saveNoteContent(note.id, { ...patch, version: note.version + 1 }).catch(() => undefined)
+    (patch: { title?: string; markdown?: string; tags?: string[] }, maxChars = MAX_MARKDOWN_BYTES) => {
+      if (creatingRef.current) {
+        deferred.current = mergeDeferred(deferred.current, patch, maxChars)
+        return
+      }
+      void saveNoteContent(note.id, {
+        ...patch,
+        version: note.version + 1,
+        maxChars,
+      }).catch(() => undefined)
     },
     [note.id, note.version]
   )
+
+  // The document exists now: send whatever was typed while it did not. The ref
+  // is updated first, so a debounce that fires after this effect writes directly
+  // instead of deferring again.
+  useEffect(() => {
+    creatingRef.current = creating
+    if (creating) return
+    const wait = deferred.current
+    if (!wait) return
+    deferred.current = null
+    void saveNoteContent(note.id, {
+      ...wait.patch,
+      version: note.version + 1,
+      maxChars: wait.maxChars,
+    }).catch(() => undefined)
+  }, [creating, note.id, note.version])
 
   const handleMarkdownChange = useCallback(
     (nextBody: string) => {
@@ -95,6 +150,22 @@ function NoteDocument({
       if (saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(() => {
         persist({ markdown: full, tags: extractTags(full) })
+      }, 1200)
+    },
+    [persist]
+  )
+
+  /**
+   * A canvas writes the same body field as markdown, with its own size limit:
+   * `bodyDocument` slices, and a sliced canvas is an unparseable file.
+   */
+  const handleCanvasChange = useCallback(
+    (json: string) => {
+      if (sameMarkdown(json, markdownRef.current)) return
+      markdownRef.current = json
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => {
+        persist({ markdown: json, tags: canvasTagsOf(json) }, MAX_CANVAS_CHARS)
       }, 1200)
     },
     [persist]
@@ -130,8 +201,8 @@ function NoteDocument({
     [note.id, note.markdown, note.version]
   )
 
-  return (
-    <div className="doc">
+  const header = (
+    <div className="doc-header">
       <input
         className="inline-title"
         value={title}
@@ -150,8 +221,10 @@ function NoteDocument({
       />
       <NotePanels
         tags={note.tags}
-        properties={parseProperties(note.markdown ?? '')}
-        editable={editable}
+        // A canvas has no frontmatter: properties would be a lie, and its tags
+        // are derived from the cards, not edited as a list.
+        properties={isCanvas ? [] : parseProperties(note.markdown ?? '')}
+        editable={editable && !isCanvas}
         onTagClick={onTagClick}
         onRenameTag={onRenameTag}
         onPropertyChange={(change) => void handlePropertyChange(change)}
@@ -161,6 +234,37 @@ function NoteDocument({
           En «{folderPath(sharedFolder.id, foldersById)}» · permisos heredados de la carpeta
         </p>
       )}
+    </div>
+  )
+
+  if (isCanvas) {
+    // A canvas owns the pane: no reading column, no page scroll, the surface
+    // fills what is left. The title stays as the slim bar above it.
+    return (
+      <div className="doc doc--canvas">
+        {header}
+        <CanvasEditor
+          key={note.id}
+          note={note}
+          body={body}
+          uid={uid}
+          userName={userName}
+          editable={editable}
+          isMobile={isMobile}
+          files={canvasFiles}
+          onOpenNote={onOpenNote}
+          onJsonChange={handleCanvasChange}
+          onPresence={onPresence}
+          onStatus={onStatus}
+          onStats={onStats}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="doc">
+      {header}
       <CollaborativeEditor
         key={note.id}
         note={note}
@@ -189,6 +293,8 @@ interface NotePaneProps {
   userName: string
   folders: Folder[]
   isMobile: boolean
+  canvasFiles: CanvasFileRef[]
+  onOpenNote: (noteId: string) => void
   onFocus: () => void
   onActivateTab: (tabId: string) => void
   onCloseTab: (tabId: string) => void
@@ -227,6 +333,8 @@ export function NotePane({
   userName,
   folders,
   isMobile,
+  canvasFiles,
+  onOpenNote,
   onFocus,
   onActivateTab,
   onCloseTab,
@@ -268,7 +376,7 @@ export function NotePane({
         />
       )}
 
-      <div className="scroll">
+      <div className={note?.kind === 'canvas' ? 'scroll scroll--canvas' : 'scroll'}>
         {noteError && (
           <p className="hint tone-danger" style={{ padding: '16px 24px' }}>
             {noteError}
@@ -313,6 +421,9 @@ export function NotePane({
             userName={userName}
             folders={folders}
             isMobile={isMobile}
+            creating={creating}
+            canvasFiles={canvasFiles}
+            onOpenNote={onOpenNote}
             onTagClick={onTagClick}
             onRenameTag={onRenameTag}
             onPresence={focused ? onPresence : ignorePresence}

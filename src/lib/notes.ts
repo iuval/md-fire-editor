@@ -17,17 +17,26 @@ import {
 import { db } from '../firebase'
 import { canReadAcl, canWriteAcl, type Access, type Acl, type Role } from './acl'
 import { DEFAULT_SORT, type SortMode } from './sorting'
+import { EMPTY_CANVAS_JSON, MAX_CANVAS_CHARS } from './canvas/model'
 
 export type { Access, Acl, Role } from './acl'
 export { ACCESS_LABELS, ROLE_LABELS, aclMembers, canReadAcl, canWriteAcl, isAclOwner, roleOf } from './acl'
 
 export type AclSource = 'own' | 'folder'
 
+/**
+ * What a note holds. `note` is markdown; `canvas` is a JSON Canvas document in
+ * the same body field (see `lib/canvas/model`). Absent on notes written before
+ * canvases existed, which read as `note`.
+ */
+export type NoteKind = 'note' | 'canvas'
+
 export interface Note extends Acl {
   id: string
   ownerId: string
   folderId: string | null
   aclSource: AclSource
+  kind: NoteKind
   title: string
   /**
    * The body. Only filled for a note that is open (its `body/main` is
@@ -65,6 +74,8 @@ interface Timestampish {
 }
 
 export const MAX_MARKDOWN_BYTES = 250_000
+const DEFAULT_TITLE = 'Sin título'
+const DEFAULT_CANVAS_TITLE = 'Canvas sin título'
 export const MAX_TITLE_LENGTH = 300
 export const MAX_FOLDER_NAME = 120
 
@@ -84,6 +95,7 @@ export function toNote(id: string, data: Record<string, unknown>): Note {
     ownerId: (data.ownerId as string) ?? '',
     folderId: (data.folderId as string | null) ?? null,
     aclSource: ((data.aclSource as AclSource) ?? 'own'),
+    kind: data.kind === 'canvas' ? 'canvas' : 'note',
     ...aclFrom(data),
     title: (data.title as string) ?? '',
     markdown: (data.markdown as string) ?? '',
@@ -261,7 +273,44 @@ export function reserveNoteId(): string | null {
   return doc(collection(db, 'notes')).id
 }
 
-export async function createNote(uid: string, folder?: Folder, id?: string): Promise<Note> {
+/**
+ * The note a tab shows before its document exists.
+ *
+ * Creating a note is one round trip; without this draft the tab stays empty for
+ * that whole time (and for the body subscription after it). The draft has
+ * exactly the fields `createNote` writes, so the swap from draft to stored note
+ * is invisible.
+ */
+export function newNoteDraft(
+  uid: string,
+  folder: Folder | null | undefined,
+  id: string,
+  kind: NoteKind = 'note'
+): Note {
+  const acl: Acl = folder
+    ? { memberIds: folder.memberIds, roles: folder.roles, access: folder.access }
+    : { memberIds: [uid], roles: { [uid]: 'owner' }, access: 'restricted' }
+  return {
+    id,
+    ownerId: uid,
+    folderId: folder ? folder.id : null,
+    aclSource: folder ? 'folder' : 'own',
+    ...acl,
+    kind,
+    title: kind === 'canvas' ? DEFAULT_CANVAS_TITLE : DEFAULT_TITLE,
+    markdown: '',
+    tags: [],
+    order: 0,
+    version: 1,
+  }
+}
+
+export async function createNote(
+  uid: string,
+  folder?: Folder,
+  id?: string,
+  kind: NoteKind = 'note'
+): Promise<Note> {
   if (!db) throw new Error('Firebase no está configurado')
   const ref = id ? doc(db, 'notes', id) : doc(collection(db, 'notes'))
   const now = serverTimestamp()
@@ -269,35 +318,46 @@ export async function createNote(uid: string, folder?: Folder, id?: string): Pro
     ? { memberIds: folder.memberIds, roles: folder.roles, access: folder.access }
     : { memberIds: [uid], roles: { [uid]: 'owner' }, access: 'restricted' }
 
+  const body = kind === 'canvas' ? EMPTY_CANVAS_JSON : ''
   const batch = writeBatch(db)
   batch.set(ref, {
     ownerId: uid,
     folderId: folder ? folder.id : null,
     aclSource: folder ? 'folder' : 'own',
+    ...(kind === 'canvas' ? { kind } : {}),
     ...acl,
-    title: 'Sin título',
-    markdownBytes: 0,
+    title: kind === 'canvas' ? DEFAULT_CANVAS_TITLE : DEFAULT_TITLE,
+    markdownBytes: body.length,
     tags: [],
     version: 1,
     createdAt: now,
     updatedAt: now,
   })
-  // An empty body document from the start, so every note has the same shape.
-  batch.set(doc(ref, 'body', 'main'), bodyDocument('', 1))
+  // An empty body document from the start, so every note has the same shape
+  // (a canvas starts from the empty JSON Canvas file instead of nothing).
+  batch.set(doc(ref, 'body', 'main'), bodyDocument(body, 1))
   await batch.commit()
 
-  return {
-    id: ref.id,
-    ownerId: uid,
-    folderId: folder ? folder.id : null,
-    aclSource: folder ? 'folder' : 'own',
-    ...acl,
-    title: 'Sin título',
-    markdown: '',
-    tags: [],
-    order: 0,
-    version: 1,
-  }
+  return newNoteDraft(uid, folder, ref.id, kind)
+}
+
+/** An edit made before the note document existed, waiting for it. */
+export interface DeferredWrite {
+  patch: { title?: string; markdown?: string; tags?: string[] }
+  /** The body limit of the last write (a canvas allows more than markdown). */
+  maxChars: number
+}
+
+/**
+ * Merges an edit into the queue, last value per field. A rename followed by a
+ * canvas edit must keep both: replacing the queue would lose the title.
+ */
+export function mergeDeferred(
+  previous: DeferredWrite | null,
+  patch: DeferredWrite['patch'],
+  maxChars: number
+): DeferredWrite {
+  return { patch: { ...(previous?.patch ?? {}), ...patch }, maxChars }
 }
 
 /**
@@ -325,12 +385,19 @@ export function buildNoteUpdate(patch: {
   return update
 }
 
-/** The note body document: what an editor reads and writes. */
+/**
+ * The note body document: what an editor reads and writes.
+ *
+ * `maxChars` exists because a canvas that gets sliced is not a short canvas, it
+ * is an unparseable one: the caller passes the canvas limit and refuses the
+ * write instead of truncating JSON.
+ */
 export function bodyDocument(
   markdown: string,
-  version = 0
+  version = 0,
+  maxChars = MAX_MARKDOWN_BYTES
 ): Record<string, unknown> {
-  const text = markdown.slice(0, MAX_MARKDOWN_BYTES)
+  const text = markdown.slice(0, maxChars)
   return { markdown: text, bytes: text.length, version, updatedAt: serverTimestamp() }
 }
 
@@ -340,6 +407,8 @@ export interface NewNoteInput {
   tags: string[]
   folder: Folder | null
   order?: number
+  /** `canvas` notes store a JSON Canvas document in `markdown`. */
+  kind?: NoteKind
 }
 
 /**
@@ -366,6 +435,7 @@ export function buildNoteDocument(
     aclSource: input.folder ? 'folder' : 'own',
     ...acl,
     title: (input.title || 'Sin título').slice(0, MAX_TITLE_LENGTH),
+    ...(input.kind === 'canvas' ? { kind: 'canvas' as const } : {}),
     markdownBytes: Math.min(input.markdown.length, MAX_MARKDOWN_BYTES),
     tags: input.tags,
     order: input.order ?? 0,
@@ -400,7 +470,10 @@ export async function importNotes(
     const refs = chunk.map((input) => {
       const ref = doc(collection(database, 'notes'))
       batch.set(ref, buildNoteDocument(uid, input, serverTimestamp()))
-      batch.set(doc(ref, 'body', 'main'), bodyDocument(input.markdown, 1))
+      batch.set(
+        doc(ref, 'body', 'main'),
+        bodyDocument(input.markdown, 1, input.kind === 'canvas' ? MAX_CANVAS_CHARS : MAX_MARKDOWN_BYTES)
+      )
       return ref
     })
 
@@ -414,7 +487,14 @@ export async function importNotes(
         try {
           const noteBatch = writeBatch(database)
           noteBatch.set(refs[i], buildNoteDocument(uid, chunk[i], serverTimestamp()))
-          noteBatch.set(doc(refs[i], 'body', 'main'), bodyDocument(chunk[i].markdown, 1))
+          noteBatch.set(
+            doc(refs[i], 'body', 'main'),
+            bodyDocument(
+              chunk[i].markdown,
+              1,
+              chunk[i].kind === 'canvas' ? MAX_CANVAS_CHARS : MAX_MARKDOWN_BYTES
+            )
+          )
           await noteBatch.commit()
           created.push(refs[i].id)
         } catch {
@@ -435,7 +515,14 @@ export async function importNotes(
  */
 export async function saveNoteContent(
   noteId: string,
-  patch: { title?: string; markdown?: string; tags?: string[]; version?: number }
+  patch: {
+    title?: string
+    markdown?: string
+    tags?: string[]
+    version?: number
+    /** Canvas notes pass the larger body limit; markdown keeps 250.000 chars. */
+    maxChars?: number
+  }
 ): Promise<void> {
   if (!db) return
   const database = db
@@ -450,7 +537,11 @@ export async function saveNoteContent(
     updatedAt: serverTimestamp(),
   }
   if (patch.markdown !== undefined) {
-    batch.set(bodyRef(noteId), bodyDocument(patch.markdown, patch.version ?? 0), { merge: true })
+    batch.set(
+      bodyRef(noteId),
+      bodyDocument(patch.markdown, patch.version ?? 0, patch.maxChars ?? MAX_MARKDOWN_BYTES),
+      { merge: true }
+    )
     // Notes written before the split carried the text inline: once it is in the
     // body document, drop it from here (the list stops downloading it).
     metadata.markdown = deleteField()

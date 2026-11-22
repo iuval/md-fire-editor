@@ -160,6 +160,37 @@ describe('notes: create', () => {
     await assertFails(setDoc(doc(db(OWNER), 'notes', 'n1'), noteDoc({ isAdmin: true })))
   })
 
+  describe('canvases', () => {
+    it('accepts a canvas note', async () => {
+      await assertSucceeds(
+        setDoc(doc(db(OWNER), 'notes', 'c1'), noteDoc({ kind: 'canvas', title: 'Mapa POV' }))
+      )
+    })
+
+    it('rejects a kind nobody understands', async () => {
+      await assertFails(setDoc(doc(db(OWNER), 'notes', 'c2'), noteDoc({ kind: 'evil' })))
+    })
+
+    it('stores a canvas body up to the 600k-character limit', async () => {
+      const firestore = db(OWNER)
+      const markdown = JSON.stringify({
+        nodes: [{ id: 'a', type: 'text', text: 'x'.repeat(300_000), x: 0, y: 0, width: 10, height: 10 }],
+        edges: [],
+      })
+      await assertSucceeds(
+        setDoc(doc(firestore, 'notes', 'c3'), noteDoc({ kind: 'canvas', markdownBytes: markdown.length }))
+      )
+      await assertSucceeds(
+        setDoc(doc(firestore, 'notes', 'c3', 'body', 'main'), {
+          markdown,
+          bytes: markdown.length,
+          version: 1,
+          updatedAt: ts(),
+        })
+      )
+    })
+  })
+
   // The client creates a note and its empty body in ONE commit (`createNote`),
   // which is what makes opening a new tab cost a single round trip.
   describe('note and body in one commit', () => {

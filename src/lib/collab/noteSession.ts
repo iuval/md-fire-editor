@@ -1,6 +1,7 @@
 import * as Y from 'yjs'
 import { FirestoreAwareness, type CollabUser } from './awareness'
 import { FirestoreYjsProvider } from './provider'
+import { YCanvas } from '../canvas/yCanvas'
 
 /**
  * One note, one document, many views.
@@ -20,6 +21,12 @@ export interface NoteSession {
   readonly doc: Y.Doc
   readonly provider: FirestoreYjsProvider
   readonly awareness: FirestoreAwareness
+  /**
+   * The canvas binding for this document, created on first use. It lives as
+   * long as the document does: one per note, shared by every pane showing it
+   * (two bindings would double observers and double the save writes).
+   */
+  readonly canvas: YCanvas
   /**
    * True for exactly one view. Seeding content is a one-time job: a second
    * editor must render what the document already has.
@@ -63,6 +70,7 @@ export function acquireNoteSession(
   const awareness = new FirestoreAwareness(noteId, uid, user, doc)
   let seedAvailable = true
   let primary: string | null = null
+  let canvas: YCanvas | null = null
 
   const entry: Entry = {
     owners: new Set([owner]),
@@ -71,6 +79,10 @@ export function acquireNoteSession(
       doc,
       provider,
       awareness,
+      get canvas() {
+        canvas ??= new YCanvas(doc)
+        return canvas
+      },
       claimSeed: (owner?: string) => {
         if (!seedAvailable) return false
         seedAvailable = false
@@ -85,6 +97,7 @@ export function acquireNoteSession(
         if (primary === who) primary = entry.owners.values().next().value ?? null
         if (entry.owners.size > 0) return
         entries.delete(key)
+        canvas?.destroy()
         awareness.destroy()
         provider.destroy()
         doc.destroy()

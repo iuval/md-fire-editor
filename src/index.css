@@ -2262,3 +2262,550 @@ button {
   }
 }
 
+/* ---------- canvas (JSON Canvas, Obsidian's .canvas) ---------- */
+
+/*
+ * Obsidian's six presets (plus the "7" that real vaults already contain), and
+ * one neutral for a preset this version does not know. The hex fallback the
+ * spec allows is used as-is; only numeric presets go through these vars.
+ */
+:root {
+  --canvas-preset-1: light-dark(#d63a41, #fb464c);
+  --canvas-preset-2: light-dark(#d9822b, #e9973f);
+  --canvas-preset-3: light-dark(#b58a12, #e0c33c);
+  --canvas-preset-4: light-dark(#2f9e52, #44cf6e);
+  --canvas-preset-5: light-dark(#1c9ca6, #53dfdd);
+  --canvas-preset-6: light-dark(#7c5cd6, #a882ff);
+  --canvas-preset-7: light-dark(#b74fb0, #e07adb);
+  --canvas-preset-other: light-dark(#6f6f7a, #9a9aa6);
+  --canvas-grid-dot: light-dark(rgba(0, 0, 0, 0.13), rgba(255, 255, 255, 0.14));
+  --canvas-card-bg: light-dark(#ffffff, #202020);
+  --canvas-card-border: light-dark(#d8d8de, #3c3c42);
+  --canvas-edge: light-dark(#8f8f9c, #8a8a96);
+}
+
+.canvas-surface {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  outline: none;
+  cursor: default;
+  touch-action: none;
+  background-color: light-dark(var(--color-page), var(--color-page-dark));
+  background-image: radial-gradient(var(--canvas-grid-dot) 1px, transparent 1px);
+}
+
+.canvas-surface.is-panning-tool {
+  cursor: grab;
+}
+
+.canvas-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+/* Edges live in one SVG layer under the cards; each path is in world pixels. */
+.canvas-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-edge-line {
+  fill: none;
+  stroke: var(--canvas-edge);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+
+.canvas-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.canvas-edge.is-selected .canvas-edge-line {
+  stroke: var(--color-accent);
+  stroke-width: 2.2;
+}
+
+.canvas-edge-arrow {
+  fill: var(--canvas-edge);
+}
+
+.canvas-edge.is-selected .canvas-edge-arrow {
+  fill: var(--color-accent);
+}
+
+.canvas-edge-label {
+  font-size: 12px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  fill: light-dark(var(--color-muted), var(--color-muted-dark));
+  paint-order: stroke;
+  stroke: light-dark(var(--color-page), var(--color-page-dark));
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.canvas-edge--drawing .canvas-edge-line {
+  stroke: var(--color-accent);
+  stroke-dasharray: 4 3;
+}
+
+.canvas-edge-dot {
+  fill: var(--color-accent);
+}
+
+/* A card. `overflow: hidden` is Obsidian's behaviour: content is clipped. */
+.canvas-node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--canvas-card-border);
+  border-radius: 6px;
+  background: var(--canvas-card-bg);
+  color: light-dark(var(--color-text), var(--color-text-dark));
+  overflow: hidden;
+  cursor: default;
+  user-select: none;
+  touch-action: none;
+  contain: layout paint;
+}
+
+.canvas-node.is-selected {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.canvas-node--colored {
+  border-color: color-mix(in srgb, var(--canvas-color) 55%, transparent);
+  background: color-mix(in srgb, var(--canvas-color) 10%, var(--canvas-card-bg));
+}
+
+.canvas-node--group {
+  border: 1px solid color-mix(in srgb, var(--canvas-card-border) 85%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-accent) 3%, transparent);
+}
+
+.canvas-node--group.canvas-node--colored {
+  border-color: color-mix(in srgb, var(--canvas-color) 40%, transparent);
+  background: color-mix(in srgb, var(--canvas-color) 7%, transparent);
+}
+
+.canvas-group-label {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  right: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--canvas-color, var(--color-text)) 70%, var(--color-text));
+  pointer-events: none;
+}
+
+.canvas-node--group .canvas-group-label {
+  pointer-events: auto;
+  cursor: text;
+}
+
+.canvas-label-input,
+.canvas-edge-label-input {
+  font: inherit;
+  color: inherit;
+  background: light-dark(var(--color-page), var(--color-page-dark));
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  min-width: 120px;
+  outline: none;
+}
+
+.canvas-edge-label-input {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+/* Card markdown: rendered while idle, raw while editing (Obsidian's model). */
+.canvas-md {
+  padding: 10px 12px;
+  font-size: 15px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+.canvas-md > :first-child {
+  margin-top: 0;
+}
+
+.canvas-md > :last-child {
+  margin-bottom: 0;
+}
+
+.canvas-md p {
+  margin: 0 0 6px;
+}
+
+.canvas-md h1,
+.canvas-md h2,
+.canvas-md h3,
+.canvas-md h4,
+.canvas-md h5,
+.canvas-md h6,
+.canvas-md .canvas-h {
+  margin: 6px 0 4px;
+  font-size: 1.05em;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.canvas-md ul,
+.canvas-md ol {
+  margin: 0 0 6px;
+  padding-left: 20px;
+}
+
+.canvas-md li {
+  margin: 1px 0;
+}
+
+.canvas-md li > input[type='checkbox'] {
+  margin: 0 6px 0 -18px;
+  vertical-align: middle;
+}
+
+.canvas-md blockquote {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--canvas-card-border);
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.canvas-md code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.canvas-md pre {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  overflow: auto;
+  background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
+  border-radius: 5px;
+}
+
+.canvas-md pre code {
+  background: none;
+  padding: 0;
+}
+
+.canvas-md a {
+  color: var(--color-accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.canvas-tag,
+.canvas-wikilink {
+  color: var(--color-accent-ink);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  padding: 0 3px;
+}
+
+.canvas-wikilink {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.canvas-placeholder {
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.canvas-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.canvas-file,
+.canvas-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  overflow: hidden;
+}
+
+.canvas-file-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.canvas-file-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.canvas-file-title {
+  font-size: 14px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-file-sub {
+  font-size: 12px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.canvas-file-missing {
+  font-size: 11.5px;
+  color: light-dark(var(--color-warning), var(--color-warning-dark));
+}
+
+.canvas-link > .icon-btn {
+  margin-left: auto;
+}
+
+/* Selection: eight resize handles on the corners/edges, four connect dots. */
+.canvas-handles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.canvas-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  border: 1.5px solid var(--color-accent);
+  border-radius: 2px;
+  background: light-dark(var(--color-page), var(--color-page-dark));
+  pointer-events: auto;
+}
+
+.canvas-handle--nw { left: 0; top: 0; cursor: nwse-resize; }
+.canvas-handle--n { left: 50%; top: 0; cursor: ns-resize; }
+.canvas-handle--ne { left: 100%; top: 0; cursor: nesw-resize; }
+.canvas-handle--e { left: 100%; top: 50%; cursor: ew-resize; }
+.canvas-handle--se { left: 100%; top: 100%; cursor: nwse-resize; }
+.canvas-handle--s { left: 50%; top: 100%; cursor: ns-resize; }
+.canvas-handle--sw { left: 0; top: 100%; cursor: nesw-resize; }
+.canvas-handle--w { left: 0; top: 50%; cursor: ew-resize; }
+
+.canvas-connect {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  background: light-dark(var(--color-page), var(--color-page-dark));
+  pointer-events: auto;
+  cursor: crosshair;
+  opacity: 0.55;
+}
+
+.canvas-connect:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.canvas-connect--top { left: 50%; top: 0; }
+.canvas-connect--right { left: 100%; top: 50%; }
+.canvas-connect--bottom { left: 50%; top: 100%; }
+.canvas-connect--left { left: 0; top: 50%; }
+
+.canvas-marquee {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border: 1px solid var(--color-accent);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+/* Floating controls: selection bar, zoom cluster, bottom actions. */
+.canvas-selection-bar,
+.canvas-zoom,
+.canvas-actions {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  border-radius: 7px;
+  background: light-dark(var(--color-page), var(--color-page-dark));
+}
+
+.canvas-zoom {
+  right: 12px;
+  bottom: 12px;
+}
+
+.canvas-zoom-value {
+  padding: 0 6px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.canvas-actions {
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  gap: 0;
+  padding: 2px;
+}
+
+.canvas-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.canvas-action:hover:not(:disabled) {
+  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+.canvas-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.canvas-bar-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: light-dark(var(--color-border), var(--color-border-dark));
+}
+
+.canvas-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+
+.canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  text-align: center;
+}
+
+.canvas-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 200px;
+  font-size: 12.5px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+@media (max-width: 720px) {
+  .canvas-actions {
+    bottom: 64px;
+  }
+
+  .canvas-zoom {
+    right: 8px;
+    bottom: 8px;
+  }
+}
+
+/* A canvas note fills its pane instead of the reading column. */
+.scroll--canvas {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc--canvas {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.doc--canvas > .doc-header {
+  flex: 0 0 auto;
+  padding: 10px clamp(12px, 3%, 28px) 4px;
+  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+}
+
+.doc--canvas .inline-title {
+  margin: 0;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.canvas-banner {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  background: light-dark(#fff4e5, #3a2c14);
+  color: light-dark(var(--color-warning), var(--color-warning-dark));
+}

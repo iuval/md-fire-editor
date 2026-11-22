@@ -43,7 +43,8 @@ async function listMarkdown(dir, base = dir, out = []) {
     if (entry.name.startsWith('.')) continue
     const full = join(dir, entry.name)
     if (entry.isDirectory()) await listMarkdown(full, base, out)
-    else if (/\.md$/i.test(entry.name)) out.push(relative(base, full))
+    // Canvases are vault files too; anything else is not a note.
+    else if (/\.(md|canvas)$/i.test(entry.name)) out.push(relative(base, full))
   }
   return out
 }
@@ -65,7 +66,8 @@ export async function pull(db, { dir = defaultDir(), prune = false } = {}) {
   for (const [short, title, , folderName] of notes) {
     const note = await readNote(db, short)
     const folder = folderName && folderName !== '-' ? safeName(folderName) : ''
-    const file = join(folder, `${safeName(note.title || title)}.md`)
+    const extension = note.kind === 'canvas' ? '.canvas' : '.md'
+    const file = join(folder, `${safeName(note.title || title)}${extension}`)
     const full = join(target, file)
 
     await mkdir(dirname(full), { recursive: true })
@@ -99,6 +101,7 @@ export async function push(db, { dir = defaultDir() } = {}) {
     const info = await stat(full)
     const content = await readFile(full, 'utf8')
 
+    const isCanvas = /\.canvas$/i.test(file)
     if (!entry) {
       // A new file can only land inside a folder the agent can write to.
       const segments = file.split('/')
@@ -110,9 +113,12 @@ export async function push(db, { dir = defaultDir() } = {}) {
         const folder = await resolveFolder(db, segments[0])
         const { createNote } = await import('./core.mjs')
         const created = await createNote(db, {
-          title: content.match(/^#\s+(.+)$/m)?.[1] ?? file.replace(/\.md$/i, ''),
+          title: isCanvas
+            ? file.replace(/\.canvas$/i, '').split('/').pop()
+            : (content.match(/^#\s+(.+)$/m)?.[1] ?? file.replace(/\.md$/i, '')),
           folder: folder.id,
           body: content,
+          kind: isCanvas ? 'canvas' : 'note',
         })
         manifest.files[file] = { id: created.id, etag: null, path: file }
         result.created.push(file)
@@ -129,16 +135,21 @@ export async function push(db, { dir = defaultDir() } = {}) {
     }
 
     try {
-      const note = await replaceNote(db, entry.id, content, { etag: entry.etag ?? undefined })
+      const note = await replaceNote(db, entry.id, content, {
+        etag: entry.etag ?? undefined,
+        canvas: isCanvas,
+      })
       manifest.files[file] = { id: note.id, etag: note.etag, path: file, mtime: info.mtimeMs }
       result.updated++
     } catch (error) {
       if (error instanceof AgentError && error.code === 'E_ETAG') {
         // Keep the local work: never discard it silently.
         const stampDate = new Date().toISOString().slice(0, 16).replace(/[:T-]/g, '').slice(0, 12)
-        const conflict = file.replace(/\.md$/i, `.conflicto-${stampDate}.md`)
-        await writeFile(join(target, conflict), content)
-        result.conflicts.push({ file, conflict })
+        const conflictFile = isCanvas
+          ? file.replace(/\.canvas$/i, `.conflicto-${stampDate}.canvas`)
+          : file.replace(/\.md$/i, `.conflicto-${stampDate}.md`)
+        await writeFile(join(target, conflictFile), content)
+        result.conflicts.push({ file, conflict: conflictFile })
         continue
       }
       result.errors.push(`${file}: ${error.message}`)

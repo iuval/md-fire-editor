@@ -186,3 +186,81 @@ describe('building a vault', () => {
     expect(back.entries.map((e) => e.path).sort()).toEqual(['Ideas.md', 'Trabajo/Acta.md'])
   })
 })
+
+describe('canvases travel with the vault', () => {
+  const CANVAS = JSON.stringify({
+    nodes: [
+      { id: 'g1', type: 'group', text: '', x: 0, y: 0, width: 800, height: 400, label: 'Acto 1' },
+      {
+        id: 'c1',
+        type: 'text',
+        text: '**hola** — mundo',
+        x: 20,
+        y: 20,
+        width: 300,
+        height: 120,
+        color: '2',
+      },
+      { id: 'f1', type: 'file', file: 'viejos/Acto 1.md', x: 20, y: 200, width: 300, height: 100 },
+    ],
+    edges: [{ id: 'e1', fromNode: 'c1', toNode: 'f1' }],
+  })
+
+  function buildZip(files: Record<string, string>): Uint8Array {
+    const dir = mkdtempSync(join(tmpdir(), 'vault-canvas-'))
+    for (const [path, content] of Object.entries(files)) {
+      const full = join(dir, path)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, content)
+    }
+    const zipPath = join(dir, 'v.zip')
+    execFileSync('zip', ['-r', '-q', '-X', zipPath, '.'], { cwd: dir })
+    return new Uint8Array(readFileSync(zipPath))
+  }
+
+  it('imports .canvas files as canvas notes, byte for byte', async () => {
+    const zip = buildZip({ 'Mapa.canvas': CANVAS, 'Acto 1.md': '# Acto 1\n' })
+    const plan = planVault(zip)
+    const planned = plan.notes.find((entry) => entry.path === 'Mapa.canvas')
+    expect(planned?.kind).toBe('canvas')
+    expect(planned?.title).toBe('Mapa')
+    // A canvas is a vault file, not an "adjunto omitido".
+    expect(plan.skipped.some((entry) => entry.path === 'Mapa.canvas')).toBe(false)
+
+    const entries = []
+    for await (const entry of streamVaultNotes(zip, plan)) entries.push(entry)
+    const canvasEntry = entries.find((entry) => entry.kind === 'canvas')!
+    expect(canvasEntry.markdown).toBe(CANVAS)
+  })
+
+  it('exports a canvas as .canvas and rewrites stale file paths', async () => {
+    const folders: Folder[] = [
+      {
+        id: 'f1',
+        ownerId: 'u1',
+        name: 'viejos',
+        parentId: null,
+        order: 0,
+        tags: [],
+        memberIds: ['u1'],
+        roles: { u1: 'owner' },
+        access: 'restricted',
+      },
+    ]
+    const notes = [
+      note({ id: 'n1', title: 'Acto 1', folderId: 'f1', markdown: '# Acto 1\n' }),
+      note({ id: 'n2', title: 'Mapa', kind: 'canvas', markdown: CANVAS }),
+    ]
+    const vault = buildVault(notes, folders)
+    const back = await readVault(new Uint8Array(await vault.blob.arrayBuffer()))
+    const exported = back.entries.find((entry) => entry.path === 'Mapa.canvas')!
+    expect(exported).toBeDefined()
+    const parsed = JSON.parse(exported.markdown)
+    // The card pointed at `viejos/Acto 1.md` from another vault; here the note
+    // lives in `viejos/`, so the path is rewritten for Obsidian to open it.
+    expect(parsed.nodes[2].file).toBe('viejos/Acto 1.md')
+    // Everything else survives untouched.
+    expect(parsed.nodes[0]).toMatchObject({ type: 'group', text: '', label: 'Acto 1' })
+    expect(parsed.edges).toHaveLength(1)
+  })
+})

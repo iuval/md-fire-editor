@@ -3,6 +3,7 @@ import {
   Bell,
   ChevronRight,
   Folder,
+  Frame,
   Link2,
   MoreHorizontal,
   PanelLeftClose,
@@ -267,6 +268,9 @@ export function Sidebar({
         >
           <span className="file-name">
             {shared && <Link2 size={10} style={{ marginRight: 4, opacity: 0.55, verticalAlign: 'middle' }} />}
+            {note.kind === 'canvas' && (
+              <Frame size={10} style={{ marginRight: 4, opacity: 0.55, verticalAlign: 'middle' }} />
+            )}
             {title}
           </span>
         </button>

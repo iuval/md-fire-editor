@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Frame, Hash, Link2, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { SyncAnnouncer } from './components/SyncAnnouncer'
@@ -27,6 +27,13 @@ import { useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, safeFileName } from './lib/export'
 import { buildVault, planVault, streamVaultNotes } from './lib/vault'
+import {
+  EMPTY_CANVAS_JSON,
+  MAX_CANVAS_CHARS,
+  canvasTagsOf,
+  looksLikeCanvas,
+} from './lib/canvas/model'
+import type { CanvasFileRef } from './lib/canvas/files'
 import { track } from './lib/analytics'
 import { currentBrowser, embeddedBrowserHint } from './lib/browser'
 import { memoryReport, pendingBodies, storageEstimate, type MemoryReport } from './lib/diagnostics'
@@ -91,6 +98,7 @@ import {
   reserveNoteId,
   saveNoteContent,
   subscribeNote,
+  newNoteDraft,
   subscribeNoteBody,
   updateFolderSharing,
   updateFolderTags,
@@ -99,6 +107,7 @@ import {
   type Folder,
   type NewNoteInput,
   type Note,
+  type NoteKind,
   type Role,
 } from './lib/notes'
 
@@ -286,6 +295,21 @@ function AppTree() {
     [bodies, notesById, notesByIdFromList]
   )
   const foldersById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders])
+  /**
+   * Every note as the vault path Obsidian would use. `file` cards store that
+   * path, so this is what turns `GUIONES/Acto 1.md` into a note id.
+   */
+  const canvasFiles = useMemo<CanvasFileRef[]>(
+    () =>
+      notes.map((note) => ({
+        id: note.id,
+        title: note.title,
+        path: `${
+          note.folderId ? `${folderPath(note.folderId, foldersById)}/` : ''
+        }${safeFileName(note.title || 'Sin título')}.md`,
+      })),
+    [notes, foldersById]
+  )
 
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -465,6 +489,8 @@ function AppTree() {
   const openIdsKey = activeNoteIds(layout)
     .filter((id) => !pendingNotes.has(id))
     .join('|')
+  /** Every open note id, including the ones still being created. */
+  const allOpenIdsKey = activeNoteIds(layout).join('|')
   useEffect(() => {
     if (!user) {
       setBodies({})
@@ -473,7 +499,10 @@ function AppTree() {
       return
     }
     const ids = openIdsKey ? openIdsKey.split('|') : []
-    setBodies((prev) => keepIds(prev, ids))
+    // Keep the optimistic body of a note that is still being created: dropping
+    // it would put the pane back to "Cargando…" right after it opened.
+    const keep = allOpenIdsKey ? allOpenIdsKey.split('|') : []
+    setBodies((prev) => keepIds(prev, keep))
     const offs = ids.map((id) =>
       subscribeNoteBody(
         id,
@@ -491,7 +520,7 @@ function AppTree() {
       )
     )
     return () => offs.forEach((off) => off())
-  }, [openIdsKey, user])
+  }, [openIdsKey, allOpenIdsKey, user])
 
   /**
    * A note the list has never seen — a `?note=` deep link, or one just created
@@ -501,10 +530,13 @@ function AppTree() {
   const orphanIdsKey = activeNoteIds(layout)
     .filter((id) => !pendingNotes.has(id) && !notesByIdFromList.has(id))
     .join('|')
+  /** Drafts of notes still being written are pruned by their own lifetime. */
+  const pendingKey = Array.from(pendingNotes).join('|')
   useEffect(() => {
     if (!user) return
     const ids = orphanIdsKey ? orphanIdsKey.split('|') : []
-    setNotesById((prev) => keepIds(prev, ids))
+    const pendingIds = pendingKey ? pendingKey.split('|') : []
+    setNotesById((prev) => keepIds(prev, [...ids, ...pendingIds]))
     if (ids.length === 0) return
     const offs = ids.map((id) =>
       subscribeNote(
@@ -528,7 +560,7 @@ function AppTree() {
       )
     )
     return () => offs.forEach((off) => off())
-  }, [orphanIdsKey, user])
+  }, [orphanIdsKey, pendingKey, user])
 
   useEffect(() => {
     setPresence([])
@@ -628,6 +660,12 @@ function AppTree() {
         const bodies = await fetchNoteBodies([note.id])
         markdown = bodies.get(note.id) ?? ''
       }
+      if (note.kind === 'canvas') {
+        // The JSON is the file: no title heading, no reformatting.
+        download(markdown, `${safeFileName(note.title)}.canvas`, 'application/x-obsidian-canvas')
+        track('export', user?.uid, { kind: 'canvas' })
+        return
+      }
       download(noteToMarkdown({ ...note, markdown }), `${safeFileName(note.title)}.md`, 'text/markdown')
       track('export', user?.uid, { kind: 'md' })
     },
@@ -674,7 +712,12 @@ function AppTree() {
         if (!first && created.length > 0) first = created[0]
       }
 
-      const pushNote = async (title: string, markdown: string, folderName: string | null) => {
+      const pushNote = async (
+        title: string,
+        markdown: string,
+        folderName: string | null,
+        kind: NoteKind = 'note'
+      ) => {
         let folder: Folder | undefined
         if (folderName) {
           // `GUIONES/V3` becomes V3 inside GUIONES, one folder per segment.
@@ -697,9 +740,11 @@ function AppTree() {
         }
         queue.push({
           title,
-          markdown: markdown.slice(0, 250_000),
-          tags: extractTags(markdown),
+          markdown: markdown.slice(0, kind === 'canvas' ? MAX_CANVAS_CHARS : 250_000),
+          // A canvas has no frontmatter: its tags come from the cards.
+          tags: kind === 'canvas' ? canvasTagsOf(markdown) : extractTags(markdown),
           folder: folder ?? null,
+          ...(kind === 'canvas' ? { kind } : {}),
         })
         if (queue.length >= 50) await flush()
       }
@@ -712,7 +757,7 @@ function AppTree() {
           // whole vault up front held 2-3× its size while importing.
           const plan = planVault(zipBytes)
           for await (const entry of streamVaultNotes(zipBytes, plan)) {
-            await pushNote(entry.title, entry.markdown, entry.folder)
+            await pushNote(entry.title, entry.markdown, entry.folder, entry.kind ?? 'note')
           }
           skippedAttachments += plan.skipped.filter((s) => s.reason === 'attachment').length
           skippedJunk += plan.skipped.filter((s) => s.reason === 'junk').length
@@ -721,6 +766,14 @@ function AppTree() {
         }
 
         const text = await file.text()
+        if (/\.canvas$/i.test(file.name)) {
+          if (!looksLikeCanvas(text)) {
+            failedNotes++
+            continue
+          }
+          await pushNote(file.name.replace(/\.canvas$/i, '').slice(0, 300), text, null, 'canvas')
+          continue
+        }
         const heading = text.match(/^#\s+(.+)$/m)?.[1]?.trim()
         await pushNote((heading || file.name.replace(/\.md$/i, '')).slice(0, 300), text, null)
       }
@@ -951,16 +1004,16 @@ function AppTree() {
    * frozen UI while the dialog waits).
    */
   const handleNewNote = useCallback(
-    async (folder?: Folder, paneId?: string) => {
+    async (folder?: Folder, paneId?: string, kind: NoteKind = 'note') => {
       const noteId = reserveNoteId()
       const target = paneId && findPane(layout, paneId) ? paneId : focusedPaneId
 
       if (!noteId) {
         // Firebase unavailable: fall back to the blocking path.
-        const note = await addNote(folder)
+        const note = await addNote(folder, undefined, kind)
         if (!note) return
         if (folder) setExpanded((prev) => new Set(prev).add(folder.id))
-        track('note_created', user?.uid, { folder: folder ? 'yes' : 'root' })
+        track('note_created', user?.uid, { folder: folder ? 'yes' : 'root', kind })
         setWorkspace((ws) => ({
           layout: openTab(ws.layout, target, note.id, newId('tab')),
           focusedPaneId: target,
@@ -970,6 +1023,15 @@ function AppTree() {
       }
 
       const tabId = newId('tab')
+      // Everything the first frame needs is local: the tab, a note with the
+      // fields the write will produce, and an empty body. The Firestore write
+      // and the body subscription happen behind the open page.
+      if (user) {
+        const draft = newNoteDraft(user.uid, folder, noteId, kind)
+        setNotesById((prev) => ({ ...prev, [noteId]: draft }))
+        // Same body `createNote` writes: a new canvas is a valid empty canvas.
+        setBodies((prev) => ({ ...prev, [noteId]: kind === 'canvas' ? EMPTY_CANVAS_JSON : '' }))
+      }
       setPendingNotes((prev) => new Set(prev).add(noteId))
       setWorkspace((ws) => ({
         layout: openTab(ws.layout, target, noteId, tabId),
@@ -979,13 +1041,19 @@ function AppTree() {
       if (isMobile) setSidebarOpen(false)
 
       try {
-        const note = await addNote(folder, noteId)
+        const note = await addNote(folder, noteId, kind)
         if (!note) throw new Error('no note')
-        track('note_created', user?.uid, { folder: folder ? 'yes' : 'root' })
+        track('note_created', user?.uid, { folder: folder ? 'yes' : 'root', kind })
         // Show the editor now instead of waiting for another snapshot round trip.
         setNotesById((prev) => ({ ...prev, [noteId]: note }))
       } catch {
         setNotesById((prev) => {
+          if (!(noteId in prev)) return prev
+          const next = { ...prev }
+          delete next[noteId]
+          return next
+        })
+        setBodies((prev) => {
           if (!(noteId in prev)) return prev
           const next = { ...prev }
           delete next[noteId]
@@ -1011,6 +1079,14 @@ function AppTree() {
       }
     },
     [addNote, focusedPaneId, isMobile, layout, user]
+  )
+
+  /** Obsidian's "New canvas": an empty JSON Canvas document in a new tab. */
+  const handleNewCanvas = useCallback(
+    (folder?: Folder) => {
+      void handleNewNote(folder, undefined, 'canvas')
+    },
+    [handleNewNote]
   )
 
   /**
@@ -1252,7 +1328,15 @@ function AppTree() {
     ? notes.filter((note) => matchesTagFilter(note.tags, selectedTags))
     : notes
   /** Inactive tabs take their label from the workspace list: no subscription each. */
-  const titles = useMemo(() => new Map(notes.map((note) => [note.id, note.title])), [notes])
+  const titles = useMemo(() => {
+    // The workspace list is the live source; a note created in this session is
+    // not in it yet, and its tab must still have a name on the first frame.
+    const map = new Map(notes.map((note) => [note.id, note.title]))
+    for (const [id, note] of Object.entries(notesById)) {
+      if (!map.has(id)) map.set(id, note.title)
+    }
+    return map
+  }, [notes, notesById])
 
   /**
    * The pane's whole action set: split right, split down, close. Three buttons
@@ -1433,6 +1517,8 @@ function AppTree() {
                 userName={userName || 'Alguien'}
                 folders={folders}
                 isMobile={isMobile}
+                canvasFiles={canvasFiles}
+                onOpenNote={selectNote}
                 onFocus={() => focusPane(pane.id)}
                 onActivateTab={(tabId) => activateTab(pane.id, tabId)}
                 onCloseTab={(tabId) => closePaneTab(pane.id, tabId)}
@@ -1477,6 +1563,11 @@ function AppTree() {
               label: 'Nueva carpeta',
               icon: <FolderPlus size={14} />,
               onSelect: () => setDialog({ kind: 'new-folder', parentId: null }),
+            },
+            {
+              label: 'Nuevo canvas',
+              icon: <Frame size={14} />,
+              onSelect: () => handleNewCanvas(),
             },
             {
               label: `Orden de la lista: ${SORT_LABELS[rootSort]}…`,
@@ -1681,7 +1772,7 @@ function AppTree() {
       <input
         ref={importRef}
         type="file"
-        accept=".md,.markdown,.zip,text/markdown,text/plain,application/zip"
+        accept=".md,.markdown,.canvas,.zip,text/markdown,text/plain,application/zip,application/x-obsidian-canvas"
         multiple
         hidden
         onChange={(e) => {

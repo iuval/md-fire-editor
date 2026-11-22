@@ -285,10 +285,35 @@ export async function readNoteBody(db, note) {
   return String(note.data.markdown ?? '')
 }
 
+function isCanvasDoc(doc) {
+  return doc?.data?.kind === 'canvas'
+}
+
+/** A canvas body is JSON Canvas: text find/replace would corrupt the file. */
+function assertCanvasJson(text) {
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new AgentError('un canvas tiene que ser JSON válido', 'E_CANVAS')
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new AgentError('un canvas tiene que ser un objeto JSON Canvas', 'E_CANVAS')
+  }
+  if (parsed.nodes !== undefined && !Array.isArray(parsed.nodes)) {
+    throw new AgentError('"nodes" tiene que ser una lista', 'E_CANVAS')
+  }
+  if (parsed.edges !== undefined && !Array.isArray(parsed.edges)) {
+    throw new AgentError('"edges" tiene que ser una lista', 'E_CANVAS')
+  }
+  return parsed
+}
+
 /** Writes the body and the note metadata in one atomic commit. */
 async function writeNoteBody(db, note, markdown) {
   const next = String(markdown ?? '')
   const version = (note.data.version ?? 0) + 1
+  const canvas = isCanvasDoc(note)
   await db.patchMany([
     {
       collection: `notes/${note.id}/body`,
@@ -301,7 +326,8 @@ async function writeNoteBody(db, note, markdown) {
       // concurrent edit fails before the body is written.
       collection: 'notes',
       id: note.id,
-      fields: { markdownBytes: next.length, tags: extractTags(next) },
+      // A canvas has no frontmatter: its tags would come from raw JSON.
+      fields: { markdownBytes: next.length, tags: canvas ? [] : extractTags(next) },
       transforms: [{ fieldPath: 'version', increment: 1 }, { fieldPath: 'updatedAt' }],
       updateTime: note.updateTime,
     },
@@ -321,6 +347,7 @@ export async function readNote(db, ref, { maxBytes = 0 } = {}) {
   return {
     id: doc.id,
     title: doc.data.title ?? '',
+    kind: isCanvasDoc(doc) ? 'canvas' : 'note',
     body,
     // The etag covers the body, which no longer lives on the note document.
     etag: etagOf({ markdown: body, version: doc.data.version ?? 0 }),
@@ -333,6 +360,12 @@ export async function patchNote(db, ref, edits, { etag, replaceAll = false } = {
   if (!Array.isArray(edits) || edits.length === 0) throw new AgentError('no hay ediciones', 'E_USAGE')
 
   const doc = await resolveNote(db, ref)
+  if (isCanvasDoc(doc)) {
+    throw new AgentError(
+      'esa nota es un canvas: usá `write` con el JSON completo o editala en la app',
+      'E_CANVAS'
+    )
+  }
   const current = await readNoteBody(db, doc)
   const currentEtag = etagOf({ markdown: current, version: doc.data.version ?? 0 })
 
@@ -388,7 +421,7 @@ export async function patchNote(db, ref, edits, { etag, replaceAll = false } = {
  * Replaces the whole body (disk → cloud). Used by `vault push`: the etag makes
  * a stale local copy fail instead of overwriting somebody else's edit.
  */
-export async function replaceNote(db, ref, markdown, { etag } = {}) {
+export async function replaceNote(db, ref, markdown, { etag, canvas = false } = {}) {
   const doc = await resolveNote(db, ref)
   const current = await readNoteBody(db, doc)
   const currentEtag = etagOf({ markdown: current, version: doc.data.version ?? 0 })
@@ -396,7 +429,19 @@ export async function replaceNote(db, ref, markdown, { etag } = {}) {
     throw new AgentError(`etag desactualizado (actual ${currentEtag})`, 'E_ETAG')
   }
   const next = String(markdown ?? '')
-  if (next.length > 250000) throw new AgentError('la nota supera 250 KB', 'E_USAGE')
+  const canvasNote = isCanvasDoc(doc)
+  if (canvasNote && !canvas) {
+    throw new AgentError(
+      'esa nota es un canvas: pasá el .canvas completo (vault push lo hace solo)',
+      'E_CANVAS'
+    )
+  }
+  if (canvas || canvasNote) {
+    assertCanvasJson(next)
+    if (next.length > 600000) throw new AgentError('el canvas supera 600 KB', 'E_USAGE')
+  } else if (next.length > 250000) {
+    throw new AgentError('la nota supera 250 KB', 'E_USAGE')
+  }
 
   await writeNoteBody(db, doc, next)
 
@@ -410,6 +455,9 @@ export async function replaceNote(db, ref, markdown, { etag } = {}) {
 export async function appendNote(db, ref, text) {
   if (!text) throw new AgentError('falta el texto', 'E_USAGE')
   const doc = await resolveNote(db, ref)
+  if (isCanvasDoc(doc)) {
+    throw new AgentError('no se puede agregar texto a un canvas', 'E_CANVAS')
+  }
   const current = await readNoteBody(db, doc)
   const next = current.endsWith('\n') ? `${current}${text}` : `${current}\n${text}`
 
@@ -426,8 +474,9 @@ export async function appendNote(db, ref, text) {
  * Creates a note as the agent. The rules require the agent to mirror the
  * folder's ACL, which is exactly what a note created in a folder does.
  */
-export async function createNote(db, { title = 'Sin título', folder, body = '' } = {}) {
+export async function createNote(db, { title = 'Sin título', folder, body = '', kind = 'note' } = {}) {
   if (!folder) throw new AgentError('falta --folder: el agente solo crea dentro de carpetas', 'E_USAGE')
+  if (kind === 'canvas') assertCanvasJson(String(body))
   const target = await resolveFolder(db, folder)
   const acl = {
     memberIds: target.data.memberIds,
@@ -449,8 +498,9 @@ export async function createNote(db, { title = 'Sin título', folder, body = '' 
         aclSource: 'folder',
         ...acl,
         title: String(title).slice(0, 300),
+        ...(kind === 'canvas' ? { kind: 'canvas' } : {}),
         markdownBytes: markdown.length,
-        tags: extractTags(markdown),
+        tags: kind === 'canvas' ? [] : extractTags(markdown),
         version: 1,
       },
       transforms: [{ fieldPath: 'createdAt' }, { fieldPath: 'updatedAt' }],
