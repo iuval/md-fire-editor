@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::auth;
@@ -13,6 +13,7 @@ use crate::backend::{Backend, FirestoreBackend};
 use crate::config::{self, Settings};
 use crate::engine::{Engine, Status};
 use crate::error::{AppError, Result};
+use crate::link;
 
 pub struct AppState {
     pub engine: Mutex<Engine>,
@@ -36,6 +37,9 @@ impl AppState {
 pub struct LoginInfo {
     pub uid: String,
     pub pairing_code: String,
+    pub email: Option<String>,
+    /// La sesión es la cuenta del sitio (login con Google), no un agente anónimo.
+    pub account: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -110,6 +114,45 @@ pub fn login(state: State<'_, AppState>) -> Result<LoginInfo> {
     Ok(LoginInfo {
         uid: credentials.uid.clone(),
         pairing_code: credentials.pairing_code(),
+        email: None,
+        account: false,
+    })
+}
+
+/// Conecta la app con la cuenta del sitio (Google).
+///
+/// El webview no puede hacer OAuth con Google —Google bloquea los navegadores
+/// embebidos—, así que abrimos el navegador del sistema en la página del sitio y
+/// esperamos el handshake en un puerto local efímero (ver `link.rs`). El token se
+/// valida contra `securetoken` antes de guardar nada.
+#[tauri::command]
+pub async fn login_account(app: AppHandle) -> Result<LoginInfo> {
+    let handshake = tauri::async_runtime::spawn_blocking(|| {
+        let listener = link::listen()?;
+        let url = listener.url();
+        link::open_browser(&url).map_err(|error| {
+            AppError::Usage(format!(
+                "abrí esta dirección en el navegador: {url} ({error})"
+            ))
+        })?;
+        link::wait_for_handshake(&listener, link::TIMEOUT)
+    })
+    .await
+    .map_err(|error| AppError::Auth(format!("no pude esperar el navegador: {error}")))??;
+
+    let credentials = auth::save_account_session(
+        &handshake.refresh_token,
+        handshake.email.clone(),
+        auth::DEFAULT_PROJECT,
+        auth::DEFAULT_REFERER,
+    )?;
+    app.state::<AppState>().engine().refresh_identity();
+
+    Ok(LoginInfo {
+        uid: credentials.uid.clone(),
+        pairing_code: credentials.pairing_code(),
+        email: credentials.email.clone(),
+        account: credentials.is_account(),
     })
 }
 

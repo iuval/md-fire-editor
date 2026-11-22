@@ -22,6 +22,9 @@ pub struct Status {
     pub vault: Option<String>,
     pub logged_in: bool,
     pub uid: Option<String>,
+    /// La sesión es una cuenta del sitio (login con Google), no un agente anónimo.
+    pub account: bool,
+    pub email: Option<String>,
     pub syncing: bool,
     pub last_sync: Option<u64>,
     pub last_error: Option<String>,
@@ -121,6 +124,13 @@ fn refresh_identity(status: &Arc<Mutex<Status>>) {
             .as_ref()
             .map(|credentials| credentials.uid.clone())
             .filter(|uid| !uid.is_empty());
+        current.account = credentials
+            .as_ref()
+            .is_some_and(|credentials| credentials.is_account());
+        current.email = credentials
+            .as_ref()
+            .and_then(|credentials| credentials.email.clone())
+            .filter(|email| !email.is_empty());
     });
 }
 

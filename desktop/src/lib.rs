@@ -11,6 +11,7 @@ pub mod config;
 pub mod engine;
 pub mod error;
 pub mod firestore;
+pub mod link;
 pub mod model;
 pub mod sync;
 pub mod tags;
@@ -38,6 +39,7 @@ pub fn run() {
             commands::set_vault,
             commands::pick_folder,
             commands::login,
+            commands::login_account,
             commands::logout,
             commands::list_folders,
             commands::settings,

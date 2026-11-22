@@ -45,6 +45,10 @@ pub struct Credentials {
     pub referer: String,
     #[serde(default)]
     pub revoked: bool,
+    /// Correo de la cuenta del sitio, cuando la sesión es una cuenta real (no un
+    /// agente anónimo). Sólo se usa para mostrar "Conectada como …".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     /// Campos que no conocemos (los escribe el CLI): se conservan al guardar.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -60,6 +64,7 @@ impl Default for Credentials {
             project_id: default_project(),
             referer: default_referer(),
             revoked: false,
+            email: None,
             extra: serde_json::Map::new(),
         }
     }
@@ -73,6 +78,11 @@ impl Credentials {
     /// Corto y fácil de dictar; el uid completo va en "copiar".
     pub fn pairing_code(&self) -> String {
         self.uid.chars().take(12).collect()
+    }
+
+    /// Sesión de una cuenta real del sitio (login con Google), no de un agente.
+    pub fn is_account(&self) -> bool {
+        self.email.as_deref().is_some_and(|email| !email.is_empty())
     }
 }
 
@@ -146,6 +156,7 @@ pub fn logout() -> Result<()> {
     creds.refresh_token = None;
     creds.id_token = None;
     creds.revoked = true;
+    creds.email = None;
     save_credentials(&creds)
 }
 
@@ -249,6 +260,7 @@ pub fn login_anonymous(project_id: &str, referer: &str) -> Result<Credentials> {
         project_id: project_id.to_string(),
         referer: referer.to_string(),
         revoked: false,
+        email: None,
         extra: serde_json::Map::new(),
     })
 }
@@ -264,6 +276,85 @@ fn revoke(refresh_token: &str) -> Result<()> {
         DEFAULT_REFERER,
     )
     .map(|_| ())
+}
+
+/// Una sesión ya validada contra `securetoken`.
+struct Session {
+    id_token: String,
+    refresh_token: String,
+    expires_in: u64,
+    uid: String,
+}
+
+/// Cambia un refresh token por un ID token nuevo. Es el único lugar donde se
+/// valida un token: si Google lo rechaza, no se guarda nada en disco.
+fn refresh_session(refresh_token: &str, referer: &str) -> Result<Session> {
+    let url = format!("{}/v1/token?key={}", token_base(), api_key());
+    let data = post_json(
+        &url,
+        serde_json::json!({
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        }),
+        referer,
+    )?;
+
+    let id_token = data
+        .get("id_token")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::Auth("la respuesta no trae id_token".into()))?
+        .to_string();
+    let refresh_token = data
+        .get("refresh_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or(refresh_token)
+        .to_string();
+    let expires_in = data
+        .get("expires_in")
+        .and_then(|v| v.as_str())
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(3600);
+    let uid = data
+        .get("user_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    Ok(Session {
+        id_token,
+        refresh_token,
+        expires_in,
+        uid,
+    })
+}
+
+/// Guarda la sesión de una cuenta del sitio a partir del refresh token que
+/// entrega la página web (`link::Handshake`). El uid sale de Google, no de la
+/// página: si el token no es válido, no se escribe nada.
+pub fn save_account_session(
+    refresh_token: &str,
+    email: Option<String>,
+    project_id: &str,
+    referer: &str,
+) -> Result<Credentials> {
+    let session = refresh_session(refresh_token, referer)?;
+    if session.uid.is_empty() {
+        return Err(AppError::Auth(
+            "el token no trae user_id: probá de nuevo desde el navegador".into(),
+        ));
+    }
+
+    let mut creds = load_credentials().unwrap_or_default();
+    creds.uid = session.uid;
+    creds.refresh_token = Some(session.refresh_token);
+    creds.id_token = Some(session.id_token);
+    creds.expires_at = now_ms() + session.expires_in * 1000;
+    creds.project_id = project_id.to_string();
+    creds.referer = referer.to_string();
+    creds.revoked = false;
+    creds.email = email.filter(|email| !email.is_empty());
+    save_credentials(&creds)?;
+    Ok(creds)
 }
 
 /// Devuelve un ID token válido, refrescándolo si está por vencer.
@@ -289,38 +380,18 @@ pub fn id_token(force: bool) -> Result<(String, Credentials)> {
         return Ok((creds.id_token.clone().unwrap_or_default(), creds));
     }
 
-    let url = format!("{}/v1/token?key={}", token_base(), api_key());
-    let data = post_json(
-        &url,
-        serde_json::json!({
-            "grant_type": "refresh_token",
-            "refresh_token": creds.refresh_token,
-        }),
-        &creds.referer,
-    )?;
+    let stored = creds.refresh_token.clone().ok_or(AppError::NotLoggedIn)?;
+    let session = refresh_session(&stored, &creds.referer)?;
 
-    let id_token = data
-        .get("id_token")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::Auth("la respuesta no trae id_token".into()))?
-        .to_string();
-    let refresh = data
-        .get("refresh_token")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .or_else(|| creds.refresh_token.clone());
-    let expires_in = data
-        .get("expires_in")
-        .and_then(|v| v.as_str())
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(3600);
-
-    creds.id_token = Some(id_token.clone());
-    creds.refresh_token = refresh;
-    creds.expires_at = now_ms() + expires_in * 1000;
+    creds.id_token = Some(session.id_token.clone());
+    creds.refresh_token = Some(session.refresh_token);
+    creds.expires_at = now_ms() + session.expires_in * 1000;
     creds.revoked = false;
+    if !session.uid.is_empty() {
+        creds.uid = session.uid;
+    }
     save_credentials(&creds)?;
-    Ok((id_token, creds))
+    Ok((session.id_token, creds))
 }
 
 #[cfg(test)]
@@ -366,5 +437,44 @@ mod tests {
     fn sin_refresh_token_no_hay_sesion() {
         let creds = Credentials::default();
         assert!(!creds.has_refresh_token());
+    }
+
+    #[test]
+    fn el_correo_marca_una_cuenta_real_y_sobrevive_el_round_trip() {
+        let dir = std::env::temp_dir().join(format!("mdfire-auth-email-{}", std::process::id()));
+        let path = dir.join("credentials.json");
+        let creds = Credentials {
+            uid: "uidDeCuenta".into(),
+            refresh_token: Some("refresh".into()),
+            email: Some("iuval@example.com".into()),
+            ..Default::default()
+        };
+        assert!(creds.is_account());
+
+        save_credentials_at(&path, &creds).unwrap();
+        let loaded = load_credentials_at(&path).unwrap();
+        assert_eq!(loaded.email.as_deref(), Some("iuval@example.com"));
+        assert!(loaded.is_account());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn un_agente_anonimo_no_es_una_cuenta() {
+        let creds = Credentials {
+            uid: "agente".into(),
+            refresh_token: Some("refresh".into()),
+            ..Default::default()
+        };
+        assert!(!creds.is_account());
+    }
+
+    #[test]
+    fn sin_correo_el_archivo_no_escribe_la_clave() {
+        let dir = std::env::temp_dir().join(format!("mdfire-auth-nokey-{}", std::process::id()));
+        let path = dir.join("credentials.json");
+        save_credentials_at(&path, &Credentials::default()).unwrap();
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("email"), "{raw}");
+        let _ = fs::remove_dir_all(&dir);
     }
 }

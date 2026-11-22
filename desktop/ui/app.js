@@ -37,15 +37,23 @@ function formatTime(milliseconds) {
 function render(next) {
   status = next;
 
-  if (!next.logged_in) setPill("Sin cuenta", "error");
+  if (waitingForBrowser) setPill("Esperando el navegador…", "busy");
+  else if (!next.logged_in) setPill("Sin cuenta", "error");
   else if (next.syncing) setPill("Sincronizando…", "busy");
   else if (next.last_error) setPill("Error", "error");
   else if (!next.vault) setPill("Sin carpeta", "error");
   else setPill("Al día", "ok");
 
+  const account = Boolean(next.account);
   setHidden("account-out", next.logged_in);
   setHidden("account-in", !next.logged_in);
-  setText("account-state", next.logged_in ? "Conectada" : "Sin cuenta");
+  setHidden("agent-block", account);
+  setHidden("account-email", !account);
+  setText(
+    "account-state",
+    next.logged_in ? (account ? "Cuenta conectada" : "Agente conectado") : "Sin cuenta"
+  );
+  setText("account-email", account && next.email ? `Conectada como ${next.email}` : "");
   setText("uid", next.uid ?? "");
 
   const vaultPath = el("vault-path");
@@ -134,6 +142,26 @@ el("login").addEventListener("click", () =>
     return info;
   })
 );
+
+/**
+ * Login con la cuenta del sitio: el backend abre el navegador y espera el
+ * handshake en un puerto local. Mientras tanto el botón queda bloqueado y el
+ * estado dice que el turno es del navegador.
+ */
+el("login-account").addEventListener("click", async () => {
+  const button = el("login-account");
+  if (button.disabled) return;
+  button.disabled = true;
+  waitingForBrowser = true;
+  setPill("Esperando el navegador…", "busy");
+  try {
+    await run(() => invoke("login_account"));
+  } finally {
+    waitingForBrowser = false;
+    button.disabled = false;
+    await refresh();
+  }
+});
 
 el("logout").addEventListener("click", () => run(() => invoke("logout")));
 

@@ -18,19 +18,34 @@ con los dos.
   sobreescribe; deja `<nota>.conflicto-AAAAMMDD-HHMM.md` con tu versión y sigue.
 - **Bandeja del sistema**: cerrar la ventana no corta la sincronización. Para salir de verdad,
   menú del ícono → Salir.
-- **Identidad del agente**: cuenta anónima de Firebase, miembro de la carpeta con rol
-  Lectura/Escritura. Se revoca sacándola de la carpeta en la app web.
+- **Dos formas de identificarse**: con **tu cuenta del sitio** (login con Google) o con un
+  **agente anónimo** (una cuenta aparte, para una carpeta puntual).
 
-## Emparejar (una vez)
+## Conectar con tu cuenta (recomendado)
 
-1. Abrí la app → **Cuenta** → "Generar código de agente". Muestra un uid.
+1. Abrí la app → **Cuenta** → **Entrar con mi cuenta**.
+2. Se abre el navegador en la página del sitio. Si no estás con la sesión de Google, entrá.
+3. Tocá **Conectar la app**: la página le pasa la sesión a la app por un puerto local.
+4. Volvé a la app: ya aparecen tus carpetas. Elegí la carpeta base y listo.
+
+Google no permite su OAuth dentro de un webview embebido, así que el login se hace en el
+navegador del sistema. La app abre un puerto en `127.0.0.1` con un código de un solo uso
+(`state`), espera el handshake y lo cierra. Nada de contraseñas: se guarda el *refresh token*
+que el sitio le entrega, en `~/.config/mdfire/credentials.json` (mismo archivo que usa
+`mdfire login` del CLI, así que también sirve al revés). "Desconectar" lo revoca.
+
+### Conectar como agente (carpeta compartida)
+
+Si en cambio querés una cuenta aparte que sólo vea una carpeta:
+
+1. **Cuenta** → **Conectar como agente (otra cuenta)** → "Generar código de agente". Muestra un
+   uid.
 2. En la app web: **Agentes de IA** → pegar el uid → asignarle una carpeta (lectura o
    escritura).
 3. En la app: **Elegir carpeta…** y listo.
 
-El uid es el de la cuenta anónima: la app no guarda tu contraseña ni usa tu sesión. Las
-credenciales quedan en `~/.config/mdfire/credentials.json` (mismo archivo que usa
-`mdfire login` del CLI, así que también sirve al revés).
+El agente no usa tu sesión: ve sólo la carpeta que le das y se revoca sacándolo de la carpeta
+en la app web.
 
 ## Correr y compilar
 

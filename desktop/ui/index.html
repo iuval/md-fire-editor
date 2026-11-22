@@ -42,20 +42,32 @@
         </div>
         <div id="account-out" class="stack">
           <p class="hint">
-            Generá un código de agente y pegalo en la app web, en
-            <strong>Agentes de IA</strong>, sobre la carpeta que querés sincronizar.
+            Entrá con tu cuenta del sitio. Se abre el navegador, autorizás con Google y volvés a
+            la app con la sesión lista: tus carpetas aparecen al instante.
           </p>
-          <button id="login" class="btn primary" type="button">Generar código de agente</button>
+          <button id="login-account" class="btn primary" type="button">Entrar con mi cuenta</button>
+          <details class="agent">
+            <summary>Conectar como agente (otra cuenta)</summary>
+            <p class="hint">
+              El agente es una cuenta propia, no la tuya: sólo ve las notas de la carpeta que le
+              des. Sirve para automatizaciones o para un asistente. Generá el código y pegalo en
+              la app web, en <strong>Agentes de IA</strong>, sobre la carpeta.
+            </p>
+            <button id="login" class="btn ghost" type="button">Generar código de agente</button>
+          </details>
         </div>
         <div id="account-in" class="stack" hidden>
-          <div class="row">
-            <code id="uid" class="code"></code>
-            <button id="copy" class="btn ghost" type="button">Copiar uid</button>
+          <p id="account-email" class="account-email" hidden></p>
+          <div id="agent-block" class="stack" hidden>
+            <div class="row">
+              <code id="uid" class="code"></code>
+              <button id="copy" class="btn ghost" type="button">Copiar uid</button>
+            </div>
+            <p class="hint">
+              Este uid tiene que estar como miembro de la carpeta en <strong>Agentes de IA</strong>.
+              Si no aparece, pedile permiso al dueño de la carpeta.
+            </p>
           </div>
-          <p class="hint">
-            Este uid tiene que estar como miembro de la carpeta en <strong>Agentes de IA</strong>.
-            Si no aparece, pedile permiso al dueño de la carpeta.
-          </p>
           <button id="logout" class="btn ghost danger" type="button">Desconectar</button>
         </div>
       </section>

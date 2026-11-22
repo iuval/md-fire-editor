@@ -12,7 +12,7 @@ pub enum AppError {
     Etag(String),
     #[error("no encontré {0}")]
     NotFound(String),
-    #[error("no estás logueado: generá un código de agente")]
+    #[error("no estás logueado: entrá con tu cuenta o generá un código de agente")]
     NotLoggedIn,
     #[error("{0}")]
     Usage(String),
