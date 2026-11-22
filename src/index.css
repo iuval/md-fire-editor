@@ -245,10 +245,6 @@ button {
   border-top: 1px solid light-dark(var(--color-border), var(--color-border-dark));
 }
 
-.sidebar-foot .avatar {
-  margin-left: 6px;
-}
-
 .avatar {
   width: 20px;
   height: 20px;
@@ -380,8 +376,225 @@ button {
   flex-shrink: 0;
 }
 
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 10px 6px 16px;
+  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  font-size: 12.5px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+/* ---------- tabs and splits ---------- */
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* A split is a flex pair; the divider's pixels are shared, the ratio applies to
+   the rest. `min-*: 0` lets a pane shrink below its content, which is what makes
+   nesting work. */
+.split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.split--row {
+  flex-direction: row;
+}
+
+.split--column {
+  flex-direction: column;
+}
+
+.split-cell {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.split-cell > .workspace-pane,
+.split-cell > .split {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.split-divider {
+  flex: 0 0 7px;
+  position: relative;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.split--column > .split-divider {
+  cursor: row-resize;
+  flex-basis: 7px;
+}
+
+.split-divider::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: light-dark(var(--color-border), var(--color-border-dark));
+  transition: background 0.12s ease;
+}
+
+.split--row > .split-divider::after {
+  width: 1px;
+}
+
+.split--column > .split-divider::after {
+  height: 1px;
+}
+
+.split-divider:hover::after,
+.split-divider:focus-visible::after,
+.split--dragging > .split-divider::after {
+  background: light-dark(var(--color-accent), var(--color-accent-dark));
+}
+
+.split--dragging {
+  user-select: none;
+}
+
+.workspace-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: light-dark(var(--color-bg), var(--color-bg-dark));
+}
+
+/* With four panes open, every pane has an "active tab". The focused pane's tab
+   carries an accent underline so it is clear where the next file will land. */
+.workspace-pane.focused .tab.active {
+  box-shadow:
+    inset 0 0 0 1px light-dark(var(--color-border), var(--color-border-dark)),
+    inset 0 -2px 0 light-dark(var(--color-accent), var(--color-accent-dark));
+}
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 38px;
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
+}
+
+.tabbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tabbar-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* The + rides along with the tabs: it sits after the last one, not pinned to
+   the far edge of a wide pane. */
+.tab-new {
+  flex-shrink: 0;
+  margin-left: 2px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  max-width: 200px;
+  min-width: 0;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.tab:hover {
+  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
+}
+
+.tab.active {
+  background: light-dark(var(--color-bg), var(--color-bg-dark));
+  color: light-dark(var(--color-text), var(--color-text-dark));
+  box-shadow: inset 0 0 0 1px light-dark(var(--color-border), var(--color-border-dark));
+}
+
+.tab-label {
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px 0 10px;
+  border: none;
+  background: none;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tab-text {
+  display: block;
+  max-width: 168px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 24px is the WCAG 2.5.8 minimum; the tab itself is 28px tall. */
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tab-close:hover {
+  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
+  opacity: 1;
+}
+
+.tabbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
 .scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -390,6 +603,14 @@ button {
   max-width: 704px;
   margin: 0 auto;
   padding: 36px 40px 45vh;
+}
+
+/* A pane can be a third of the window wide: the reading column has to breathe
+   with it instead of keeping the full-width 40px gutter. */
+.workspace-pane .doc {
+  max-width: 100%;
+  padding-left: clamp(16px, 5%, 40px);
+  padding-right: clamp(16px, 5%, 40px);
 }
 
 .inline-title {
@@ -1393,6 +1614,25 @@ button {
 
   .inline-title {
     font-size: 1.6em;
+  }
+
+  /* Tabs carry the file switcher on a phone: same 44px strip as the top bar. */
+  .tabbar {
+    height: 44px;
+  }
+
+  .tab {
+    height: 34px;
+  }
+
+  .tab-close {
+    width: 30px;
+    height: 30px;
+    margin-right: 1px;
+  }
+
+  .tab-text {
+    max-width: 180px;
   }
 
   /* Touch targets: 44px minimum, no exceptions. Desktop keeps 32px so the

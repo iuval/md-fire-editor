@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Columns2, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Plus, Rows2, Trash2, Upload, X } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { Menu, type MenuItem } from './components/Menu'
-import { CollaborativeEditor } from './components/CollaborativeEditor'
+import { NotePane } from './components/NotePane'
+import { Workspace } from './components/Workspace'
 import { ShareDialog } from './components/ShareDialog'
 import { MoveDialog } from './components/MoveDialog'
 import { InputDialog } from './components/InputDialog'
@@ -17,14 +18,32 @@ import { buildVault, readVault } from './lib/vault'
 import { track } from './lib/analytics'
 import { currentBrowser, embeddedBrowserHint } from './lib/browser'
 import { buildTagTree, extractTags, matchesTagFilter, parseTagInput } from './lib/tags'
-import { flattenFolders, folderPath } from './lib/folders'
+import { flattenFolders, folderPath, sharedFolderOf } from './lib/folders'
 import { applyOrder, setFolderSort, setRootSort, subscribeUserSettings } from './lib/notes'
 import { DEFAULT_SORT, nextOrder, renumbered, resolveSort, sortFolders, sortNotes, SORT_LABELS, type SortMode } from './lib/sorting'
 import { SortDialog } from './components/SortDialog'
-import { parseProperties, setProperty } from './lib/properties'
-import { joinFrontmatter, sameMarkdown, splitFrontmatter } from './lib/markdown'
 import { MAX_FOLDER_DEPTH } from './lib/folders'
-import { NotePanels, type PropertyChange } from './components/NotePanels'
+import {
+  activeNoteId,
+  activeNoteIds,
+  activeTab,
+  closeOtherTabs,
+  closePane,
+  closeTab,
+  findNote,
+  findPane,
+  listPanes,
+  mergeIntoPane,
+  openTab,
+  replaceActiveTab,
+  sanitizeLayout,
+  setActiveTab,
+  setRatio,
+  singlePane,
+  splitPaneWithActiveTab,
+  type PaneTree,
+  type SplitDirection,
+} from './lib/panes'
 import { RenameTagDialog } from './components/RenameTagDialog'
 import { isPaid, subscribeEntitlement } from './lib/entitlements'
 import {
@@ -39,7 +58,6 @@ import type { SyncStats } from './lib/collab/provider'
 import {
   isAclOwner,
   moveNoteTo,
-  noteCanEdit,
   renameFolder,
   saveNoteContent,
   subscribeNote,
@@ -55,6 +73,32 @@ import {
 const ACTIVE_KEY = 'mdfire-active'
 const SIDEBAR_KEY = 'mdfire-sidebar'
 const EXPANDED_KEY = 'mdfire-folders'
+const PANES_KEY = 'mdfire-panes'
+
+/** Tabs and panes as one tree: a pane is a split node's first child. */
+interface WorkspaceState {
+  layout: PaneTree
+  focusedPaneId: string
+}
+
+function newId(prefix: string): string {
+  const suffix =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2, 10)
+  return `${prefix}-${suffix}`
+}
+
+/** Drops cached documents whose tab was closed (unsubscribed) or note removed. */
+function keepIds<T>(map: Record<string, T>, ids: string[]): Record<string, T> {
+  const keys = Object.keys(map)
+  if (keys.length === ids.length && ids.every((id) => id in map)) return map
+  const next: Record<string, T> = {}
+  for (const id of ids) {
+    if (id in map) next[id] = map[id]
+  }
+  return next
+}
 
 type Dialog =
   | { kind: 'none' }
@@ -72,9 +116,15 @@ type Dialog =
   | { kind: 'sort'; folderId: string | null }
   | { kind: 'rename-tag' }
 
+function noteFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get('note')
+}
+
 function initialNoteId(): string | null {
-  const fromUrl = new URLSearchParams(window.location.search).get('note')
-  if (fromUrl) return fromUrl
+  return noteFromUrl() ?? storedActiveNote()
+}
+
+function storedActiveNote(): string | null {
   try {
     return localStorage.getItem(ACTIVE_KEY)
   } catch {
@@ -99,6 +149,40 @@ function initialExpanded(): Set<string> {
   }
 }
 
+/** Restores tabs and splits, falling back to one pane with the last note. */
+function initialWorkspace(): WorkspaceState {
+  try {
+    const raw = localStorage.getItem(PANES_KEY)
+    if (raw) {
+      const saved = JSON.parse(raw) as { layout?: unknown; focusedPaneId?: unknown }
+      const layout = sanitizeLayout(saved.layout)
+      if (layout) {
+        const panes = listPanes(layout)
+        const focused =
+          panes.find((pane) => pane.id === saved.focusedPaneId)?.id ?? panes[0].id
+        // A `?note=` deep link still wins over whatever was open last time.
+        const linked = noteFromUrl()
+        if (!linked) return { layout, focusedPaneId: focused }
+        const where = findNote(layout, linked)
+        if (where) {
+          return {
+            layout: setActiveTab(layout, where.paneId, where.tabId),
+            focusedPaneId: where.paneId,
+          }
+        }
+        return {
+          layout: replaceActiveTab(layout, focused, linked, newId('tab')),
+          focusedPaneId: focused,
+        }
+      }
+    }
+  } catch {
+    /* ignore: a corrupt layout is the same as none */
+  }
+  const paneId = newId('pane')
+  return { layout: singlePane(paneId, initialNoteId(), newId('tab')), focusedPaneId: paneId }
+}
+
 function App() {
   const { user, loading: authLoading, error: authError, doGoogleSignIn, doSignOut } = useAuth()
   const {
@@ -111,8 +195,14 @@ function App() {
     removeFolder,
   } = useWorkspace(user?.uid)
 
-  const [activeId, setActiveId] = useState<string | null>(initialNoteId)
-  const [activeNote, setActiveNote] = useState<Note | null>(null)
+  const [workspace, setWorkspace] = useState<WorkspaceState>(initialWorkspace)
+  const { layout, focusedPaneId } = workspace
+  const focusedPane = findPane(layout, focusedPaneId)
+  /** The focused pane's current tab is what every menu and dialog acts on. */
+  const activeId = focusedPane ? (activeTab(focusedPane)?.noteId ?? null) : null
+  const [notesById, setNotesById] = useState<Record<string, Note>>({})
+  const [noteErrors, setNoteErrors] = useState<Record<string, string>>({})
+  const activeNote = activeId ? (notesById[activeId] ?? null) : null
   const foldersById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders])
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -120,6 +210,9 @@ function App() {
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null)
+  const [tabMenu, setTabMenu] = useState<
+    { paneId: string; tabId: string | null; x: number; y: number } | null
+  >(null)
   const [expanded, setExpanded] = useState<Set<string>>(initialExpanded)
   const [presence, setPresence] = useState<AwarenessUser[]>([])
   const [status, setStatus] = useState({
@@ -128,30 +221,43 @@ function App() {
     updateCount: 0,
     error: null as string | null,
   })
-  const [title, setTitle] = useState('')
-  const [loadError, setLoadError] = useState<string | null>(null)
   const [paid, setPaid] = useState(false)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [rootSort, setRootSortState] = useState<SortMode>(DEFAULT_SORT)
   const [notice, setNotice] = useState<string | null>(null)
-  const frontmatterRef = useRef('')
-  const markdownRef = useRef('')
   const [usage, setUsage] = useState<UsageTotals | null>(null)
   const [credits, setCredits] = useState<Credits | null>(null)
   const lastStats = useRef<SyncStats | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
+  /**
+   * A note click opens in the focused pane's current tab — the tab model. When
+   * the note is already open elsewhere, the pane that has it is focused instead
+   * of opening it a second time in a third place.
+   */
   const selectNote = useCallback((id: string | null) => {
-    setActiveId(id)
-    try {
-      if (id) localStorage.setItem(ACTIVE_KEY, id)
-      else localStorage.removeItem(ACTIVE_KEY)
-    } catch {
-      /* ignore */
-    }
+    setWorkspace((ws) => {
+      if (!id) {
+        const pane = findPane(ws.layout, ws.focusedPaneId)
+        const tab = pane ? activeTab(pane) : null
+        if (!pane || !tab) return ws
+        return { ...ws, layout: closeTab(ws.layout, pane.id, tab.id) }
+      }
+      // Already here (both panes can show the same note): just activate it.
+      const here = findPane(ws.layout, ws.focusedPaneId)
+      const mine = here?.tabs.find((tab) => tab.noteId === id)
+      if (here && mine) {
+        const next = setActiveTab(ws.layout, here.id, mine.id)
+        return next === ws.layout ? ws : { ...ws, layout: next }
+      }
+      const where = findNote(ws.layout, id)
+      if (where) {
+        const next = setActiveTab(ws.layout, where.paneId, where.tabId)
+        if (next === ws.layout && where.paneId === ws.focusedPaneId) return ws
+        return { layout: next, focusedPaneId: where.paneId }
+      }
+      return { ...ws, layout: replaceActiveTab(ws.layout, ws.focusedPaneId, id, newId('tab')) }
+    })
   }, [])
 
   useEffect(() => {
@@ -220,50 +326,78 @@ function App() {
     track('collab_session', user.uid, { peers: presence.length })
   }, [user, presence.length])
 
+  // One subscription per *visible* note: inactive tabs read their title from the
+  // workspace list instead of keeping a document (and a Yjs session) open.
+  const openIdsKey = activeNoteIds(layout).join('|')
   useEffect(() => {
-    if (!activeId || !user) {
-      setActiveNote(null)
+    if (!user) {
+      setNotesById({})
+      setNoteErrors({})
       return
     }
-    setLoadError(null)
-    return subscribeNote(
-      activeId,
-      (note) => {
-        if (!note) {
-          setLoadError('La nota no existe o no tenés acceso.')
-          setActiveNote(null)
-          return
-        }
-        setActiveNote(note)
-      },
-      (message) => setLoadError(message)
+    const ids = openIdsKey ? openIdsKey.split('|') : []
+    setNotesById((prev) => keepIds(prev, ids))
+    const offs = ids.map((id) =>
+      subscribeNote(
+        id,
+        (note) => {
+          setNotesById((prev) => {
+            if (!note) {
+              if (!(id in prev)) return prev
+              const next = { ...prev }
+              delete next[id]
+              return next
+            }
+            return { ...prev, [id]: note }
+          })
+          setNoteErrors((prev) => {
+            if (note) {
+              if (!(id in prev)) return prev
+              const next = { ...prev }
+              delete next[id]
+              return next
+            }
+            return id in prev ? prev : { ...prev, [id]: 'La nota no existe o no tenés acceso.' }
+          })
+        },
+        (message) => setNoteErrors((prev) => ({ ...prev, [id]: message }))
+      )
     )
-  }, [activeId, user])
-
-  const titleFocused = useRef(false)
-
-  useEffect(() => {
-    if (!activeNote) return
-    // Follow external renames (agent, another device) unless the user is typing.
-    if (!titleFocused.current) setTitle(activeNote.title)
-  }, [activeNote?.id, activeNote?.title])
-
-  // The editor never sees the frontmatter: it would turn `---` into a rule and
-  // flatten `key: value` into a paragraph, destroying properties and tags.
-  const noteBody = useMemo(
-    () => splitFrontmatter(activeNote?.markdown ?? '').body,
-    [activeNote?.id, activeNote?.markdown]
-  )
+    return () => offs.forEach((off) => off())
+  }, [openIdsKey, user])
 
   useEffect(() => {
-    const parts = splitFrontmatter(activeNote?.markdown ?? '')
-    frontmatterRef.current = parts.frontmatter
-    markdownRef.current = activeNote?.markdown ?? ''
-  }, [activeNote?.id, activeNote?.markdown])
+    setPresence([])
+  }, [focusedPaneId])
+
+  // Splits are a desktop feature; on a phone every open file becomes a tab of the
+  // single visible pane instead of being hidden behind the tree.
+  useEffect(() => {
+    if (!isMobile) return
+    setWorkspace((ws) => {
+      if (listPanes(ws.layout).length === 1) return ws
+      const pane = mergeIntoPane(ws.layout, ws.focusedPaneId)
+      return { layout: pane, focusedPaneId: pane.id }
+    })
+  }, [isMobile])
 
   useEffect(() => {
-    if (!activeId && notes.length > 0) selectNote(notes[0].id)
-  }, [notes, activeId, selectNote])
+    if (!activeId && focusedPane && focusedPane.tabs.length === 0 && notes.length > 0) {
+      selectNote(notes[0].id)
+    }
+  }, [notes, activeId, focusedPane, selectNote])
+
+  // Tabs and splits survive a reload; ACTIVE_KEY stays as a migration fallback.
+  useEffect(() => {
+    try {
+      localStorage.setItem(PANES_KEY, JSON.stringify(workspace))
+      const noteId = activeNoteId(workspace.layout, workspace.focusedPaneId)
+      if (noteId) localStorage.setItem(ACTIVE_KEY, noteId)
+      else localStorage.removeItem(ACTIVE_KEY)
+    } catch {
+      /* ignore */
+    }
+  }, [workspace])
 
   useEffect(() => {
     try {
@@ -273,50 +407,7 @@ function App() {
     }
   }, [expanded])
 
-  useEffect(() => {
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      if (titleTimer.current) clearTimeout(titleTimer.current)
-    }
-  }, [])
-
-  const editable = !!user && !!activeNote && noteCanEdit(activeNote, folders, user.uid)
   const noteOwner = !!user && !!activeNote && activeNote.ownerId === user.uid
-
-  const persist = useCallback(
-    (patch: { title?: string; markdown?: string; tags?: string[] }) => {
-      if (!activeNote) return
-      void saveNoteContent(activeNote.id, { ...patch, version: activeNote.version + 1 }).catch(
-        () => undefined
-      )
-    },
-    [activeNote]
-  )
-
-  const handleMarkdownChange = useCallback(
-    (body: string) => {
-      const full = joinFrontmatter(frontmatterRef.current, body)
-      // Nothing actually changed (echo of a seed or of a remote apply): do not
-      // touch the document, or opening a note reorders it.
-      if (sameMarkdown(full, markdownRef.current)) return
-
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => {
-        persist({ markdown: full, tags: extractTags(full) })
-      }, 1200)
-    },
-    [persist]
-  )
-
-  const handleTitleChange = useCallback(
-    (next: string) => {
-      setTitle(next)
-      if (!editable) return
-      if (titleTimer.current) clearTimeout(titleTimer.current)
-      titleTimer.current = setTimeout(() => persist({ title: next.trim() || 'Sin título' }), 600)
-    },
-    [editable, persist]
-  )
 
   const handleExportAll = useCallback(() => {
     if (notes.length === 0) return
@@ -421,26 +512,73 @@ function App() {
     [addFolder, addNote, folders, selectNote, user]
   )
 
-  const handlePropertyChange = useCallback(
-    async (change: PropertyChange) => {
-      if (!activeNote) return
-      const next =
-        change.value === null
-          ? setProperty(activeNote.markdown ?? '', { key: change.key, value: null })
-          : setProperty(activeNote.markdown ?? '', {
-              key: change.key,
-              type: change.type ?? 'text',
-              value: change.value,
-            })
-      frontmatterRef.current = splitFrontmatter(next).frontmatter
-      await saveNoteContent(activeNote.id, {
-        markdown: next,
-        tags: extractTags(next),
-        version: activeNote.version + 1,
-      })
-    },
-    [activeNote]
-  )
+  const focusPane = useCallback((paneId: string) => {
+    setWorkspace((ws) =>
+      ws.focusedPaneId === paneId || !findPane(ws.layout, paneId)
+        ? ws
+        : { ...ws, focusedPaneId: paneId }
+    )
+  }, [])
+
+  const activateTab = useCallback((paneId: string, tabId: string) => {
+    setWorkspace((ws) => {
+      const layout = setActiveTab(ws.layout, paneId, tabId)
+      if (layout === ws.layout && ws.focusedPaneId === paneId) return ws
+      return { layout, focusedPaneId: paneId }
+    })
+  }, [])
+
+  const closePaneTab = useCallback((paneId: string, tabId: string) => {
+    setWorkspace((ws) => {
+      const layout = closeTab(ws.layout, paneId, tabId)
+      if (layout === ws.layout) return ws
+      const panes = listPanes(layout)
+      const focused = panes.some((pane) => pane.id === ws.focusedPaneId)
+        ? ws.focusedPaneId
+        : panes[0].id
+      return { layout, focusedPaneId: focused }
+    })
+  }, [])
+
+  /** The X in the tab bar: closes the pane itself, tabs and all. */
+  const closePaneAt = useCallback((paneId: string) => {
+    setWorkspace((ws) => {
+      const layout = closePane(ws.layout, paneId)
+      if (layout === ws.layout) return ws
+      const panes = listPanes(layout)
+      const focused = panes.some((pane) => pane.id === ws.focusedPaneId)
+        ? ws.focusedPaneId
+        : panes[0].id
+      return { layout, focusedPaneId: focused }
+    })
+  }, [])
+
+  const closeSiblingTabs = useCallback((paneId: string, tabId: string) => {
+    setWorkspace((ws) => {
+      const layout = closeOtherTabs(ws.layout, paneId, tabId)
+      return layout === ws.layout ? ws : { ...ws, layout }
+    })
+  }, [])
+
+  /**
+   * Splits a pane and focuses the new half, which opens with a copy of the page
+   * you were reading: the next file click replaces it there.
+   */
+  const splitPaneAt = useCallback((paneId: string, direction: SplitDirection) => {
+    setWorkspace((ws) => {
+      const ids = { paneId: newId('pane'), tabId: newId('tab'), splitId: newId('split') }
+      const layout = splitPaneWithActiveTab(ws.layout, paneId, direction, ids)
+      if (layout === ws.layout) return ws
+      return { layout, focusedPaneId: ids.paneId }
+    })
+  }, [])
+
+  const resizeSplit = useCallback((splitId: string, ratio: number) => {
+    setWorkspace((ws) => {
+      const layout = setRatio(ws.layout, splitId, ratio)
+      return layout === ws.layout ? ws : { ...ws, layout }
+    })
+  }, [])
 
   const handleChooseSort = useCallback(
     async (mode: SortMode) => {
@@ -548,17 +686,20 @@ function App() {
     })
   }, [])
 
+  /** New notes open in their own tab, so they never replace a file you have open. */
   const handleNewNote = useCallback(
-    async (folder?: Folder) => {
+    async (folder?: Folder, paneId?: string) => {
       const note = await addNote(folder)
       if (!note) return
       if (folder) setExpanded((prev) => new Set(prev).add(folder.id))
       track('note_created', user?.uid, { folder: folder ? 'yes' : 'root' })
-      setPresence([])
-      selectNote(note.id)
+      setWorkspace((ws) => {
+        const target = paneId && findPane(ws.layout, paneId) ? paneId : ws.focusedPaneId
+        return { layout: openTab(ws.layout, target, note.id, newId('tab')), focusedPaneId: target }
+      })
       if (isMobile) setSidebarOpen(false)
     },
-    [addNote, isMobile, selectNote]
+    [addNote, isMobile]
   )
 
   const handleNewFolder = useCallback(
@@ -583,7 +724,6 @@ function App() {
     if (!window.confirm(`¿Eliminar "${activeNote.title || 'Sin título'}"?`)) return
     await removeNote(activeNote.id)
     selectNote(null)
-    setActiveNote(null)
   }, [activeNote, removeNote, selectNote])
 
   const handleDeleteFolder = useCallback(
@@ -602,9 +742,10 @@ function App() {
 
   const handleSignOut = useCallback(async () => {
     await doSignOut()
-    selectNote(null)
-    setActiveNote(null)
-  }, [doSignOut, selectNote])
+    // Another account's notes must not come back as tabs.
+    const paneId = newId('pane')
+    setWorkspace({ layout: singlePane(paneId), focusedPaneId: paneId })
+  }, [doSignOut])
 
   const toggleSidebar = useCallback(() => {
     if (isMobile) {
@@ -622,7 +763,7 @@ function App() {
     })
   }, [isMobile])
 
-  const sharedFolder = sharedFolderOf(activeNote, folders)
+  const sharedFolder = activeNote ? sharedFolderOf(activeNote, folders) : null
   const canManageNoteShare = noteOwner && activeNote?.aclSource === 'own'
   const shareFolderTarget =
     dialog.kind === 'share-folder' ? folders.find((f) => f.id === dialog.folderId) : undefined
@@ -675,6 +816,48 @@ function App() {
       })
     }
   }
+
+  /** The tab menu: every "open this page beside/below me" lives here. */
+  const tabMenuItems: MenuItem[] = tabMenu
+    ? [
+        {
+          label: 'Nueva nota acá',
+          icon: <Plus size={14} />,
+          onSelect: () => void handleNewNote(undefined, tabMenu.paneId),
+        },
+        // A phone shows one pane at a time, so offering a split it cannot show
+        // would only lose the user's file behind the tree.
+        ...(isMobile
+          ? []
+          : [
+              {
+                label: 'Dividir a la derecha',
+                icon: <Columns2 size={14} />,
+                separatorBefore: true,
+                onSelect: () => splitPaneAt(tabMenu.paneId, 'row'),
+              },
+              {
+                label: 'Dividir abajo',
+                icon: <Rows2 size={14} />,
+                onSelect: () => splitPaneAt(tabMenu.paneId, 'column'),
+              },
+            ]),
+        ...(tabMenu.tabId
+          ? [
+              {
+                label: 'Cerrar pestaña',
+                icon: <X size={14} />,
+                separatorBefore: true,
+                onSelect: () => closePaneTab(tabMenu.paneId, tabMenu.tabId!),
+              },
+              {
+                label: 'Cerrar las demás',
+                onSelect: () => closeSiblingTabs(tabMenu.paneId, tabMenu.tabId!),
+              },
+            ]
+          : []),
+      ]
+    : []
 
   const folderMenuItems: MenuItem[] = folderMenu
     ? [
@@ -749,6 +932,8 @@ function App() {
   const visibleNotes = selectedTags.length
     ? notes.filter((note) => matchesTagFilter(note.tags, selectedTags))
     : notes
+  /** Inactive tabs take their label from the workspace list: no subscription each. */
+  const titles = useMemo(() => new Map(notes.map((note) => [note.id, note.title])), [notes])
 
   if (authLoading) return <div className="empty">Cargando…</div>
 
@@ -842,109 +1027,75 @@ function App() {
           onClearTags={() => setSelectedTags([])}
         />
 
-        <div className="scroll">
-          {notice && (
-            <div
-              className="hint"
-              style={{ padding: '8px 16px', display: 'flex', gap: 8, alignItems: 'center' }}
-            >
-              <span style={{ flex: 1 }}>{notice}</span>
-              <button className="icon-btn" onClick={() => setNotice(null)} aria-label="Cerrar aviso">
-                ✕
-              </button>
-            </div>
-          )}
+        {notice && (
+          <div className="banner">
+            <span style={{ flex: 1 }}>{notice}</span>
+            <button className="icon-btn" onClick={() => setNotice(null)} aria-label="Cerrar aviso">
+              ✕
+            </button>
+          </div>
+        )}
 
-          {loadError && (
-            <p className="hint tone-danger" style={{ padding: '16px 24px' }}>
-              {loadError}
-            </p>
-          )}
-
-          {!activeNote && !loadError && (
-            <div className="empty" style={{ minHeight: '60vh' }}>
-              {notes.length === 0 ? (
-                <>
-                  <p className="empty-title">Todavía no hay notas</p>
-                  <p className="hint" style={{ maxWidth: 340, textAlign: 'center' }}>
-                    Creá una nota nueva, o importá un vault de Obsidian (.zip o .md) y seguí donde
-                    estabas.
-                  </p>
-                  <div className="row">
-                    <button className="btn" onClick={() => void handleNewNote()}>
-                      Crear nota
-                    </button>
-                    <button className="btn ghost" onClick={() => importRef.current?.click()}>
-                      Importar vault
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="empty-title">Elegí una nota</p>
-                  <button className="btn ghost" onClick={() => void handleNewNote()}>
-                    Crear nota
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {activeNote && (
-            <div className="doc">
-              <input
-                className="inline-title"
-                value={title}
-                onChange={(e) => handleTitleChange(e.target.value)}
-                readOnly={!editable}
-                maxLength={300}
-                placeholder="Sin título"
-                aria-label="Título de la nota"
-                spellCheck={false}
-                onFocus={() => {
-                  titleFocused.current = true
-                }}
-                onBlur={() => {
-                  titleFocused.current = false
-                }}
-              />
-              <NotePanels
-                tags={activeNote.tags}
-                properties={parseProperties(activeNote.markdown ?? '')}
-                editable={editable}
+        <Workspace
+          tree={layout}
+          focusedPaneId={focusedPaneId}
+          isMobile={isMobile}
+          onFocusPane={focusPane}
+          onRatio={resizeSplit}
+          renderPane={(pane) => {
+            const currentTab = activeTab(pane)
+            const noteId = currentTab?.noteId ?? null
+            return (
+              <NotePane
+                key={pane.id}
+                pane={pane}
+                titles={titles}
+                note={noteId ? (notesById[noteId] ?? null) : null}
+                noteError={noteId ? (noteErrors[noteId] ?? null) : null}
+                focused={pane.id === focusedPaneId}
+                uid={user.uid}
+                userName={userName || 'Alguien'}
+                folders={folders}
+                isMobile={isMobile}
+                onFocus={() => focusPane(pane.id)}
+                onActivateTab={(tabId) => activateTab(pane.id, tabId)}
+                onCloseTab={(tabId) => closePaneTab(pane.id, tabId)}
+                onNewNote={() => void handleNewNote(undefined, pane.id)}
+                onClosePane={
+                  listPanes(layout).length > 1 ? () => closePaneAt(pane.id) : undefined
+                }
+                onImport={() => importRef.current?.click()}
+                emptyWorkspace={notes.length === 0}
+                onMenu={(pos) =>
+                  setTabMenu({ paneId: pane.id, tabId: currentTab?.id ?? null, ...pos })
+                }
+                menuOpen={tabMenu?.paneId === pane.id}
                 onTagClick={(tag) =>
                   setSelectedTags((current) =>
                     current.includes(tag.toLowerCase()) ? current : [...current, tag.toLowerCase()]
                   )
                 }
                 onRenameTag={() => setDialog({ kind: 'rename-tag' })}
-                onPropertyChange={(change) => void handlePropertyChange(change)}
-              />
-              {sharedFolder && (
-                <p className="readonly-note">
-                  En «{folderPath(sharedFolder.id, foldersById)}» · permisos heredados de la carpeta
-                </p>
-              )}
-              <CollaborativeEditor
-                key={activeNote.id}
-                note={activeNote}
-                body={noteBody}
-                uid={user.uid}
-                userName={userName || 'Alguien'}
-                editable={editable}
-                onMarkdownChange={handleMarkdownChange}
                 onPresence={setPresence}
                 onStatus={setStatus}
                 onStats={handleStats}
-                isMobile={isMobile}
               />
-            </div>
-          )}
-        </div>
+            )
+          }}
+        />
       </main>
 
       {dialog.kind === 'note-menu' && noteMenu.length > 0 && (
         <Menu items={noteMenu} onClose={() => setDialog({ kind: 'none' })} />
+      )}
+
+      {tabMenu && (
+        <Menu
+          anchor="pointer"
+          pos={{ x: tabMenu.x, y: tabMenu.y }}
+          items={tabMenuItems}
+          onClose={() => setTabMenu(null)}
+        />
       )}
 
       {headerMenu && (
@@ -1193,11 +1344,6 @@ function App() {
       )}
     </div>
   )
-}
-
-function sharedFolderOf(note: Note | null, folders: Folder[]): Folder | null {
-  if (!note || note.aclSource !== 'folder' || !note.folderId) return null
-  return folders.find((f) => f.id === note.folderId) ?? null
 }
 
 export default App

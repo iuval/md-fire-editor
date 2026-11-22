@@ -25,6 +25,9 @@ import {
 import '../src/index.css'
 import { Sidebar } from '../src/components/Sidebar'
 import { PaneBar } from '../src/components/PaneBar'
+import { NotePane } from '../src/components/NotePane'
+import { Workspace } from '../src/components/Workspace'
+import { closePane, listPanes, singlePane, splitPane, type PaneLeaf } from '../src/lib/panes'
 import { Menu } from '../src/components/Menu'
 import { NotePanels } from '../src/components/NotePanels'
 import { CollaborativeEditor } from '../src/components/CollaborativeEditor'
@@ -76,6 +79,8 @@ interface ShellProps {
   loading?: boolean
   children?: React.ReactNode
   title?: string
+  /** Replaces the single document with the tab/split workspace. */
+  paneContent?: React.ReactNode
 }
 
 function Shell({
@@ -88,6 +93,7 @@ function Shell({
   loading = false,
   children,
   title,
+  paneContent,
 }: ShellProps) {
   // `sidebar=closed` lets the review see the phone layout without the drawer on top.
   const [sidebarOpen] = useState(mobile && params.get('sidebar') !== 'closed')
@@ -135,6 +141,7 @@ function Shell({
           menuOpen={false}
         />
 
+        {paneContent ?? (
         <div className="scroll">
           {!note && (
             <div className="empty" style={{ minHeight: '60vh' }}>
@@ -173,9 +180,73 @@ function Shell({
             </div>
           )}
         </div>
+        )}
       </main>
       {children}
     </div>
+  )
+}
+
+/** Two panes with tabs: the review state for the tab bar and the split. */
+function TabsProbe() {
+  const [focused, setFocused] = useState('p1')
+  const [tree, setTree] = useState(() => {
+    const empty = params.get('empty') === '1'
+    const second: PaneLeaf = {
+      kind: 'pane',
+      id: 'p2',
+      tabs: empty ? [] : [{ id: 't2', noteId: notes[1].id }],
+      activeTabId: empty ? null : 't2',
+    }
+    return splitPane(
+      singlePane('p1', activeNote.id, 't1'),
+      'p1',
+      mobile ? 'column' : 'row',
+      second,
+      's1'
+    )
+  })
+  const titles = new Map(notes.map((note) => [note.id, note.title]))
+
+  const closable = listPanes(tree).length > 1
+
+  return (
+    <Workspace
+      tree={tree}
+      focusedPaneId={focused}
+      isMobile={mobile}
+      onFocusPane={setFocused}
+      onRatio={() => {}}
+      renderPane={(pane) => {
+        const current = pane.tabs.find((tab) => tab.id === pane.activeTabId)
+        return (
+          <NotePane
+            pane={pane}
+            titles={titles}
+            note={notes.find((note) => note.id === current?.noteId) ?? null}
+            noteError={null}
+            focused={pane.id === focused}
+            uid={UID}
+            userName={USER}
+            folders={folders}
+            isMobile={mobile}
+            onFocus={() => setFocused(pane.id)}
+            onActivateTab={() => {}}
+            onCloseTab={() => {}}
+            onNewNote={() => {}}
+            onClosePane={closable ? () => setTree((current) => closePane(current, pane.id)) : undefined}
+            onImport={() => {}}
+            emptyWorkspace={false}
+            onMenu={() => {}}
+            menuOpen={false}
+            onTagClick={() => {}}
+            onRenameTag={() => {}}
+            onPresence={() => {}}
+            onStatus={() => {}}
+          />
+        )
+      }}
+    />
   )
 }
 
@@ -303,6 +374,18 @@ function App() {
         >
           <ToolbarProbe />
         </Shell>
+      )
+
+    case 'tabs':
+      return (
+        <Shell
+          notes={notes}
+          activeId={activeNote.id}
+          expanded={allExpanded}
+          status={connectedStatus}
+          presenceUsers={presence as AwarenessUser[]}
+          paneContent={<TabsProbe />}
+        />
       )
 
     case 'collapsed':

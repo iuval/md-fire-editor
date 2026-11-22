@@ -1,4 +1,4 @@
-import type { Folder } from './notes'
+import type { Folder, Note } from './notes'
 
 export const MAX_FOLDER_DEPTH = 6
 
@@ -99,6 +99,12 @@ export function canMoveFolder(
     current = byId.get(current)?.parentId ?? null
   }
   return true
+}
+
+/** Folder whose permission is in effect for a note that inherits its ACL. */
+export function sharedFolderOf(note: Note, folders: Folder[]): Folder | null {
+  if (note.aclSource !== 'folder' || !note.folderId) return null
+  return folders.find((folder) => folder.id === note.folderId) ?? null
 }
 
 /** Depth of the subtree rooted at `folderId`, so a move cannot exceed the cap. */

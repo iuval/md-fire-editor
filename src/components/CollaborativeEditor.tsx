@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
-import * as Y from 'yjs'
 import { Loader2 } from 'lucide-react'
-import { FirestoreYjsProvider, type ProviderStatus, type SyncStats } from '../lib/collab/provider'
-import { FirestoreAwareness, type AwarenessUser, type CollabUser } from '../lib/collab/awareness'
+import type { ProviderStatus, SyncStats } from '../lib/collab/provider'
+import { acquireNoteSession } from '../lib/collab/noteSession'
+import type { AwarenessUser, CollabUser } from '../lib/collab/awareness'
 import { MAX_MARKDOWN_BYTES, type Note } from '../lib/notes'
 import { colorForUid } from '../lib/collab/presenceColors'
 import { sameMarkdown } from '../lib/markdown'
@@ -55,17 +55,14 @@ export function CollaborativeEditor({
     [userName, uid]
   )
 
-  // The Yjs document, its Firestore transport and the presence channel are all
-  // created together so the editor extensions receive real instances on the
-  // first render (refs would still be empty at that point).
-  const session = useMemo(() => {
-    const doc = new Y.Doc()
-    return {
-      doc,
-      provider: new FirestoreYjsProvider(note.id, doc),
-      awareness: new FirestoreAwareness(note.id, uid, userInfo, doc),
-    }
-  }, [note.id, uid, userInfo])
+  // The Yjs document, its Firestore transport and the presence channel come
+  // from the shared per-note session, so two panes showing the same note share
+  // one document instead of syncing against each other. They exist on the first
+  // render because the editor extensions need real instances.
+  const owner = useId()
+  const [session] = useState(() => acquireNoteSession(note.id, uid, userInfo, owner))
+
+  useEffect(() => () => session.release(owner), [session, owner])
 
   // Report provider counters periodically so the usage page stays cheap (one
   // write every 30 s at most, never per keystroke).
@@ -83,15 +80,9 @@ export function CollaborativeEditor({
   useEffect(() => {
     const offStatus = session.provider.onStatus(onStatus)
     const offUsers = session.awareness.onUserChange(onPresence)
-    session.provider.connect()
-    session.awareness.connect()
-
     return () => {
       offUsers()
       offStatus()
-      session.awareness.destroy()
-      session.provider.destroy()
-      session.doc.destroy()
     }
   }, [session, onPresence, onStatus])
 
@@ -110,7 +101,9 @@ export function CollaborativeEditor({
         seedingRef.current = true
         try {
           const fragment = session.doc.getXmlFragment('content')
-          if (fragment.length === 0 && body.trim()) {
+          // Only the first view of a note may seed it: the second one renders
+          // what the shared document already holds.
+          if (session.claimSeed() && fragment.length === 0 && body.trim()) {
             instance.commands.setContent(body)
           }
         } finally {
