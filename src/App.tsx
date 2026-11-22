@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Columns2, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Plus, Rows2, Trash2, Upload, X } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
+import { TabStrip } from './components/TabStrip'
 import { Menu, type MenuItem } from './components/Menu'
-import { NotePane } from './components/NotePane'
 import { Workspace } from './components/Workspace'
+
+/**
+ * The editor stack (Tiptap + ProseMirror + Yjs + the markdown serializer) is
+ * half the bundle and is useless until a note is open, so it loads as its own
+ * chunk instead of being parsed on the login screen.
+ */
+const NotePane = lazy(() =>
+  import('./components/NotePane').then((module) => ({ default: module.NotePane }))
+)
 import { ShareDialog } from './components/ShareDialog'
 import { MoveDialog } from './components/MoveDialog'
 import { InputDialog } from './components/InputDialog'
@@ -14,13 +23,23 @@ import { UsageDialog } from './components/UsageDialog'
 import { useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, safeFileName } from './lib/export'
-import { buildVault, readVault } from './lib/vault'
+import { buildVault, planVault, streamVaultNotes } from './lib/vault'
 import { track } from './lib/analytics'
 import { currentBrowser, embeddedBrowserHint } from './lib/browser'
 import { buildTagTree, extractTags, matchesTagFilter, parseTagInput } from './lib/tags'
 import { flattenFolders, folderPath, sharedFolderOf } from './lib/folders'
 import { applyOrder, setFolderSort, setRootSort, subscribeUserSettings } from './lib/notes'
-import { DEFAULT_SORT, nextOrder, renumbered, resolveSort, sortFolders, sortNotes, SORT_LABELS, type SortMode } from './lib/sorting'
+import {
+  DEFAULT_SORT,
+  SORT_LABELS,
+  moveOrder,
+  nextOrder,
+  orderKey,
+  resolveSort,
+  sortFolders,
+  sortNotes,
+  type SortMode,
+} from './lib/sorting'
 import { SortDialog } from './components/SortDialog'
 import { MAX_FOLDER_DEPTH } from './lib/folders'
 import {
@@ -29,10 +48,12 @@ import {
   activeTab,
   closeOtherTabs,
   closePane,
+  canSplit,
   closeTab,
   findNote,
   findPane,
   listPanes,
+  MAX_PANES,
   mergeIntoPane,
   openTab,
   replaceActiveTab,
@@ -56,16 +77,22 @@ import {
 } from './lib/usage'
 import type { SyncStats } from './lib/collab/provider'
 import {
+  fetchNoteBodies,
+  importNotes,
   isAclOwner,
+  optimisticFolder,
   moveNoteTo,
   renameFolder,
+  reserveNoteId,
   saveNoteContent,
   subscribeNote,
+  subscribeNoteBody,
   updateFolderSharing,
   updateFolderTags,
   updateNoteSharing,
   type Access,
   type Folder,
+  type NewNoteInput,
   type Note,
   type Role,
 } from './lib/notes'
@@ -74,6 +101,9 @@ const ACTIVE_KEY = 'mdfire-active'
 const SIDEBAR_KEY = 'mdfire-sidebar'
 const EXPANDED_KEY = 'mdfire-folders'
 const PANES_KEY = 'mdfire-panes'
+
+/** Shown instead of a split action once the pane budget is spent. */
+const SPLIT_LIMIT_LABEL = `Máximo de paneles (${MAX_PANES})`
 
 /** Tabs and panes as one tree: a pane is a split node's first child. */
 interface WorkspaceState {
@@ -191,6 +221,9 @@ function App() {
     loading: dataLoading,
     addNote,
     addFolder,
+    addOptimisticFolder,
+    dropOptimisticFolder,
+    reserveFolderId,
     removeNote,
     removeFolder,
   } = useWorkspace(user?.uid)
@@ -200,10 +233,51 @@ function App() {
   const focusedPane = findPane(layout, focusedPaneId)
   /** The focused pane's current tab is what every menu and dialog acts on. */
   const activeId = focusedPane ? (activeTab(focusedPane)?.noteId ?? null) : null
+  /** Metadata of the open notes; the body arrives through `bodies`. */
   const [notesById, setNotesById] = useState<Record<string, Note>>({})
+  /** Bodies of the open notes only: the list never downloads them. */
+  const [bodies, setBodies] = useState<Record<string, string>>({})
   const [noteErrors, setNoteErrors] = useState<Record<string, string>>({})
-  const activeNote = activeId ? (notesById[activeId] ?? null) : null
+  /**
+   * Manual moves shown before the server confirms them. A reorder is a write plus
+   * a round trip; the row used to sit still until the snapshot came back.
+   */
+  const [orderOverrides, setOrderOverrides] = useState<Record<string, string[]>>({})
+  /**
+   * Notes whose document is still being created. Their tab is already open, but
+   * subscribing to the doc before it exists would hit "permission denied".
+   */
+  const [pendingNotes, setPendingNotes] = useState<Set<string>>(new Set())
+  const notesByIdFromList = useMemo(
+    () => new Map(notes.map((note) => [note.id, note])),
+    [notes]
+  )
+  /**
+   * One note, assembled from three cheap places: metadata from the workspace
+   * list (already live), the body from its own document, and — for a note the
+   * list has never seen, like a `?note=` deep link — its document.
+   */
+  /**
+   * A note ready to render: metadata from the list plus its body document.
+   * Null while the body is in flight, which shows "Cargando…" for one frame
+   * instead of seeding the editor with an empty document and replacing it.
+   */
+  const noteFor = useCallback(
+    (noteId: string | null): Note | null => {
+      if (!noteId) return null
+      const meta = notesByIdFromList.get(noteId) ?? notesById[noteId]
+      if (!meta) return null
+      const body = bodies[noteId]
+      // A legacy note still carries its text inline, so it is always ready.
+      if (body === undefined && !meta.markdown) return null
+      if (body === undefined || body === meta.markdown) return meta
+      return { ...meta, markdown: body }
+    },
+    [bodies, notesById, notesByIdFromList]
+  )
+  const activeNote = noteFor(activeId)
   const foldersById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders])
+
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -229,6 +303,43 @@ function App() {
   const [credits, setCredits] = useState<Credits | null>(null)
   const lastStats = useRef<SyncStats | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
+
+  // Once the server order matches what the move asked for, the override is done.
+  useEffect(() => {
+    const keys = Object.keys(orderOverrides)
+    if (keys.length === 0) return
+    const serverOrder = (kind: 'notes' | 'folders', parentId: string | null): string[] => {
+      const mode = resolveSort(parentId, foldersById, rootSort)
+      return kind === 'notes'
+        ? sortNotes(notes.filter((note) => (note.folderId ?? null) === parentId), mode).map((n) => n.id)
+        : sortFolders(folders.filter((folder) => (folder.parentId ?? null) === parentId), mode).map((f) => f.id)
+    }
+    const pending = keys.filter((key) => {
+      const separator = key.indexOf(':')
+      const kind = key.slice(0, separator) as 'notes' | 'folders'
+      const raw = key.slice(separator + 1)
+      const parentId = raw === 'root' ? null : raw
+      const current = serverOrder(kind, parentId)
+      return current.join('|') !== orderOverrides[key].join('|')
+    })
+    if (pending.length !== keys.length) {
+      const next: Record<string, string[]> = {}
+      pending.forEach((key) => {
+        next[key] = orderOverrides[key]
+      })
+      setOrderOverrides(next)
+    }
+  }, [folders, foldersById, notes, orderOverrides, rootSort])
+
+  /**
+   * With a single pane there is no reason for a second bar: its tabs move into
+   * the top bar and the panel actions join that bar's menu. Splits keep a slim
+   * strip per pane, because each pane owns its tabs.
+   */
+  const panes = listPanes(layout)
+  const inlinePane = panes.length === 1 ? panes[0] : null
+  /** Splitting is what costs memory (one editor per pane), so it is budgeted. */
+  const splitAllowed = canSplit(layout)
 
   /**
    * A note click opens in the focused pane's current tab — the tab model. When
@@ -272,19 +383,23 @@ function App() {
     return subscribeUserSettings(user.uid, (settings) => setRootSortState(settings.rootSort))
   }, [user])
 
+  // Usage and credits are only read by the usage dialog: subscribe when it
+  // opens instead of using two of the startup listeners.
+  const usageOpen = dialog.kind === 'usage'
   useEffect(() => {
     if (!user) {
       setUsage(null)
       setCredits(null)
       return
     }
+    if (!usageOpen) return
     const offUsage = subscribeUsage(user.uid, setUsage)
     const offCredits = subscribeCredits(user.uid, setCredits)
     return () => {
       offUsage()
       offCredits()
     }
-  }, [user])
+  }, [user, usageOpen])
 
   const handleStats = useCallback(
     (stats: SyncStats) => {
@@ -302,10 +417,17 @@ function App() {
     [user]
   )
 
+  // `notes` changes on every save (typing included). Writing the storage total
+  // on each one was a Firestore write per second; the number is only read by the
+  // account panel, so settle first.
   useEffect(() => {
     if (!user) return
-    const storage = notes.reduce((sum, note) => sum + (note.markdown?.length ?? 0), 0)
-    void setStorageUsage(user.uid, storage).catch(() => undefined)
+    // Bodies are not in the list any more, so the size travels with the note.
+    const storage = notes.reduce((sum, note) => sum + (note.markdownBytes ?? 0), 0)
+    const timer = setTimeout(() => {
+      void setStorageUsage(user.uid, storage).catch(() => undefined)
+    }, 5000)
+    return () => clearTimeout(timer)
   }, [user, notes])
 
   useEffect(() => {
@@ -326,17 +448,53 @@ function App() {
     track('collab_session', user.uid, { peers: presence.length })
   }, [user, presence.length])
 
-  // One subscription per *visible* note: inactive tabs read their title from the
-  // workspace list instead of keeping a document (and a Yjs session) open.
-  const openIdsKey = activeNoteIds(layout).join('|')
+  // Only *visible* notes cost a subscription, and it is a body subscription: the
+  // metadata already arrives with the workspace list, so a tab no longer holds a
+  // second copy of the note document.
+  const openIdsKey = activeNoteIds(layout)
+    .filter((id) => !pendingNotes.has(id))
+    .join('|')
   useEffect(() => {
     if (!user) {
+      setBodies({})
       setNotesById({})
       setNoteErrors({})
       return
     }
     const ids = openIdsKey ? openIdsKey.split('|') : []
+    setBodies((prev) => keepIds(prev, ids))
+    const offs = ids.map((id) =>
+      subscribeNoteBody(
+        id,
+        (body) => {
+          // A note created moments ago may not have its body document yet.
+          setBodies((prev) => ({ ...prev, [id]: body ?? '' }))
+          setNoteErrors((prev) => {
+            if (!(id in prev)) return prev
+            const next = { ...prev }
+            delete next[id]
+            return next
+          })
+        },
+        (message) => setNoteErrors((prev) => ({ ...prev, [id]: message }))
+      )
+    )
+    return () => offs.forEach((off) => off())
+  }, [openIdsKey, user])
+
+  /**
+   * A note the list has never seen — a `?note=` deep link, or one just created
+   * in another tab — still needs its metadata. This is the only place a whole
+   * note document is subscribed, and only while the list does not know it.
+   */
+  const orphanIdsKey = activeNoteIds(layout)
+    .filter((id) => !pendingNotes.has(id) && !notesByIdFromList.has(id))
+    .join('|')
+  useEffect(() => {
+    if (!user) return
+    const ids = orphanIdsKey ? orphanIdsKey.split('|') : []
     setNotesById((prev) => keepIds(prev, ids))
+    if (ids.length === 0) return
     const offs = ids.map((id) =>
       subscribeNote(
         id,
@@ -351,12 +509,7 @@ function App() {
             return { ...prev, [id]: note }
           })
           setNoteErrors((prev) => {
-            if (note) {
-              if (!(id in prev)) return prev
-              const next = { ...prev }
-              delete next[id]
-              return next
-            }
+            if (note) return prev
             return id in prev ? prev : { ...prev, [id]: 'La nota no existe o no tenés acceso.' }
           })
         },
@@ -364,7 +517,7 @@ function App() {
       )
     )
     return () => offs.forEach((off) => off())
-  }, [openIdsKey, user])
+  }, [orphanIdsKey, user])
 
   useEffect(() => {
     setPresence([])
@@ -409,12 +562,23 @@ function App() {
 
   const noteOwner = !!user && !!activeNote && activeNote.ownerId === user.uid
 
-  const handleExportAll = useCallback(() => {
+  const handleExportAll = useCallback(async () => {
     if (notes.length === 0) return
-    const vault = buildVault(notes, folders)
-    download(vault.bytes, vault.fileName, 'application/zip')
-    setNotice(`Exportadas ${vault.notes} notas en ${vault.fileName} (listo para abrir en Obsidian).`)
-    track('export', user?.uid, { kind: 'vault' })
+    // The list carries no bodies: an export reads them once, at export time.
+    setNotice(`Preparando ${notes.length} notas…`)
+    try {
+      const bodies = await fetchNoteBodies(
+        notes.map((note) => note.id),
+        { onProgress: (done) => setNotice(`Preparando… ${done}/${notes.length} notas`) }
+      )
+      const withBodies = notes.map((note) => ({ ...note, markdown: bodies.get(note.id) ?? note.markdown }))
+      const vault = buildVault(withBodies, folders)
+      download(vault.blob, vault.fileName, 'application/zip')
+      setNotice(`Exportadas ${vault.notes} notas en ${vault.fileName} (listo para abrir en Obsidian).`)
+      track('export', user?.uid, { kind: 'vault' })
+    } catch {
+      setNotice('No se pudo exportar el vault. Revisá la conexión.')
+    }
   }, [notes, folders, user?.uid])
 
   const handleExportNote = useCallback(() => {
@@ -441,11 +605,27 @@ function App() {
         }
         folderCache.set(`/${parentChain.join('/')}`, folder)
       }
+      // Title of the first imported note, so the import can open something.
       let first: string | null = null
       let imported = 0
+      let failedNotes = 0
       let skippedAttachments = 0
       let skippedJunk = 0
       let skippedLarge = 0
+
+      // One write per note, committed in chunks: the create-then-content pair was
+      // two round trips per note (1.000 of them for a 500-note vault).
+      const queue: NewNoteInput[] = []
+      const flush = async () => {
+        if (queue.length === 0) return
+        const pending = queue.splice(0, queue.length)
+        const { created, failed } = await importNotes(user.uid, pending, {
+          onProgress: (done) => setNotice(`Importando… ${imported + done} notas`),
+        })
+        imported += created.length
+        if (failed > 0) failedNotes += failed
+        if (!first && created.length > 0) first = created[0]
+      }
 
       const pushNote = async (title: string, markdown: string, folderName: string | null) => {
         let folder: Folder | undefined
@@ -468,27 +648,28 @@ function App() {
             parentId = folder.id
           }
         }
-        const note = await addNote(folder)
-        if (!note) return
-        await saveNoteContent(note.id, {
+        queue.push({
           title,
           markdown: markdown.slice(0, 250_000),
           tags: extractTags(markdown),
-          version: 1,
+          folder: folder ?? null,
         })
-        imported++
-        if (!first) first = note.id
+        if (queue.length >= 50) await flush()
       }
 
       for (const file of list) {
         if (/\.zip$/i.test(file.name)) {
-          const vault = await readVault(new Uint8Array(await file.arrayBuffer()))
-          for (const entry of vault.entries) {
+          const zipBytes = new Uint8Array(await file.arrayBuffer())
+          // Two passes: the plan reads only the ZIP directory (paths and sizes),
+          // then the bodies stream one at a time. Inflating and decoding the
+          // whole vault up front held 2-3× its size while importing.
+          const plan = planVault(zipBytes)
+          for await (const entry of streamVaultNotes(zipBytes, plan)) {
             await pushNote(entry.title, entry.markdown, entry.folder)
           }
-          skippedAttachments += vault.skipped.filter((s) => s.reason === 'attachment').length
-          skippedJunk += vault.skipped.filter((s) => s.reason === 'junk').length
-          skippedLarge += vault.skipped.filter((s) => s.reason === 'too-large').length
+          skippedAttachments += plan.skipped.filter((s) => s.reason === 'attachment').length
+          skippedJunk += plan.skipped.filter((s) => s.reason === 'junk').length
+          skippedLarge += plan.skipped.filter((s) => s.reason === 'too-large').length
           continue
         }
 
@@ -497,11 +678,13 @@ function App() {
         await pushNote((heading || file.name.replace(/\.md$/i, '')).slice(0, 300), text, null)
       }
 
+      await flush()
       track('import', user.uid, { count: imported })
       const details: string[] = []
       if (skippedJunk > 0) details.push(`${skippedJunk} archivos de sistema de macOS`)
       if (skippedAttachments > 0) details.push(`${skippedAttachments} adjuntos (todavía no se guardan imágenes)`)
       if (skippedLarge > 0) details.push(`${skippedLarge} notas de más de 250 KB`)
+      if (failedNotes > 0) details.push(`${failedNotes} no se pudieron guardar`)
       setNotice(
         details.length > 0
           ? `Importadas ${imported} notas. Omitidos: ${details.join(', ')}.`
@@ -509,7 +692,7 @@ function App() {
       )
       if (first) selectNote(first)
     },
-    [addFolder, addNote, folders, selectNote, user]
+    [addFolder, folders, selectNote, user]
   )
 
   const focusPane = useCallback((paneId: string) => {
@@ -566,6 +749,8 @@ function App() {
    */
   const splitPaneAt = useCallback((paneId: string, direction: SplitDirection) => {
     setWorkspace((ws) => {
+      // Every pane holds an editor: the budget is what keeps memory bounded.
+      if (!canSplit(ws.layout)) return ws
       const ids = { paneId: newId('pane'), tabId: newId('tab'), splitId: newId('split') }
       const layout = splitPaneWithActiveTab(ws.layout, paneId, direction, ids)
       if (layout === ws.layout) return ws
@@ -603,12 +788,22 @@ function App() {
         return
       }
       const siblings = sortNotes(notes.filter((n) => (n.folderId ?? null) === parentId), 'manual')
-      const index = siblings.findIndex((n) => n.id === activeNote.id)
-      const target = index + direction
-      if (index < 0 || target < 0 || target >= siblings.length) return
-      const ids = siblings.map((n) => n.id)
-      ;[ids[index], ids[target]] = [ids[target], ids[index]]
-      await applyOrder('notes', renumbered(ids))
+      // One write in the common case, a renumber only when the gap ran out.
+      const move = moveOrder(siblings.map((n) => ({ id: n.id, order: n.order })), activeNote.id, direction)
+      if (!move) return
+      const key = orderKey('notes', parentId)
+      setOrderOverrides((prev) => ({ ...prev, [key]: move.ids }))
+      try {
+        await applyOrder('notes', move.updates)
+      } catch {
+        // The local order would be a lie: drop it and say so.
+        setOrderOverrides((prev) => {
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+        setNotice('No se pudo guardar el orden. Revisá la conexión.')
+      }
     },
     [activeNote, foldersById, notes, rootSort, user]
   )
@@ -622,12 +817,20 @@ function App() {
         return
       }
       const siblings = sortFolders(folders.filter((f) => (f.parentId ?? null) === parentId), 'manual')
-      const index = siblings.findIndex((f) => f.id === folder.id)
-      const target = index + direction
-      if (index < 0 || target < 0 || target >= siblings.length) return
-      const ids = siblings.map((f) => f.id)
-      ;[ids[index], ids[target]] = [ids[target], ids[index]]
-      await applyOrder('folders', renumbered(ids))
+      const move = moveOrder(siblings.map((f) => ({ id: f.id, order: f.order })), folder.id, direction)
+      if (!move) return
+      const key = orderKey('folders', parentId)
+      setOrderOverrides((prev) => ({ ...prev, [key]: move.ids }))
+      try {
+        await applyOrder('folders', move.updates)
+      } catch {
+        setOrderOverrides((prev) => {
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+        setNotice('No se pudo guardar el orden. Revisá la conexión.')
+      }
     },
     [folders, foldersById, rootSort]
   )
@@ -640,10 +843,14 @@ function App() {
       const affected = notes.filter((note) =>
         note.tags.some((tag) => tag.toLowerCase() === source.toLowerCase())
       )
-      let changed = 0
+      // Tags live on the note, the text lives in its body: read the affected
+      // bodies (only those) before rewriting them.
+      const bodies = await fetchNoteBodies(affected.map((note) => note.id))
+      const pattern = new RegExp(`#${source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w/.-])`, 'gi')
+      const updates: { id: string; markdown: string; version: number }[] = []
       for (const note of affected) {
-        const pattern = new RegExp(`#${source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w/.-])`, 'gi')
-        let next = (note.markdown ?? '').replace(pattern, `#${target}`)
+        const markdown = bodies.get(note.id) ?? note.markdown ?? ''
+        let next = markdown.replace(pattern, `#${target}`)
         // frontmatter list / array entries
         next = next.replace(
           /^(tags?:\s*\[)([^\]]*)(\])$/gim,
@@ -660,14 +867,23 @@ function App() {
           (match: string, prefix: string, value: string) =>
             value.trim().toLowerCase() === source.toLowerCase() ? `${prefix}${target}` : match
         )
-        if (next === note.markdown) continue
-        await saveNoteContent(note.id, {
-          markdown: next,
-          tags: extractTags(next),
-          version: note.version + 1,
-        })
-        changed++
+        if (next === markdown) continue
+        updates.push({ id: note.id, markdown: next, version: note.version + 1 })
       }
+      // One write per affected note, in small parallel batches: sequential
+      // awaits made renaming a common tag wait for every round trip.
+      for (let i = 0; i < updates.length; i += 10) {
+        await Promise.all(
+          updates.slice(i, i + 10).map((update) =>
+            saveNoteContent(update.id, {
+              markdown: update.markdown,
+              tags: extractTags(update.markdown),
+              version: update.version,
+            })
+          )
+        )
+      }
+      const changed = updates.length
       setSelectedTags((current) =>
         current.map((tag) => (tag === source.toLowerCase() ? target.toLowerCase() : tag))
       )
@@ -686,44 +902,131 @@ function App() {
     })
   }, [])
 
-  /** New notes open in their own tab, so they never replace a file you have open. */
+  /**
+   * New notes open in their own tab, so they never replace a file you have open.
+   *
+   * The tab opens on the first frame with a reserved document id; the Firestore
+   * write happens in the background and its result is injected straight into
+   * `notesById`, so opening a note costs one round trip instead of two (or a
+   * frozen UI while the dialog waits).
+   */
   const handleNewNote = useCallback(
     async (folder?: Folder, paneId?: string) => {
-      const note = await addNote(folder)
-      if (!note) return
+      const noteId = reserveNoteId()
+      const target = paneId && findPane(layout, paneId) ? paneId : focusedPaneId
+
+      if (!noteId) {
+        // Firebase unavailable: fall back to the blocking path.
+        const note = await addNote(folder)
+        if (!note) return
+        if (folder) setExpanded((prev) => new Set(prev).add(folder.id))
+        track('note_created', user?.uid, { folder: folder ? 'yes' : 'root' })
+        setWorkspace((ws) => ({
+          layout: openTab(ws.layout, target, note.id, newId('tab')),
+          focusedPaneId: target,
+        }))
+        if (isMobile) setSidebarOpen(false)
+        return
+      }
+
+      const tabId = newId('tab')
+      setPendingNotes((prev) => new Set(prev).add(noteId))
+      setWorkspace((ws) => ({
+        layout: openTab(ws.layout, target, noteId, tabId),
+        focusedPaneId: target,
+      }))
       if (folder) setExpanded((prev) => new Set(prev).add(folder.id))
-      track('note_created', user?.uid, { folder: folder ? 'yes' : 'root' })
-      setWorkspace((ws) => {
-        const target = paneId && findPane(ws.layout, paneId) ? paneId : ws.focusedPaneId
-        return { layout: openTab(ws.layout, target, note.id, newId('tab')), focusedPaneId: target }
-      })
       if (isMobile) setSidebarOpen(false)
+
+      try {
+        const note = await addNote(folder, noteId)
+        if (!note) throw new Error('no note')
+        track('note_created', user?.uid, { folder: folder ? 'yes' : 'root' })
+        // Show the editor now instead of waiting for another snapshot round trip.
+        setNotesById((prev) => ({ ...prev, [noteId]: note }))
+      } catch {
+        setNotesById((prev) => {
+          if (!(noteId in prev)) return prev
+          const next = { ...prev }
+          delete next[noteId]
+          return next
+        })
+        setWorkspace((ws) => {
+          const next = closeTab(ws.layout, target, tabId)
+          if (next === ws.layout) return ws
+          const panes = listPanes(next)
+          const focused = panes.some((pane) => pane.id === ws.focusedPaneId)
+            ? ws.focusedPaneId
+            : panes[0].id
+          return { layout: next, focusedPaneId: focused }
+        })
+        setNotice('No se pudo crear la nota. Revisá la conexión.')
+      } finally {
+        setPendingNotes((prev) => {
+          if (!prev.has(noteId)) return prev
+          const next = new Set(prev)
+          next.delete(noteId)
+          return next
+        })
+      }
     },
-    [addNote, isMobile]
+    [addNote, focusedPaneId, isMobile, layout, user]
   )
 
+  /**
+   * Creates a folder on the first frame.
+   *
+   * The id is reserved on the client and the row is shown immediately; the write
+   * and its snapshot used to be two round trips with nothing on screen. If the
+   * write fails, the row disappears and the user is told.
+   */
   const handleNewFolder = useCallback(
     async (name: string, parentId: string | null = null) => {
       const inherited = parentId ? resolveSort(parentId, foldersById, rootSort) : rootSort
       const siblings = folders.filter((f) => (f.parentId ?? null) === parentId)
-      const folder = await addFolder(name, parentId, {
-        sort: inherited,
-        order: nextOrder(siblings),
-      })
-      if (folder) {
-        setExpanded((prev) => new Set(prev).add(folder.id))
-        if (parentId) setExpanded((prev) => new Set(prev).add(parentId))
+      const options = { sort: inherited, order: nextOrder(siblings) }
+      const id = reserveFolderId()
+      const optimistic = id && user ? optimisticFolder(user.uid, id, name, parentId, options) : null
+      if (optimistic) addOptimisticFolder(optimistic)
+      if (parentId) setExpanded((prev) => new Set(prev).add(parentId))
+
+      let folder: Folder | null = null
+      try {
+        folder = await addFolder(name, parentId, options, id ?? undefined)
+      } catch {
+        folder = null
       }
+      if (!folder) {
+        if (optimistic) dropOptimisticFolder(optimistic.id)
+        setNotice('No se pudo crear la carpeta. Revisá la conexión.')
+        return null
+      }
+      setExpanded((prev) => new Set(prev).add(folder.id))
       return folder
     },
-    [addFolder, folders, foldersById, rootSort]
+    [
+      addFolder,
+      addOptimisticFolder,
+      dropOptimisticFolder,
+      folders,
+      foldersById,
+      reserveFolderId,
+      rootSort,
+      user,
+    ]
   )
 
   const handleDeleteNote = useCallback(async () => {
     if (!activeNote) return
     if (!window.confirm(`¿Eliminar "${activeNote.title || 'Sin título'}"?`)) return
-    await removeNote(activeNote.id)
+    const deleting = activeNote.id
+    // The tab goes away immediately; the delete finishes in the background.
     selectNote(null)
+    try {
+      await removeNote(deleting)
+    } catch {
+      setNotice('No se pudo eliminar la nota. Revisá la conexión.')
+    }
   }, [activeNote, removeNote, selectNote])
 
   const handleDeleteFolder = useCallback(
@@ -817,6 +1120,42 @@ function App() {
     }
   }
 
+  // The strip in the top bar has no actions of its own: its panel actions are
+  // the tail of this menu, so there is never a second ⋯ beside it.
+  if (inlinePane) {
+    const tab = activeTab(inlinePane)
+    noteMenu.push({
+      label: 'Nueva nota acá',
+      icon: <Plus size={14} />,
+      separatorBefore: true,
+      onSelect: () => void handleNewNote(undefined, inlinePane.id),
+    })
+    noteMenu.push({
+      label: splitAllowed ? 'Dividir a la derecha' : SPLIT_LIMIT_LABEL,
+      icon: <Columns2 size={14} />,
+      disabled: !splitAllowed,
+      onSelect: () => splitPaneAt(inlinePane.id, 'row'),
+    })
+    noteMenu.push({
+      label: splitAllowed ? 'Dividir abajo' : SPLIT_LIMIT_LABEL,
+      icon: <Rows2 size={14} />,
+      disabled: !splitAllowed,
+      onSelect: () => splitPaneAt(inlinePane.id, 'column'),
+    })
+    if (tab) {
+      noteMenu.push({
+        label: 'Cerrar pestaña',
+        icon: <X size={14} />,
+        separatorBefore: true,
+        onSelect: () => closePaneTab(inlinePane.id, tab.id),
+      })
+      noteMenu.push({
+        label: 'Cerrar las demás',
+        onSelect: () => closeSiblingTabs(inlinePane.id, tab.id),
+      })
+    }
+  }
+
   /** The tab menu: every "open this page beside/below me" lives here. */
   const tabMenuItems: MenuItem[] = tabMenu
     ? [
@@ -831,14 +1170,16 @@ function App() {
           ? []
           : [
               {
-                label: 'Dividir a la derecha',
+                label: splitAllowed ? 'Dividir a la derecha' : SPLIT_LIMIT_LABEL,
                 icon: <Columns2 size={14} />,
                 separatorBefore: true,
+                disabled: !splitAllowed,
                 onSelect: () => splitPaneAt(tabMenu.paneId, 'row'),
               },
               {
-                label: 'Dividir abajo',
+                label: splitAllowed ? 'Dividir abajo' : SPLIT_LIMIT_LABEL,
                 icon: <Rows2 size={14} />,
+                disabled: !splitAllowed,
                 onSelect: () => splitPaneAt(tabMenu.paneId, 'column'),
               },
             ]),
@@ -928,12 +1269,30 @@ function App() {
 
   const userName = user?.displayName || user?.email?.split('@')[0] || ''
 
-  const tagTree = buildTagTree(notes)
+  const tagTree = useMemo(() => buildTagTree(notes), [notes])
   const visibleNotes = selectedTags.length
     ? notes.filter((note) => matchesTagFilter(note.tags, selectedTags))
     : notes
   /** Inactive tabs take their label from the workspace list: no subscription each. */
   const titles = useMemo(() => new Map(notes.map((note) => [note.id, note.title])), [notes])
+
+  /**
+   * With a single pane there is no reason for a second bar: its tabs move into
+   * the top bar (see `panes`/`inlinePane` above).
+   */
+  const inlineTabs = inlinePane ? (
+    <TabStrip
+      compact
+      tabs={inlinePane.tabs.map((tab) => ({ id: tab.id, title: titles.get(tab.noteId) ?? '' }))}
+      activeTabId={inlinePane.activeTabId}
+      onActivate={(tabId) => activateTab(inlinePane.id, tabId)}
+      onClose={(tabId) => closePaneTab(inlinePane.id, tabId)}
+      onNewNote={() => void handleNewNote(undefined, inlinePane.id)}
+      // Right-clicking a tab opens the bar's menu, which carries the panel actions.
+      onMenu={() => setDialog({ kind: 'note-menu' })}
+      menuOpen={dialog.kind === 'note-menu'}
+    />
+  ) : undefined
 
   if (authLoading) return <div className="empty">Cargando…</div>
 
@@ -998,6 +1357,7 @@ function App() {
         onCollapse={toggleSidebar}
         isMobile={isMobile}
         isOpen={isMobile ? sidebarOpen : !collapsed}
+        status={status}
         loading={dataLoading}
         tagTree={tagTree}
         selectedTags={selectedTags}
@@ -1025,6 +1385,7 @@ function App() {
           menuOpen={dialog.kind === 'note-menu'}
           selectedTags={selectedTags}
           onClearTags={() => setSelectedTags([])}
+          tabs={inlineTabs}
         />
 
         {notice && (
@@ -1036,6 +1397,15 @@ function App() {
           </div>
         )}
 
+        <Suspense
+          fallback={
+            <div className="workspace">
+              <p className="hint" style={{ padding: '16px 24px' }}>
+                Cargando editor…
+              </p>
+            </div>
+          }
+        >
         <Workspace
           tree={layout}
           focusedPaneId={focusedPaneId}
@@ -1050,8 +1420,13 @@ function App() {
                 key={pane.id}
                 pane={pane}
                 titles={titles}
-                note={noteId ? (notesById[noteId] ?? null) : null}
+                note={
+                  noteId
+                    ? noteFor(noteId)
+                    : null
+                }
                 noteError={noteId ? (noteErrors[noteId] ?? null) : null}
+                creating={noteId ? pendingNotes.has(noteId) : false}
                 focused={pane.id === focusedPaneId}
                 uid={user.uid}
                 userName={userName || 'Alguien'}
@@ -1061,9 +1436,8 @@ function App() {
                 onActivateTab={(tabId) => activateTab(pane.id, tabId)}
                 onCloseTab={(tabId) => closePaneTab(pane.id, tabId)}
                 onNewNote={() => void handleNewNote(undefined, pane.id)}
-                onClosePane={
-                  listPanes(layout).length > 1 ? () => closePaneAt(pane.id) : undefined
-                }
+                onClosePane={panes.length > 1 ? () => closePaneAt(pane.id) : undefined}
+                hideTabs={pane.id === inlinePane?.id}
                 onImport={() => importRef.current?.click()}
                 emptyWorkspace={notes.length === 0}
                 onMenu={(pos) =>
@@ -1083,6 +1457,7 @@ function App() {
             )
           }}
         />
+        </Suspense>
       </main>
 
       {dialog.kind === 'note-menu' && noteMenu.length > 0 && (

@@ -85,7 +85,7 @@ function docData(i: number, chars: number) {
 }
 
 describe('memory probe', () => {
-  it('vault list: with bodies (today) vs metadata-only', () => {
+  it('vault list: metadata-only (today) vs the old inline-body shape', () => {
     const COUNT = 300
     const CHARS = 20_000
 
@@ -99,9 +99,9 @@ describe('memory probe', () => {
 
     const perBody = Buffer.byteLength(current[0].markdown, 'utf16le')
     console.log(
-      `[vault] ${COUNT} notes x ${CHARS} chars: current=+${MB(currentCost)}MB, metadata-only=+${MB(metaCost)}MB, ` +
-        `saved=${MB(currentCost - metaCost)}MB; per body ${KB(perBody)}KB heap (utf16) for ` +
-        `${KB(Buffer.byteLength(current[0].markdown))}KB utf8`
+      `[vault] ${COUNT} notes x ${CHARS} chars: old inline shape=+${MB(currentCost)}MB, ` +
+        `metadata-only (what ships now)=+${MB(metaCost)}MB, saved=${MB(currentCost - metaCost)}MB; ` +
+        `per body ${KB(perBody)}KB heap (utf16) for ${KB(Buffer.byteLength(current[0].markdown))}KB utf8`
     )
     if (!meta.length) throw new Error('unreachable')
   })

@@ -24,7 +24,12 @@ export interface NoteSession {
    * True for exactly one view. Seeding content is a one-time job: a second
    * editor must render what the document already has.
    */
-  claimSeed(): boolean
+  claimSeed(owner?: string): boolean
+  /**
+   * True for the one view allowed to write *external* content (agent CLI,
+   * another device) into the shared document. Every other view only renders it.
+   */
+  isPrimary(owner: string): boolean
   /** Drops one view. The last one destroys the transport. */
   release(owner: string): void
 }
@@ -57,6 +62,7 @@ export function acquireNoteSession(
   const provider = new FirestoreYjsProvider(noteId, doc)
   const awareness = new FirestoreAwareness(noteId, uid, user, doc)
   let seedAvailable = true
+  let primary: string | null = null
 
   const entry: Entry = {
     owners: new Set([owner]),
@@ -65,13 +71,18 @@ export function acquireNoteSession(
       doc,
       provider,
       awareness,
-      claimSeed: () => {
+      claimSeed: (owner?: string) => {
         if (!seedAvailable) return false
         seedAvailable = false
+        if (owner) primary = owner
         return true
       },
+      isPrimary: (owner: string) => primary === owner,
       release: (who: string) => {
         if (!entry.owners.delete(who)) return
+        // The view that seeded the document owns external writes; if it goes
+        // away, hand that job to one remaining view instead of losing it.
+        if (primary === who) primary = entry.owners.values().next().value ?? null
         if (entry.owners.size > 0) return
         entries.delete(key)
         awareness.destroy()

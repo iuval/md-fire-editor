@@ -274,16 +274,58 @@ export async function listFolders(db) {
   return docs.map((doc) => `${shortId(doc.id)}\t${doc.data.name || 'Carpeta'}`).join('\n')
 }
 
+/**
+ * The note body lives in its own document (`notes/{id}/body/main`) so the web
+ * app's workspace list never downloads every body. Notes written before the
+ * split still carry `markdown` inline; both are read here.
+ */
+export async function readNoteBody(db, note) {
+  const body = await db.get(`notes/${note.id}/body`, 'main').catch(() => null)
+  if (body) return String(body.data.markdown ?? '')
+  return String(note.data.markdown ?? '')
+}
+
+/** Writes the body and the note metadata in one atomic commit. */
+async function writeNoteBody(db, note, markdown) {
+  const next = String(markdown ?? '')
+  const version = (note.data.version ?? 0) + 1
+  await db.patchMany([
+    {
+      collection: `notes/${note.id}/body`,
+      id: 'main',
+      fields: { markdown: next, bytes: next.length, version },
+      transforms: [{ fieldPath: 'updatedAt' }],
+    },
+    {
+      // Compare-and-swap rides on the note document; the commit is atomic, so a
+      // concurrent edit fails before the body is written.
+      collection: 'notes',
+      id: note.id,
+      fields: { markdownBytes: next.length, tags: extractTags(next) },
+      transforms: [{ fieldPath: 'version', increment: 1 }, { fieldPath: 'updatedAt' }],
+      updateTime: note.updateTime,
+    },
+  ])
+  return { markdown: next, version }
+}
+
 /** Raw markdown only; the etag is returned separately so it never pollutes the body. */
 export async function readNote(db, ref, { maxBytes = 0 } = {}) {
   const doc = await resolveNote(db, ref)
-  let body = String(doc.data.markdown ?? '')
+  let body = await readNoteBody(db, doc)
   let truncated = false
   if (maxBytes && body.length > maxBytes) {
     body = `${body.slice(0, maxBytes)}\n…[truncado ${body.length - maxBytes} bytes]`
     truncated = true
   }
-  return { id: doc.id, title: doc.data.title ?? '', body, etag: etagOf(doc.data), truncated }
+  return {
+    id: doc.id,
+    title: doc.data.title ?? '',
+    body,
+    // The etag covers the body, which no longer lives on the note document.
+    etag: etagOf({ markdown: body, version: doc.data.version ?? 0 }),
+    truncated,
+  }
 }
 
 /** Exact-substring edits; returns byte deltas instead of the new document. */
@@ -291,10 +333,11 @@ export async function patchNote(db, ref, edits, { etag, replaceAll = false } = {
   if (!Array.isArray(edits) || edits.length === 0) throw new AgentError('no hay ediciones', 'E_USAGE')
 
   const doc = await resolveNote(db, ref)
-  const current = String(doc.data.markdown ?? '')
+  const current = await readNoteBody(db, doc)
+  const currentEtag = etagOf({ markdown: current, version: doc.data.version ?? 0 })
 
-  if (etag && etag !== etagOf(doc.data)) {
-    throw new AgentError(`etag desactualizado (actual ${etagOf(doc.data)})`, 'E_ETAG')
+  if (etag && etag !== currentEtag) {
+    throw new AgentError(`etag desactualizado (actual ${currentEtag})`, 'E_ETAG')
   }
 
   let next = current
@@ -323,17 +366,9 @@ export async function patchNote(db, ref, edits, { etag, replaceAll = false } = {
   }
 
   try {
-    await db.patch(
-      'notes',
-      doc.id,
-      { markdown: next, tags: extractTags(next) },
-      {
-        // Compare-and-swap on the read revision: a concurrent edit fails here
-        // instead of silently overwriting.
-        updateTime: doc.updateTime,
-        transforms: [{ fieldPath: 'version', increment: 1 }, { fieldPath: 'updatedAt' }],
-      }
-    )
+    // Compare-and-swap on the read revision: a concurrent edit fails here
+    // instead of silently overwriting. Body and note commit together.
+    await writeNoteBody(db, doc, next)
   } catch (error) {
     if (error.status === 400 || error.code === 'FAILED_PRECONDITION') {
       throw new AgentError('la nota cambió mientras editabas (reintentá con un etag nuevo)', 'E_ETAG')
@@ -355,44 +390,30 @@ export async function patchNote(db, ref, edits, { etag, replaceAll = false } = {
  */
 export async function replaceNote(db, ref, markdown, { etag } = {}) {
   const doc = await resolveNote(db, ref)
-  if (etag && etag !== etagOf(doc.data)) {
-    throw new AgentError(`etag desactualizado (actual ${etagOf(doc.data)})`, 'E_ETAG')
+  const current = await readNoteBody(db, doc)
+  const currentEtag = etagOf({ markdown: current, version: doc.data.version ?? 0 })
+  if (etag && etag !== currentEtag) {
+    throw new AgentError(`etag desactualizado (actual ${currentEtag})`, 'E_ETAG')
   }
   const next = String(markdown ?? '')
   if (next.length > 250000) throw new AgentError('la nota supera 250 KB', 'E_USAGE')
 
-  await db.patch(
-    'notes',
-    doc.id,
-    { markdown: next, tags: extractTags(next) },
-    {
-      updateTime: doc.updateTime,
-      transforms: [{ fieldPath: 'version', increment: 1 }, { fieldPath: 'updatedAt' }],
-    }
-  )
+  await writeNoteBody(db, doc, next)
 
   return {
     id: doc.id,
     etag: etagOf({ markdown: next, version: (doc.data.version ?? 0) + 1 }),
-    delta: next.length - String(doc.data.markdown ?? '').length,
+    delta: next.length - current.length,
   }
 }
 
 export async function appendNote(db, ref, text) {
   if (!text) throw new AgentError('falta el texto', 'E_USAGE')
   const doc = await resolveNote(db, ref)
-  const current = String(doc.data.markdown ?? '')
+  const current = await readNoteBody(db, doc)
   const next = current.endsWith('\n') ? `${current}${text}` : `${current}\n${text}`
 
-  await db.patch(
-    'notes',
-    doc.id,
-    { markdown: next, tags: extractTags(next) },
-    {
-      updateTime: doc.updateTime,
-      transforms: [{ fieldPath: 'version', increment: 1 }, { fieldPath: 'updatedAt' }],
-    }
-  )
+  await writeNoteBody(db, doc, next)
 
   return {
     id: doc.id,
@@ -415,29 +436,40 @@ export async function createNote(db, { title = 'Sin título', folder, body = '' 
   }
 
   const id = db.newId()
-  await db.create(
-    'notes',
-    id,
+  const markdown = String(body)
+  await db.createMany([
     {
-      // Rules require the creator to own the note; the ACL still comes from the
-      // folder, so the agent cannot widen access.
-      ownerId: db.uid,
-      folderId: target.id,
-      aclSource: 'folder',
-      ...acl,
-      title: String(title).slice(0, 300),
-      markdown: String(body),
-      tags: extractTags(String(body)),
-      version: 1,
+      collection: 'notes',
+      id,
+      fields: {
+        // Rules require the creator to own the note; the ACL still comes from the
+        // folder, so the agent cannot widen access.
+        ownerId: db.uid,
+        folderId: target.id,
+        aclSource: 'folder',
+        ...acl,
+        title: String(title).slice(0, 300),
+        markdownBytes: markdown.length,
+        tags: extractTags(markdown),
+        version: 1,
+      },
+      transforms: [{ fieldPath: 'createdAt' }, { fieldPath: 'updatedAt' }],
     },
-    { transforms: [{ fieldPath: 'createdAt' }, { fieldPath: 'updatedAt' }] }
-  )
+    {
+      collection: `notes/${id}/body`,
+      id: 'main',
+      fields: { markdown, bytes: markdown.length, version: 1 },
+      transforms: [{ fieldPath: 'updatedAt' }],
+    },
+  ])
 
   return { id, short: shortId(id) }
 }
 
 export async function deleteNote(db, ref) {
   const doc = await resolveNote(db, ref)
+  // The body is a subdocument: nothing cascades.
+  await db.remove(`notes/${doc.id}/body`, 'main').catch(() => undefined)
   await db.remove('notes', doc.id)
   return { id: doc.id }
 }
@@ -470,10 +502,11 @@ export async function searchNotes(db, query, { limit = 20, context = 0, notes = 
   const docs = await db.query('notes', {
     where: memberFilter(db),
     orderBy: [{ field: { fieldPath: 'updatedAt' }, direction: 'DESCENDING' }],
+    // Bodies are separate documents now: this pass is metadata-only and the text
+    // is read for the candidates that survive the tag filter.
     select: {
       fields: [
         { fieldPath: 'title' },
-        { fieldPath: 'markdown' },
         { fieldPath: 'tags' },
         { fieldPath: 'memberIds' },
       ],
@@ -484,7 +517,7 @@ export async function searchNotes(db, query, { limit = 20, context = 0, notes = 
   const out = []
   for (const doc of docs) {
     if (wantedTag && !(doc.data.tags ?? []).includes(wantedTag)) continue
-    const lines = String(doc.data.markdown ?? '').split('\n')
+    const lines = (await readNoteBody(db, doc)).split('\n')
     if (!needle) {
       out.push(`${shortId(doc.id)}: ${doc.data.title ?? ''}`)
       if (out.length >= limit) return out.join('\n')

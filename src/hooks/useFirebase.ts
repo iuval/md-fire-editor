@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { auth, isFirebaseReady, signInWithGoogle, signOutUser } from '../firebase'
 import {
@@ -7,7 +7,9 @@ import {
   deleteFolder,
   deleteNote,
   migrateLegacyNotes,
+  migrateNoteBodies,
   MIGRATION_FLAG,
+  reserveFolderId,
   subscribeMyFolders,
   subscribeMyNotes,
   type Folder,
@@ -41,10 +43,15 @@ export function useAuth() {
   }, [])
 
   // Publish (or refresh) this user's directory entry so others can add them by
-  // email. Best-effort: failure never blocks the session.
+  // email. It is two writes nobody on this screen reads, so it waits until the
+  // session has settled instead of competing with the first paint and the
+  // notes/folders listeners.
   useEffect(() => {
     if (!user) return
-    void publishOwnDirectoryEntry(user.uid, user.email, user.displayName).catch(() => undefined)
+    const timer = setTimeout(() => {
+      void publishOwnDirectoryEntry(user.uid, user.email, user.displayName).catch(() => undefined)
+    }, 6000)
+    return () => clearTimeout(timer)
   }, [user])
 
   const doGoogleSignIn = useCallback(async () => {
@@ -63,6 +70,12 @@ export function useAuth() {
 export function useWorkspace(uid: string | undefined) {
   const [notes, setNotes] = useState<Note[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
+  /**
+   * Folders created before their document lands. Creating one used to cost two
+   * round trips (write + snapshot) with nothing on screen in between; the row
+   * now appears on the first frame under an id reserved on the client.
+   */
+  const [pendingFolders, setPendingFolders] = useState<Folder[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -100,6 +113,11 @@ export function useWorkspace(uid: string | undefined) {
       (next) => {
         foldersReady = true
         setFolders(next)
+        // The real copy arrived: stop showing the optimistic one.
+        setPendingFolders((prev) => {
+          const settled = prev.filter((pending) => !next.some((folder) => folder.id === pending.id))
+          return settled.length === prev.length ? prev : settled
+        })
         settle()
       },
       (message) => {
@@ -114,6 +132,24 @@ export function useWorkspace(uid: string | undefined) {
     }
   }, [uid])
 
+  /**
+   * Bodies still inline in the note document get their own document, once.
+   *
+   * Runs whenever the snapshot shows a note in the old shape and stays quiet
+   * afterwards; each note is attempted at most once per session so a rejected
+   * write cannot turn into a loop.
+   */
+  const attemptedBodies = useRef(new Set<string>())
+  useEffect(() => {
+    if (!uid) return
+    const legacy = notes.filter(
+      (note) => (note.markdown ?? '') !== '' && note.markdownBytes === undefined && !attemptedBodies.current.has(note.id)
+    )
+    if (legacy.length === 0) return
+    legacy.forEach((note) => attemptedBodies.current.add(note.id))
+    void migrateNoteBodies(legacy).catch(() => undefined)
+  }, [notes, uid])
+
   // v1 → v2 migration, once per browser.
   useEffect(() => {
     if (!uid || !isFirebaseReady()) return
@@ -123,9 +159,9 @@ export function useWorkspace(uid: string | undefined) {
   }, [uid])
 
   const addNote = useCallback(
-    async (folder?: Folder) => {
+    async (folder?: Folder, id?: string) => {
       if (!uid) return null
-      return createNote(uid, folder)
+      return createNote(uid, folder, id)
     },
     [uid]
   )
@@ -134,13 +170,24 @@ export function useWorkspace(uid: string | undefined) {
     async (
       name: string,
       parentId: string | null = null,
-      options: { sort?: import('../lib/sorting').SortMode; order?: number } = {}
+      options: { sort?: import('../lib/sorting').SortMode; order?: number } = {},
+      id?: string
     ) => {
       if (!uid) return null
-      return createFolder(uid, name, parentId, [], options)
+      return createFolder(uid, name, parentId, [], options, id)
     },
     [uid]
   )
+
+  /** Shows a folder whose document is still being written. */
+  const addOptimisticFolder = useCallback((folder: Folder) => {
+    setPendingFolders((prev) => (prev.some((item) => item.id === folder.id) ? prev : [...prev, folder]))
+  }, [])
+
+  /** Takes it back when the write failed. */
+  const dropOptimisticFolder = useCallback((folderId: string) => {
+    setPendingFolders((prev) => prev.filter((folder) => folder.id !== folderId))
+  }, [])
 
   const removeNote = useCallback(async (noteId: string) => {
     await deleteNote(noteId)
@@ -150,5 +197,25 @@ export function useWorkspace(uid: string | undefined) {
     await deleteFolder(folderId)
   }, [])
 
-  return { notes, folders, loading, error, addNote, addFolder, removeNote, removeFolder }
+  /** Optimistic folders that the snapshot has not confirmed yet. */
+  const visibleFolders = useMemo(() => {
+    if (pendingFolders.length === 0) return folders
+    const known = new Set(folders.map((folder) => folder.id))
+    const pending = pendingFolders.filter((folder) => !known.has(folder.id))
+    return pending.length === 0 ? folders : [...folders, ...pending]
+  }, [folders, pendingFolders])
+
+  return {
+    notes,
+    folders: visibleFolders,
+    loading,
+    error,
+    addNote,
+    addFolder,
+    addOptimisticFolder,
+    dropOptimisticFolder,
+    reserveFolderId,
+    removeNote,
+    removeFolder,
+  }
 }

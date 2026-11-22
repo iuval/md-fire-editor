@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -28,7 +29,14 @@ export interface Note extends Acl {
   folderId: string | null
   aclSource: AclSource
   title: string
+  /**
+   * The body. Only filled for a note that is open (its `body/main` is
+   * subscribed) or for a legacy note that still carries `markdown` inline; the
+   * workspace list never downloads bodies.
+   */
   markdown: string
+  /** Size of the body in characters, kept on the note so the list can total it. */
+  markdownBytes?: number
   /** Derived from the markdown on save; used to filter without downloading bodies. */
   tags: string[]
   /** Position inside its folder when the folder sorts manually. */
@@ -79,6 +87,7 @@ export function toNote(id: string, data: Record<string, unknown>): Note {
     ...aclFrom(data),
     title: (data.title as string) ?? '',
     markdown: (data.markdown as string) ?? '',
+    markdownBytes: typeof data.markdownBytes === 'number' ? data.markdownBytes : undefined,
     tags: (data.tags as string[]) ?? [],
     order: (data.order as number) ?? 0,
     version: (data.version as number) ?? 0,
@@ -178,28 +187,104 @@ export function subscribeNote(
   )
 }
 
+/** The note body document. Kept apart so the workspace list stays small. */
+function bodyRef(noteId: string) {
+  return doc(db!, 'notes', noteId, 'body', 'main')
+}
+
+/**
+ * The body of one note, live.
+ *
+ * This replaces the whole-document subscription the app used to keep per open
+ * note: the note's metadata already arrives through the workspace list, so what
+ * a pane needs is only the text.
+ */
+export function subscribeNoteBody(
+  noteId: string,
+  onChange: (body: string | null) => void,
+  onError: (message: string) => void
+): () => void {
+  if (!db) return () => undefined
+  return onSnapshot(
+    bodyRef(noteId),
+    (snap) => onChange(snap.exists() ? ((snap.data().markdown as string) ?? '') : null),
+    (err) => onError(err.message)
+  )
+}
+
+/**
+ * Bodies for notes that are not open (export a vault, rename a tag).
+ *
+ * Notes written before the split still keep the text in the note document, so
+ * the fallback reads it from there instead of reporting an empty note.
+ */
+export async function fetchNoteBodies(
+  noteIds: string[],
+  { onProgress, concurrency = 8 }: { onProgress?: (done: number) => void; concurrency?: number } = {}
+): Promise<Map<string, string>> {
+  const bodies = new Map<string, string>()
+  if (!db) return bodies
+  const database = db
+  let done = 0
+
+  for (let start = 0; start < noteIds.length; start += concurrency) {
+    const slice = noteIds.slice(start, start + concurrency)
+    await Promise.all(
+      slice.map(async (noteId) => {
+        try {
+          const snap = await getDoc(doc(database, 'notes', noteId, 'body', 'main'))
+          if (snap.exists()) {
+            bodies.set(noteId, (snap.data().markdown as string) ?? '')
+            return
+          }
+          const noteSnap = await getDoc(doc(database, 'notes', noteId))
+          bodies.set(noteId, (noteSnap.data()?.markdown as string) ?? '')
+        } catch {
+          bodies.set(noteId, '')
+        }
+      })
+    )
+    done += slice.length
+    onProgress?.(done)
+  }
+  return bodies
+}
+
 // ---------- notes ----------
 
-export async function createNote(uid: string, folder?: Folder): Promise<Note> {
+/**
+ * Client-side id for a note that does not exist yet: lets the tab open on the
+ * first frame while Firestore creates the document in the background.
+ */
+export function reserveNoteId(): string | null {
+  if (!db) return null
+  return doc(collection(db, 'notes')).id
+}
+
+export async function createNote(uid: string, folder?: Folder, id?: string): Promise<Note> {
   if (!db) throw new Error('Firebase no está configurado')
-  const ref = doc(collection(db, 'notes'))
+  const ref = id ? doc(db, 'notes', id) : doc(collection(db, 'notes'))
   const now = serverTimestamp()
   const acl: Acl = folder
     ? { memberIds: folder.memberIds, roles: folder.roles, access: folder.access }
     : { memberIds: [uid], roles: { [uid]: 'owner' }, access: 'restricted' }
 
-  await setDoc(ref, {
+  const batch = writeBatch(db)
+  batch.set(ref, {
     ownerId: uid,
     folderId: folder ? folder.id : null,
     aclSource: folder ? 'folder' : 'own',
     ...acl,
     title: 'Sin título',
-    markdown: '',
+    markdownBytes: 0,
     tags: [],
     version: 1,
     createdAt: now,
     updatedAt: now,
   })
+  // An empty body document from the start, so every note has the same shape.
+  batch.set(doc(ref, 'body', 'main'), bodyDocument('', 1))
+  await batch.commit()
 
   return {
     id: ref.id,
@@ -222,30 +307,156 @@ export async function createNote(uid: string, folder?: Folder): Promise<Note> {
  * markdown (which does not carry the title) wiped the note's title on every
  * save — one second after opening it.
  */
-/** Only the fields present in the patch end up in the write. */
+/**
+ * Metadata patch for a note. Only the fields present end up in the write; the
+ * body never travels in this document (see `bodyDocument`).
+ */
 export function buildNoteUpdate(patch: {
   title?: string
-  markdown?: string
   tags?: string[]
   version?: number
+  markdownBytes?: number
 }): Record<string, unknown> {
   const update: Record<string, unknown> = {}
   if (patch.title !== undefined) update.title = patch.title.slice(0, MAX_TITLE_LENGTH)
-  if (patch.markdown !== undefined) update.markdown = patch.markdown
   if (patch.tags !== undefined) update.tags = patch.tags
   if (patch.version !== undefined) update.version = patch.version
+  if (patch.markdownBytes !== undefined) update.markdownBytes = patch.markdownBytes
   return update
 }
 
+/** The note body document: what an editor reads and writes. */
+export function bodyDocument(
+  markdown: string,
+  version = 0
+): Record<string, unknown> {
+  const text = markdown.slice(0, MAX_MARKDOWN_BYTES)
+  return { markdown: text, bytes: text.length, version, updatedAt: serverTimestamp() }
+}
+
+export interface NewNoteInput {
+  title: string
+  markdown: string
+  tags: string[]
+  folder: Folder | null
+  order?: number
+}
+
+/**
+ * Document data for a note created with its content already in place.
+ *
+ * The import path used to create an empty note and then send a second write for
+ * its markdown: two round trips per note, 1.000 of them for a 500-note vault.
+ * The create rule accepts everything in one document (it only asks that
+ * `createdAt` and `updatedAt` be the same server timestamp), so one write is
+ * enough.
+ */
+export function buildNoteDocument(
+  uid: string,
+  input: NewNoteInput,
+  now: ReturnType<typeof serverTimestamp>
+): Record<string, unknown> {
+  const acl: Acl = input.folder
+    ? { memberIds: input.folder.memberIds, roles: input.folder.roles, access: input.folder.access }
+    : { memberIds: [uid], roles: { [uid]: 'owner' }, access: 'restricted' }
+
+  return {
+    ownerId: uid,
+    folderId: input.folder ? input.folder.id : null,
+    aclSource: input.folder ? 'folder' : 'own',
+    ...acl,
+    title: (input.title || 'Sin título').slice(0, MAX_TITLE_LENGTH),
+    markdownBytes: Math.min(input.markdown.length, MAX_MARKDOWN_BYTES),
+    tags: input.tags,
+    order: input.order ?? 0,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+const IMPORT_CHUNK = 50
+
+/**
+ * Creates many notes with one write each, committed in chunks.
+ *
+ * Chunks keep the batch under Firestore's 500-operation limit and give failures
+ * a useful granularity: a failing chunk is retried note by note, so one bad note
+ * does not lose the other 49.
+ */
+export async function importNotes(
+  uid: string,
+  notes: NewNoteInput[],
+  { onProgress }: { onProgress?: (written: number) => void } = {}
+): Promise<{ created: string[]; failed: number }> {
+  if (!db) throw new Error('Firebase no está configurado')
+  const database = db
+  const created: string[] = []
+  let failed = 0
+
+  for (let start = 0; start < notes.length; start += IMPORT_CHUNK) {
+    const chunk = notes.slice(start, start + IMPORT_CHUNK)
+    const batch = writeBatch(database)
+    const refs = chunk.map((input) => {
+      const ref = doc(collection(database, 'notes'))
+      batch.set(ref, buildNoteDocument(uid, input, serverTimestamp()))
+      batch.set(doc(ref, 'body', 'main'), bodyDocument(input.markdown, 1))
+      return ref
+    })
+
+    try {
+      await batch.commit()
+      created.push(...refs.map((ref) => ref.id))
+    } catch {
+      // One bad note fails the whole batch: retry them one at a time to keep the
+      // rest of the chunk.
+      for (let i = 0; i < chunk.length; i++) {
+        try {
+          const noteBatch = writeBatch(database)
+          noteBatch.set(refs[i], buildNoteDocument(uid, chunk[i], serverTimestamp()))
+          noteBatch.set(doc(refs[i], 'body', 'main'), bodyDocument(chunk[i].markdown, 1))
+          await noteBatch.commit()
+          created.push(refs[i].id)
+        } catch {
+          failed++
+        }
+      }
+    }
+    onProgress?.(created.length + failed)
+  }
+
+  return { created, failed }
+}
+
+/**
+ * Saves a note: the body goes to `notes/{id}/body/main`, the rest stays on the
+ * note document, and both land in one commit (one round trip, no half-saved
+ * note).
+ */
 export async function saveNoteContent(
   noteId: string,
   patch: { title?: string; markdown?: string; tags?: string[]; version?: number }
 ): Promise<void> {
   if (!db) return
-  await updateDoc(doc(db, 'notes', noteId), {
-    ...buildNoteUpdate(patch),
+  const database = db
+  const batch = writeBatch(database)
+  const metadata: Record<string, unknown> = {
+    ...buildNoteUpdate({
+      title: patch.title,
+      tags: patch.tags,
+      version: patch.version,
+      markdownBytes: patch.markdown?.length,
+    }),
     updatedAt: serverTimestamp(),
-  })
+  }
+  if (patch.markdown !== undefined) {
+    batch.set(bodyRef(noteId), bodyDocument(patch.markdown, patch.version ?? 0), { merge: true })
+    // Notes written before the split carried the text inline: once it is in the
+    // body document, drop it from here (the list stops downloading it).
+    metadata.markdown = deleteField()
+  }
+  batch.update(doc(database, 'notes', noteId), metadata)
+  await batch.commit()
 }
 
 /**
@@ -268,22 +479,61 @@ export async function moveNoteTo(note: Note, target: Folder | null): Promise<voi
 
 export async function deleteNote(noteId: string): Promise<void> {
   if (!db) return
-  await deleteDoc(doc(db, 'notes', noteId))
+  const database = db
+  // The body is a subdocument, so nothing cascades: delete it explicitly.
+  await deleteDoc(doc(database, 'notes', noteId, 'body', 'main')).catch(() => undefined)
+  await deleteDoc(doc(database, 'notes', noteId))
 }
 
 // ---------- folders ----------
+
+export function cleanFolderName(name: string): string {
+  return name.trim().slice(0, MAX_FOLDER_NAME) || 'Carpeta'
+}
+
+/**
+ * Client-side id for a folder that does not exist yet, like `reserveNoteId`:
+ * the row shows up in the first frame and the document catches up.
+ */
+export function reserveFolderId(): string | null {
+  if (!db) return null
+  return doc(collection(db, 'folders')).id
+}
+
+/** Exactly what `createFolder` writes, without the round trip. */
+export function optimisticFolder(
+  uid: string,
+  id: string,
+  name: string,
+  parentId: string | null,
+  options: { sort?: SortMode; order?: number } = {}
+): Folder {
+  return {
+    id,
+    ownerId: uid,
+    name: cleanFolderName(name),
+    parentId,
+    sort: options.sort ?? DEFAULT_SORT,
+    order: options.order ?? 0,
+    tags: [],
+    memberIds: [uid],
+    roles: { [uid]: 'owner' },
+    access: 'restricted',
+  }
+}
 
 export async function createFolder(
   uid: string,
   name: string,
   parentId: string | null = null,
   tags: string[] = [],
-  options: { sort?: SortMode; order?: number } = {}
+  options: { sort?: SortMode; order?: number } = {},
+  id?: string
 ): Promise<Folder> {
   if (!db) throw new Error('Firebase no está configurado')
-  const ref = doc(collection(db, 'folders'))
+  const ref = id ? doc(db, 'folders', id) : doc(collection(db, 'folders'))
   const now = serverTimestamp()
-  const clean = name.trim().slice(0, MAX_FOLDER_NAME) || 'Carpeta'
+  const clean = cleanFolderName(name)
   await setDoc(ref, {
     ownerId: uid,
     name: clean,
@@ -345,17 +595,28 @@ export async function setRootSort(uid: string, rootSort: SortMode): Promise<void
   )
 }
 
-/** Renumbers siblings after a manual move (ids must be in the wanted order). */
+/** How many writes fit in one commit (Firestore rejects more than 500). */
+const BATCH_LIMIT = 400
+
+/**
+ * Persists the order changes of a manual move.
+ *
+ * Chunked: a renumber writes every sibling, and a folder with more than 500 of
+ * them used to throw (`maximum 500 writes allowed per request`).
+ */
 export async function applyOrder(
   collection: 'folders' | 'notes',
   pairs: Array<{ id: string; order: number }>
 ): Promise<void> {
   if (!db) return
-  const batch = writeBatch(db)
-  pairs.forEach(({ id, order }) => {
-    batch.update(doc(db!, collection, id), { order, updatedAt: serverTimestamp() })
-  })
-  await batch.commit()
+  const database = db
+  for (let start = 0; start < pairs.length; start += BATCH_LIMIT) {
+    const batch = writeBatch(database)
+    pairs.slice(start, start + BATCH_LIMIT).forEach(({ id, order }) => {
+      batch.update(doc(database, collection, id), { order, updatedAt: serverTimestamp() })
+    })
+    await batch.commit()
+  }
 }
 
 export async function moveFolder(folderId: string, parentId: string | null): Promise<void> {
@@ -493,6 +754,59 @@ export async function getFolder(folderId: string): Promise<Folder | null> {
 
 const MIGRATION_FLAG = 'mdfire-migrated-v2'
 
+/**
+ * One-time move of bodies that still live inside the note document.
+ *
+ * The workspace list is the only thing that still receives them, so it is also
+ * what feeds this: each note gets its `body/main` document and loses the inline
+ * field in the same commit. A failed note is left untouched and still readable
+ * through the fallback, so a half-finished migration loses nothing.
+ */
+export async function migrateNoteBodies(
+  notes: Note[],
+  { onProgress, chunkSize = 20 }: { onProgress?: (done: number) => void; chunkSize?: number } = {}
+): Promise<number> {
+  if (!db) return 0
+  const database = db
+  const legacy = notes.filter((note) => (note.markdown ?? '') !== '' && note.markdownBytes === undefined)
+  let migrated = 0
+
+  for (let start = 0; start < legacy.length; start += chunkSize) {
+    const chunk = legacy.slice(start, start + chunkSize)
+    const batch = writeBatch(database)
+    chunk.forEach((note) => {
+      batch.set(doc(database, 'notes', note.id, 'body', 'main'), bodyDocument(note.markdown, note.version))
+      batch.update(doc(database, 'notes', note.id), {
+        markdown: deleteField(),
+        markdownBytes: note.markdown.length,
+      })
+    })
+    try {
+      await batch.commit()
+      migrated += chunk.length
+    } catch {
+      // Try them one by one so a single rejection does not stall the rest.
+      for (const note of chunk) {
+        try {
+          const single = writeBatch(database)
+          single.set(doc(database, 'notes', note.id, 'body', 'main'), bodyDocument(note.markdown, note.version))
+          single.update(doc(database, 'notes', note.id), {
+            markdown: deleteField(),
+            markdownBytes: note.markdown.length,
+          })
+          await single.commit()
+          migrated++
+        } catch {
+          /* leave it inline; the fallback keeps working */
+        }
+      }
+    }
+    onProgress?.(migrated)
+  }
+
+  return migrated
+}
+
 export async function migrateLegacyNotes(uid: string): Promise<number> {
   if (!db) return 0
   const legacy = await getDocs(collection(db, 'users', uid, 'notes'))
@@ -504,7 +818,9 @@ export async function migrateLegacyNotes(uid: string): Promise<number> {
     const target = doc(collection(db, 'notes'))
     const now = serverTimestamp()
     try {
-      await setDoc(target, {
+      const body = String(data.content ?? '').slice(0, MAX_MARKDOWN_BYTES)
+      const batch = writeBatch(db!)
+      batch.set(target, {
         ownerId: uid,
         folderId: null,
         aclSource: 'own',
@@ -512,11 +828,13 @@ export async function migrateLegacyNotes(uid: string): Promise<number> {
         roles: { [uid]: 'owner' },
         access: 'restricted',
         title: String(data.title ?? 'Sin título').slice(0, MAX_TITLE_LENGTH),
-        markdown: String(data.content ?? '').slice(0, MAX_MARKDOWN_BYTES),
+        markdownBytes: body.length,
         version: 1,
         createdAt: now,
         updatedAt: now,
       })
+      batch.set(doc(target, 'body', 'main'), bodyDocument(body, 1))
+      await batch.commit()
       await deleteDoc(legacyDoc.ref)
       migrated++
     } catch {

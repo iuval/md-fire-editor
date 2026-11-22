@@ -122,7 +122,8 @@ export class RestStore {
     return data.filter((row) => row.document).map((row) => docFrom(row.document))
   }
 
-  async patch(collection, id, fields, { transforms = [], updateTime } = {}) {
+  /** One write, as Firestore's `:commit` expects it. */
+  buildWrite({ collection, id, fields, transforms = [], updateTime, exists }) {
     const write = {
       update: { name: `${this.prefix}/${collection}/${id}`, fields: toFields(fields) },
       updateMask: { fieldPaths: Object.keys(fields) },
@@ -135,28 +136,35 @@ export class RestStore {
       )
     }
     if (updateTime) write.currentDocument = { updateTime }
+    if (exists === false) write.currentDocument = { exists: false }
+    return write
+  }
 
+  /** Several writes in one atomic commit (a note and its body, for instance). */
+  async commitWrites(writes) {
+    if (writes.length === 0) return
     await this.request(`${this.root}:commit`, {
       method: 'POST',
-      body: JSON.stringify({ writes: [write] }),
+      body: JSON.stringify({ writes: writes.map((write) => (write.update ? write : this.buildWrite(write))) }),
     })
   }
 
-  async create(collection, id, fields, { transforms = [] } = {}) {
-    const write = {
-      update: { name: `${this.prefix}/${collection}/${id}`, fields: toFields(fields) },
-      currentDocument: { exists: false },
-    }
-    if (transforms.length) {
-      write.updateTransforms = transforms.map((transform) => ({
-        fieldPath: transform.fieldPath,
-        setToServerValue: 'REQUEST_TIME',
-      }))
-    }
-    await this.request(`${this.root}:commit`, {
-      method: 'POST',
-      body: JSON.stringify({ writes: [write] }),
-    })
+  async patch(collection, id, fields, options = {}) {
+    await this.commitWrites([this.buildWrite({ collection, id, fields, ...options })])
+  }
+
+  /** Patches several documents in one commit. */
+  async patchMany(entries) {
+    await this.commitWrites(entries.map((entry) => this.buildWrite(entry)))
+  }
+
+  async create(collection, id, fields, options = {}) {
+    await this.commitWrites([this.buildWrite({ collection, id, fields, ...options, exists: false })])
+  }
+
+  /** Creates several documents in one commit. */
+  async createMany(entries) {
+    await this.commitWrites(entries.map((entry) => this.buildWrite({ ...entry, exists: false })))
   }
 
   async remove(collection, id) {

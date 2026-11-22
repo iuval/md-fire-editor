@@ -65,6 +65,23 @@ describe('note sessions', () => {
     second.release('view-b')
   })
 
+  it('lets only one view write external content, and hands the job over', () => {
+    const first = acquireNoteSession('n1', 'u1', user, 'view-a')
+    const second = acquireNoteSession('n1', 'u1', user, 'view-b')
+
+    expect(first.claimSeed('view-a')).toBe(true)
+    expect(first.isPrimary('view-a')).toBe(true)
+    expect(second.isPrimary('view-b')).toBe(false)
+
+    // The primary pane closes: the surviving view takes over instead of leaving
+    // external writes unapplied.
+    first.release('view-a')
+    expect(second.isPrimary('view-b')).toBe(true)
+
+    second.release('view-b')
+    expect(liveNoteSessions()).toBe(0)
+  })
+
   it('separates notes and users', () => {
     const a = acquireNoteSession('n1', 'u1', user, 'view-a')
     const b = acquireNoteSession('n2', 'u1', user, 'view-a')

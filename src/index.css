@@ -275,12 +275,24 @@ button {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 40px;
+  /* One compact row: in the single-pane layout it also carries the tabs. */
+  height: 34px;
+  background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
   flex-shrink: 0;
   padding: 0 6px;
   border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   color: light-dark(var(--color-muted), var(--color-muted-dark));
   font-size: 12.5px;
+}
+
+/* The tab strip lives here when the workspace has one pane; the bar keeps its
+   own controls on the right so there is never a second row of chrome. */
+.pane-head-tabs {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* A filter that lives only in the sidebar is invisible once the sidebar is
@@ -492,11 +504,30 @@ button {
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 38px;
+  height: 30px;
   flex-shrink: 0;
   padding: 0 6px;
   border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
+}
+
+/* Inside the top bar: no second background or divider, just the tabs. The
+   strip must be width-constrained by the bar or its tab list cannot scroll. */
+.tabbar--inline {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border-bottom: 0;
+  background: none;
+}
+
+.pane-head-tabs > .tabbar {
+  min-width: 0;
+}
+
+.tabbar--inline .tabbar-tabs {
+  gap: 2px;
 }
 
 .tabbar-tabs {
@@ -525,9 +556,9 @@ button {
 .tab {
   display: flex;
   align-items: center;
-  max-width: 200px;
+  max-width: 240px;
   min-width: 0;
-  height: 28px;
+  height: 26px;
   flex-shrink: 0;
   border-radius: var(--radius-control);
   color: light-dark(var(--color-muted), var(--color-muted-dark));
@@ -556,7 +587,7 @@ button {
 
 .tab-text {
   display: block;
-  max-width: 168px;
+  max-width: 208px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -813,6 +844,15 @@ button {
 
 .menu-item.danger {
   color: light-dark(var(--color-danger), var(--color-danger-dark));
+}
+
+.menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.menu-item:disabled:hover {
+  background: none;
 }
 
 .menu-sep {
@@ -1616,6 +1656,11 @@ button {
     font-size: 1.6em;
   }
 
+  /* Touch targets are 44px tall on phones: the bar grows to hold them. */
+  .pane-head {
+    height: 44px;
+  }
+
   /* Tabs carry the file switcher on a phone: same 44px strip as the top bar. */
   .tabbar {
     height: 44px;
@@ -1633,6 +1678,12 @@ button {
 
   .tab-text {
     max-width: 180px;
+  }
+
+  /* In the merged top bar the tabs need the room more than a second "+": the
+     same action is in the bar's menu and in the sidebar. */
+  .tabbar--inline .tab-new {
+    display: none;
   }
 
   /* Touch targets: 44px minimum, no exceptions. Desktop keeps 32px so the

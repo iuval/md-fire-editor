@@ -12,6 +12,7 @@ import {
   clampSidebarWidth,
   guideIndent,
 } from '../src/lib/sidebarLayout'
+import type { ProviderStatus } from '../src/lib/collab/provider'
 import type { Folder, Note } from '../src/lib/notes'
 import { buildTagTree } from '../src/lib/tags'
 
@@ -91,6 +92,7 @@ function render(overrides: Partial<SidebarProps> = {}) {
     onCollapse: () => {},
     isMobile: false,
     isOpen: true,
+    status: { connected: true, pendingWrites: 0, updateCount: 0, error: null },
     loading: false,
     tagTree: buildTagTree(withNotes),
     selectedTags: [],
@@ -217,18 +219,80 @@ describe('footer', () => {
     expect(foot.querySelector('.account-name')).toBeNull()
     expect(foot.textContent?.trim()).toBe('')
 
+    // Two controls: the sync dot and the account menu. Only the menu carries
+    // the name, since the label no longer sits in the strip.
     const buttons = [...foot.querySelectorAll('button')]
-    expect(buttons).toHaveLength(1)
-    expect(buttons[0].getAttribute('aria-label')).toBe('Cuenta y ajustes de Iuval')
-    expect(buttons[0].getAttribute('title')).toContain('Iuval')
+    expect(buttons).toHaveLength(2)
+    const menu = buttons.find((b) => b.className.includes('icon-btn'))!
+    expect(menu.getAttribute('aria-label')).toBe('Cuenta y ajustes de Iuval')
+    expect(menu.getAttribute('title')).toContain('Iuval')
   })
 
   it('opens the account menu from that button', () => {
     let opened = 0
     const el = render({ onAccountClick: () => (opened += 1) })
-    const button = el.querySelector('.sidebar-foot button') as HTMLButtonElement
+    const button = el.querySelector('.sidebar-foot .icon-btn') as HTMLButtonElement
     act(() => button.click())
     expect(opened).toBe(1)
+  })
+})
+
+describe('sync dot in the footer', () => {
+  const statusWith = (patch: Partial<ProviderStatus>): ProviderStatus => ({
+    connected: true,
+    pendingWrites: 0,
+    updateCount: 0,
+    error: null,
+    ...patch,
+  })
+
+  it('shows a bare coloured dot next to the avatar, with no words', () => {
+    const el = render()
+    const foot = el.querySelector('.sidebar-foot')!
+    const dot = foot.querySelector('.sync-dot')!
+    expect(dot).not.toBeNull()
+    expect(foot.textContent?.trim()).toBe('')
+    expect(foot.querySelector('.sync-dot-btn')!.className).toContain('sync--ok')
+  })
+
+  it('paints the tone of the current state', () => {
+    const saving = render({ status: statusWith({ pendingWrites: 3 }) })
+    expect(saving.querySelector('.sync-dot-btn')!.className).toContain('sync--pending')
+
+    act(() => roots[0].unmount())
+    roots = []
+    document.body.innerHTML = ''
+
+    const offline = render({ status: statusWith({ error: 'Sin permisos' }) })
+    expect(offline.querySelector('.sync-dot-btn')!.className).toContain('sync--error')
+  })
+
+  it('reveals the status when tapped, and hides it again', () => {
+    const el = render({ status: statusWith({ pendingWrites: 1 }) })
+    const button = el.querySelector('.sync-dot-btn') as HTMLButtonElement
+
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(el.querySelector('.sync-bubble')).toBeNull()
+    expect(button.getAttribute('aria-label')).toContain('Guardando')
+
+    act(() => button.click())
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(el.querySelector('.sync-bubble')!.textContent).toBe('Guardando')
+
+    act(() => button.click())
+    expect(el.querySelector('.sync-bubble')).toBeNull()
+  })
+
+  it('closes the revealed status on Escape', () => {
+    const el = render({ status: statusWith({ connected: false }) })
+    const button = el.querySelector('.sync-dot-btn') as HTMLButtonElement
+    act(() => button.click())
+    expect(el.querySelector('.sync-bubble')!.textContent).toBe('Conectando')
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(el.querySelector('.sync-bubble')).toBeNull()
   })
 })
 

@@ -1,6 +1,7 @@
 import { MoreHorizontal, PanelLeftOpen, Menu, X } from 'lucide-react'
 import type { AwarenessUser } from '../lib/collab/awareness'
 import type { ProviderStatus } from '../lib/collab/provider'
+import { syncText } from '../lib/syncStatus'
 
 interface PaneBarProps {
   status: ProviderStatus
@@ -12,33 +13,8 @@ interface PaneBarProps {
   menuOpen: boolean
   selectedTags?: string[]
   onClearTags?: () => void
-}
-
-type Tone = 'ok' | 'pending' | 'error'
-
-function tone(status: ProviderStatus): Tone {
-  if (status.error) return 'error'
-  if (status.pendingWrites > 0 || !status.connected) return 'pending'
-  return 'ok'
-}
-
-/**
- * Sync state is the one thing you cannot see in the document, so it earns a
- * word when it is *not* fine. When everything is saved it collapses to a dot:
- * silence is the success state.
- */
-function statusLabel(status: ProviderStatus): string | null {
-  if (status.error) return 'Sin conexión'
-  if (status.pendingWrites > 0) return 'Guardando…'
-  if (!status.connected) return 'Conectando…'
-  return null
-}
-
-function statusText(status: ProviderStatus): string {
-  if (status.error) return 'Sin conexión'
-  if (status.pendingWrites > 0) return 'Guardando'
-  if (!status.connected) return 'Conectando'
-  return 'Sincronizado'
+  /** The focused pane's tab strip, when it lives in this bar. */
+  tabs?: React.ReactNode
 }
 
 export function PaneBar({
@@ -51,9 +27,8 @@ export function PaneBar({
   menuOpen,
   selectedTags = [],
   onClearTags,
+  tabs,
 }: PaneBarProps) {
-  const label = statusLabel(status)
-
   return (
     <div className="pane-head">
       {(isMobile || sidebarCollapsed) && (
@@ -85,7 +60,7 @@ export function PaneBar({
         </div>
       )}
 
-      <span style={{ flex: 1 }} />
+      {tabs ? <div className="pane-head-tabs">{tabs}</div> : <span style={{ flex: 1 }} />}
 
       {presence.length > 0 && (
         <span className="avatar-stack" aria-label="Editando ahora">
@@ -97,10 +72,11 @@ export function PaneBar({
         </span>
       )}
 
-      <span className={`sync sync--${tone(status)}`} role="status" title={statusText(status)}>
-        <span className="sync-dot" aria-hidden="true" />
-        {label && <span className="sync-text">{label}</span>}
-        <span className="sr-only">{statusText(status)}</span>
+      {/* The dot now lives next to the avatar in the sidebar, but the live
+          region stays here: it must keep announcing while the sidebar is
+          collapsed or the phone drawer is closed. */}
+      <span className="sr-only" role="status">
+        {syncText(status)}
       </span>
 
       <button

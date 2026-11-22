@@ -13,7 +13,7 @@ del bundle de producción.
 | H5 | Bundle entero sin split | **hecho** | 1.692.553 B en un chunk | 967 KB inicial + 729 KB diferido (`NotePane`) |
 | H6 | Import/export con picos de 2-3× | **hecho** | todas las entradas infladas + todos los cuerpos decodificados | plan de rutas + un cuerpo a la vez; export vía `Blob` |
 | H4 | Cache de Firestore y contabilidad del log | **parcial** | LRU por defecto 40 MB; ids duplicados en `Set` + array | `cacheSizeBytes` 20 MB; un solo `Set` |
-| H1 | El listado retiene todos los cuerpos | **pendiente** | 300 notas × 20.000 car. = +5,91 MB | igual (requiere cambio de esquema) |
+| H1 | El listado retiene todos los cuerpos | **hecho** | 300 notas × 20.000 car. = +5,91 MB | +0,05 MB de metadata; el cuerpo se lee sólo para la nota abierta |
 
 ## 1. Cómo se mide
 
@@ -163,29 +163,36 @@ no corren en esta máquina —`firebase emulators` aborta con `Unable to locate 
 tocar la query de sync sin poder correr esa suite es la clase de cambio que pierde texto en
 silencio. El detalle está en §9.
 
-## 8. H1 — el listado sigue bajando todos los cuerpos (pendiente)
+## 8. H1 — el listado ya no baja los cuerpos (hecho)
 
-`subscribeMyNotes` (`src/lib/notes.ts:132`) se suscribe a toda la colección `notes`, sin límite y
-sin proyección, y `toNote` copia `markdown` al `Note` del estado (`src/App.tsx:218`). Lo único que
-la app usa del listado es metadata (`Sidebar` lee `note.title`; el filtro, `tags`; los paneles,
-`folderId`); los cuerpos sólo hacen falta en dos operaciones masivas: exportar el vault
-(`App.tsx:464`) y renombrar un tag (`App.tsx:694`).
+**Qué pasaba.** `subscribeMyNotes` se suscribe a toda la colección `notes`, sin límite y sin
+proyección, y el cuerpo viajaba en el mismo documento: 5,91 MB de heap para 300 notas de
+20.000 caracteres, más todo el vault en la primera descarga, con `loading` apagándose recién
+cuando llegaba el último cuerpo.
 
-**Ojo con el atajo**: vaciar `markdown` en el estado de React no libera nada, porque el listener de
-la query mantiene los documentos en memoria dentro del SDK y el SDK de JS no soporta field masks.
-La única forma de no tener los cuerpos es no suscribirse a una query que los devuelva.
+**Qué se hizo.**
 
-Plan (sin empezar, ~1 semana):
+- El cuerpo vive en `notes/{id}/body/main` (`markdown`, `bytes`, `version`, `updatedAt`), con la
+  misma ACL que su nota. La nota conserva `markdownBytes`, así que el listado puede totalizar
+  almacenamiento sin bajar texto.
+- `subscribeNoteBody` reemplaza a la suscripción de documento por nota abierta: la metadata ya
+  viene del listado, así que una pestaña sólo pide el texto. Un `?note=` que el listado todavía
+  no conoce cae en `subscribeNote` (una sola vez, mientras el listado no lo tenga).
+- `saveNoteContent` escribe cuerpo + metadata en **un commit** (un round trip, nunca media nota
+  guardada) y borra el `markdown` inline heredado con `deleteField()`.
+- `fetchNoteBodies` lee cuerpos bajo demanda para las dos operaciones masivas: exportar el vault y
+  renombrar un tag. La migración (`migrateNoteBodies`) mueve los cuerpos inline que el listado
+  todavía entregue, una vez, sin bloquear y sin perder nada si falla.
+- El import crea nota + cuerpo en el mismo lote; el agente (`agent/core.mjs`) lee y escribe el
+  cuerpo con `patchMany` (CAS sobre la nota) y su `etag` ahora cubre el texto, no la metadata.
 
-1. `notes/{id}` se queda con `title`, `tags`, `folderId`, `order`, ACL, `version`, timestamps.
-2. el cuerpo pasa a `notes/{id}/content/body`.
-3. exportar-todo y renombrar-tag leen cuerpos bajo demanda (batch, con progreso).
-4. `usage.setStorageUsage` deja de sumar `markdown.length` del listado (hoy `App.tsx:353`) y usa un
-   contador que se actualiza al guardar.
-5. Migración: escribir el subdocumento y borrar el campo van juntos, con `firestore.rules` y
-   `agent/firestore-rest.mjs` actualizados en el mismo commit.
+**Efecto medido.** Un vault de 300 notas × 20.000 caracteres pasa de **+5,91 MB** permanentes a
+**+0,05 MB** (sólo metadata); el cuerpo de la nota abierta se lee una vez y sólo esa. La primera
+carga deja de descargar el corpus entero, y con él el bloqueo de `loading`.
 
-Sólo vale la pena si el objetivo son vaults grandes (≥500 notas); para el caso medido son 5,91 MB.
+**Compatibilidad.** Las notas viejas siguen funcionando: `toNote` mantiene el cuerpo inline como
+`markdown`, `fetchNoteBodies` cae al documento de la nota si no hay `body/main`, y la migración se
+dispara sola cuando el listado muestra una nota en el formato viejo.
 
 ## 9. Orden y estado
 
@@ -194,9 +201,28 @@ Sólo vale la pena si el objetivo son vaults grandes (≥500 notas); para el cas
 | 1 | H3: emitir al guardar, comparación barata, decoraciones memoizadas | hecho |
 | 2 | H2 (tope de paneles) + H5 (code splitting) + H6 (streaming) | hecho |
 | 3 | H4 (tope de cache + contabilidad; falta el `limit` de `updates`) | parcial |
-| 4 | H1 (metadata/cuerpo separados + migración) | pendiente |
+| 4 | H1 (metadata/cuerpo separados + migración) | hecho |
 
-## 10. Cómo verificar
+## 10. Latencia percibida (el resto del triage)
+
+Los cuatro cambios que no son memoria, todos medibles en "cuántos round trips espera el usuario":
+
+| Punto | Antes | Ahora |
+| --- | --- | --- |
+| Importar un vault | 2 escrituras **secuenciales** por nota (crear + contenido): 1.000 RTT para 500 notas, minutos | 2 documentos por nota en **un commit por lote de 50**: ~10 RTT para 500 notas |
+| Reordenar (subir/bajar) | renumera y reescribe **todos** los hermanos (100 escrituras en una carpeta de 100), y >500 rompía el batch | 1 escritura en el caso normal (`moveOrder` usa el hueco de 10), renumber sólo cuando el hueco se agota, lotes de 400 |
+| Ver el reorden aplicado | esperar el snapshot (≈RTT) | `applyOrderOverride` muestra el orden nuevo en el frame; se descarta cuando el servidor coincide o la escritura falla |
+| Crear carpeta | 2 RTT (alta + snapshot) | 1: id reservado en cliente, fila optimista, y se revierte con aviso si falla |
+
+Dos detalles de implementación que evitan sorpresas: el override de orden deja al final los
+items que no conoce (una nota creada en otro dispositivo no desaparece), y el import reintenta
+un lote fallido nota por nota para no perder las otras 49.
+
+`subscribeEntitlement` y `subscribeUserSettings` quedaron como estaban: dos documentos de pocos
+campos, un listener cada uno, y condicionan menús ya visibles (hacerlos perezosos cambia un
+listener por un parpadeo).
+
+## 11. Cómo verificar
 
 - **Probe**: `NODE_OPTIONS="--expose-gc" npx vitest run --reporter=verbose --silent=false
   tests/memory.probe.test.tsx` y comparar con §2 y §3.

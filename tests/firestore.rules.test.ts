@@ -143,11 +143,58 @@ describe('notes: create', () => {
   })
 
   it('rejects oversized markdown', async () => {
-    await assertFails(setDoc(doc(db(OWNER), 'notes', 'n1'), noteDoc({ markdown: 'x'.repeat(250_001) })))
+    // The rule caps the inline (legacy) body in bytes; the client caps at 250.000
+    // characters, which is more bytes once the text has accents.
+    await assertFails(setDoc(doc(db(OWNER), 'notes', 'n1'), noteDoc({ markdown: 'x'.repeat(600_001) })))
+  })
+
+  it('accepts a note whose body lives in its own document', async () => {
+    const data = noteDoc({ markdownBytes: 8 })
+    delete (data as { markdown?: string }).markdown
+    await assertSucceeds(setDoc(doc(db(OWNER), 'notes', 'n1'), data))
   })
 
   it('rejects unknown fields', async () => {
     await assertFails(setDoc(doc(db(OWNER), 'notes', 'n1'), noteDoc({ isAdmin: true })))
+  })
+
+  describe('note body', () => {
+    const bodyDoc = (overrides: Record<string, unknown> = {}) => ({
+      markdown: '# hola',
+      bytes: 7,
+      version: 1,
+      updatedAt: ts(),
+      ...overrides,
+    })
+
+    it('is written and read by a member of the note', async () => {
+      await seedNote('n1')
+      await assertSucceeds(setDoc(doc(db(OWNER), 'notes', 'n1', 'body', 'main'), bodyDoc()))
+      const snap = await getDoc(doc(db(OWNER), 'notes', 'n1', 'body', 'main'))
+      expect(snap.data()?.markdown).toBe('# hola')
+    })
+
+    it('follows the note ACL', async () => {
+      await seedNote('n1', {
+        memberIds: [OWNER, EDITOR, VIEWER],
+        roles: { [OWNER]: 'owner', [EDITOR]: 'editor', [VIEWER]: 'viewer' },
+      })
+      await assertSucceeds(setDoc(doc(db(EDITOR), 'notes', 'n1', 'body', 'main'), bodyDoc()))
+      await assertFails(setDoc(doc(db(VIEWER), 'notes', 'n1', 'body', 'main'), bodyDoc()))
+      await assertFails(setDoc(doc(db(STRANGER), 'notes', 'n1', 'body', 'main'), bodyDoc()))
+    })
+
+    it('rejects foreign fields and oversized bodies', async () => {
+      await seedNote('n1')
+      await assertFails(
+        setDoc(doc(db(OWNER), 'notes', 'n1', 'body', 'main'), bodyDoc({ isAdmin: true }))
+      )
+      await assertFails(
+        setDoc(doc(db(OWNER), 'notes', 'n1', 'body', 'main'), bodyDoc({ markdown: 'x'.repeat(600_001) }))
+      )
+      // Only `main` is a valid body document.
+      await assertFails(setDoc(doc(db(OWNER), 'notes', 'n1', 'body', 'otro'), bodyDoc()))
+    })
   })
 
   it('rejects invalid access modes', async () => {

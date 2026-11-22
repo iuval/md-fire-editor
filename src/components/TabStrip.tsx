@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Ellipsis, Plus, X } from 'lucide-react'
 
 export interface TabStripItem {
@@ -17,6 +17,11 @@ interface TabStripProps {
   menuOpen: boolean
   /** Absent when this is the only pane: there is nothing to close. */
   onClosePane?: () => void
+  /**
+   * Rendered inside the top bar instead of its own strip: no bar chrome and no
+   * actions, because the top bar already owns the menu.
+   */
+  compact?: boolean
 }
 
 /**
@@ -34,8 +39,24 @@ export function TabStrip({
   onMenu,
   menuOpen,
   onClosePane,
+  compact = false,
 }: TabStripProps) {
-  const buttons = useRef<(HTMLButtonElement | null)[]>([])
+  const buttons = useRef(new Map<string, HTMLButtonElement | null>())
+  const listRef = useRef<HTMLDivElement>(null)
+
+  // Keep the active tab visible: opening a file at the end of a long strip used
+  // to leave it scrolled out of sight on narrow panes and phones.
+  useEffect(() => {
+    const list = listRef.current
+    const active = activeTabId ? buttons.current.get(activeTabId) : null
+    if (!list || !active) return
+    const left = active.offsetLeft
+    const right = left + active.offsetWidth
+    if (left < list.scrollLeft) list.scrollLeft = Math.max(0, left - 4)
+    else if (right > list.scrollLeft + list.clientWidth) {
+      list.scrollLeft = right - list.clientWidth + 4
+    }
+  }, [activeTabId, tabs.length])
 
   const onKeyDown = (event: React.KeyboardEvent, index: number) => {
     const last = tabs.length - 1
@@ -58,12 +79,12 @@ export function TabStrip({
     }
     event.preventDefault()
     onActivate(tabs[next].id)
-    buttons.current[next]?.focus()
+    buttons.current.get(tabs[next].id)?.focus()
   }
 
   return (
-    <div className="tabbar">
-      <div className="tabbar-tabs" role="tablist" aria-label="Archivos abiertos">
+    <div className={`tabbar${compact ? ' tabbar--inline' : ''}`}>
+      <div className="tabbar-tabs" role="tablist" aria-label="Archivos abiertos" ref={listRef}>
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId
           const title = tab.title || 'Sin título'
@@ -78,7 +99,7 @@ export function TabStrip({
             >
               <button
                 ref={(el) => {
-                  buttons.current[index] = el
+                  buttons.current.set(tab.id, el)
                 }}
                 className="tab-label"
                 role="tab"
@@ -112,31 +133,33 @@ export function TabStrip({
         </button>
       </div>
 
-      <div className="tabbar-actions">
-        <button
-          className="icon-btn icon-btn--sm"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect()
-            onMenu({ x: rect.right, y: rect.bottom })
-          }}
-          aria-label="Opciones del panel"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          title="Opciones del panel"
-        >
-          <Ellipsis size={14} />
-        </button>
-        {onClosePane && (
+      {!compact && (
+        <div className="tabbar-actions">
           <button
             className="icon-btn icon-btn--sm"
-            onClick={onClosePane}
-            aria-label="Cerrar panel"
-            title="Cerrar panel"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect()
+              onMenu({ x: rect.right, y: rect.bottom })
+            }}
+            aria-label="Opciones del panel"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="Opciones del panel"
           >
-            <X size={14} />
+            <Ellipsis size={14} />
           </button>
-        )}
-      </div>
+          {onClosePane && (
+            <button
+              className="icon-btn icon-btn--sm"
+              onClick={onClosePane}
+              aria-label="Cerrar panel"
+              title="Cerrar panel"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

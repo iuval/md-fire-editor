@@ -195,6 +195,10 @@ interface NotePaneProps {
   onNewNote: () => void
   /** Absent when this is the only pane. */
   onClosePane?: () => void
+  /** Its tabs are rendered by the top bar (single-pane layout). */
+  hideTabs?: boolean
+  /** The note document is still being written: its tab already exists. */
+  creating?: boolean
   onImport: () => void
   /** No notes at all yet: the empty pane carries the onboarding actions. */
   emptyWorkspace: boolean
@@ -226,6 +230,8 @@ export function NotePane({
   onCloseTab,
   onNewNote,
   onClosePane,
+  hideTabs = false,
+  creating = false,
   onImport,
   emptyWorkspace,
   onMenu,
@@ -245,16 +251,18 @@ export function NotePane({
       aria-label="Panel de nota"
       onPointerDownCapture={onFocus}
     >
-      <TabStrip
-        tabs={pane.tabs.map((tab) => ({ id: tab.id, title: titles.get(tab.noteId) ?? '' }))}
-        activeTabId={activeTabId}
-        onActivate={onActivateTab}
-        onClose={onCloseTab}
-        onNewNote={onNewNote}
-        onMenu={onMenu}
-        menuOpen={menuOpen}
-        onClosePane={onClosePane}
-      />
+      {!hideTabs && (
+        <TabStrip
+          tabs={pane.tabs.map((tab) => ({ id: tab.id, title: titles.get(tab.noteId) ?? '' }))}
+          activeTabId={activeTabId}
+          onActivate={onActivateTab}
+          onClose={onCloseTab}
+          onNewNote={onNewNote}
+          onMenu={onMenu}
+          menuOpen={menuOpen}
+          onClosePane={onClosePane}
+        />
+      )}
 
       <div className="scroll">
         {noteError && (
@@ -288,7 +296,7 @@ export function NotePane({
 
         {hasTab && !note && !noteError && (
           <p className="hint" style={{ padding: '16px 24px' }}>
-            Cargando…
+            {creating ? 'Creando la nota…' : 'Cargando…'}
           </p>
         )}
 

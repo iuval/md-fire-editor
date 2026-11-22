@@ -110,6 +110,14 @@ describe('tab strip', () => {
     expect(added).toBe(1)
   })
 
+  it('drops the panel actions when it lives in the top bar', () => {
+    const el = strip({ compact: true })
+    expect(el.querySelector('.tabbar')!.className).toContain('tabbar--inline')
+    // The top bar already owns the menu, so the strip keeps only tabs and +.
+    expect(el.querySelector('.tabbar-actions')).toBeNull()
+    expect(el.querySelector('.tab-new')).not.toBeNull()
+  })
+
   it('closes the whole pane from the X on the right', () => {
     let closed = 0
     const el = strip({ onClosePane: () => closed++ })

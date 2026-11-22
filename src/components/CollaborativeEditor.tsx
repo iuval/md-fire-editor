@@ -1,14 +1,24 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { Editor } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/react'
+import { isChangeOrigin } from '@tiptap/extension-collaboration'
 import { Loader2 } from 'lucide-react'
 import type { ProviderStatus, SyncStats } from '../lib/collab/provider'
 import { acquireNoteSession } from '../lib/collab/noteSession'
 import type { AwarenessUser, CollabUser } from '../lib/collab/awareness'
 import { MAX_MARKDOWN_BYTES, type Note } from '../lib/notes'
 import { colorForUid } from '../lib/collab/presenceColors'
-import { sameMarkdown } from '../lib/markdown'
 import { buildEditorExtensions } from '../lib/editor/extensions'
+import { MarkdownEmitter } from '../lib/editor/markdownEmitter'
 import { EditorToolbar } from './EditorToolbar'
+
+/** The editor's own markdown serialiser (tiptap-markdown). */
+type MarkdownStorage = { markdown: { getMarkdown(): string } }
+
+function markdownOf(editor: Editor | null): string {
+  if (!editor) return ''
+  return (editor.storage as unknown as MarkdownStorage).markdown.getMarkdown()
+}
 
 interface CollaborativeEditorProps {
   note: Note
@@ -44,11 +54,15 @@ export function CollaborativeEditor({
     changeRef.current = onMarkdownChange
   }, [onMarkdownChange])
 
-  // Last markdown this editor emitted. Anything else arriving on the note
-  // document is an external edit (e.g. the agent CLI) and must be applied to
-  // the shared Y document so every client converges on it.
-  const emittedRef = useRef(body)
-  const seedingRef = useRef(true)
+  // Serialising the editor back to markdown costs a copy of the body (0,55 ms for
+  // 100 KB), so it happens once per burst of typing instead of once per
+  // keystroke. The emitter also remembers what this editor already said: anything
+  // else arriving on the note document is an external edit (the agent CLI,
+  // another device) and must be applied to the shared Y document so every client
+  // converges on it.
+  const [emitter] = useState(() => new MarkdownEmitter({ initial: body }))
+
+  useEffect(() => () => emitter.dispose(), [emitter])
 
   const userInfo: CollabUser = useMemo(
     () => ({ name: userName, color: colorForUid(uid) }),
@@ -98,55 +112,47 @@ export function CollaborativeEditor({
         attributes: { class: 'md-editor-content', spellcheck: 'true' },
       },
       onCreate: ({ editor: instance }) => {
-        seedingRef.current = true
-        try {
-          const fragment = session.doc.getXmlFragment('content')
-          // Only the first view of a note may seed it: the second one renders
-          // what the shared document already holds.
-          if (session.claimSeed() && fragment.length === 0 && body.trim()) {
-            instance.commands.setContent(body)
-          }
-        } finally {
-          const storage = instance.storage as unknown as { markdown: { getMarkdown(): string } }
-          emittedRef.current = storage.markdown.getMarkdown()
-          seedingRef.current = false
+        emitter.configure({
+          serialize: () => markdownOf(instance),
+          emit: (markdown) => {
+            if (markdown.length <= MAX_MARKDOWN_BYTES) changeRef.current(markdown)
+          },
+        })
+        const fragment = session.doc.getXmlFragment('content')
+        // Only the first view of a note may seed it: the second one renders
+        // what the shared document already holds.
+        if (session.claimSeed(owner) && fragment.length === 0 && body.trim()) {
+          instance.commands.setContent(body)
         }
+        // Seeding fires `update` too. Emitting that echo made every *open* bump
+        // `updatedAt`, reordering the note inside its folder.
+        emitter.adopt(markdownOf(instance))
         setReady(true)
       },
-      onUpdate: ({ editor: instance }) => {
-        const storage = instance.storage as unknown as { markdown: { getMarkdown(): string } }
-        const markdown = storage.markdown.getMarkdown()
-        // Seeding the document (and applying a remote change) also fires
-        // `onUpdate`. Emitting that echo made every *open* bump `updatedAt`,
-        // reordering the note inside its folder.
-        if (seedingRef.current) {
-          emittedRef.current = markdown
-          return
-        }
-        // A transient empty document while we already have content is the editor
-        // rebuilding, not the user deleting everything.
-        if (!markdown.trim() && emittedRef.current.trim()) return
-        if (sameMarkdown(markdown, emittedRef.current)) {
-          emittedRef.current = markdown
-          return
-        }
-        emittedRef.current = markdown
-        if (markdown.length <= MAX_MARKDOWN_BYTES) changeRef.current(markdown)
+      onUpdate: ({ transaction }) => {
+        // A Yjs-originated change comes from another view (a split showing the
+        // same note) or another device. Writing it back would duplicate the save
+        // and, between two views, ping-pong the same content forever.
+        if (isChangeOrigin(transaction)) return
+        emitter.markDirty()
       },
     },
     [session, userInfo]
   )
 
-  // Reconcile external writes (agent CLI, another device, an import).
+  // Reconcile external writes (agent CLI, another device, an import). The
+  // shared document has one writer: if every view applied the note's markdown,
+  // two panes showing the same note would insert it twice.
   useEffect(() => {
-    if (!editor) return
+    if (!editor || !session.isPrimary(owner)) return
     const incoming = body ?? ''
-    const storage = editor.storage as unknown as { markdown: { getMarkdown(): string } }
-    const current = storage.markdown.getMarkdown()
-    if (!incoming || incoming === current || incoming === emittedRef.current) return
-    emittedRef.current = incoming
+    const current = markdownOf(editor)
+    if (!incoming || incoming === current) return
+    // Adopt before applying: the `update` this triggers must not look like a
+    // local edit (it would be written straight back).
+    emitter.adopt(incoming)
     editor.commands.setContent(incoming)
-  }, [editor, body])
+  }, [editor, body, emitter, session, owner])
 
   useEffect(() => {
     if (!editor) return

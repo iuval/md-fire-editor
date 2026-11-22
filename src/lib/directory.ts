@@ -38,10 +38,16 @@ export async function publishOwnDirectoryEntry(
   })
 }
 
+/** Names are stable enough for a session; reopening the share panel was one read per member. */
+const profileNames = new Map<string, string | null>()
+
 export async function getProfileName(uid: string): Promise<string | null> {
   if (!db) return null
+  if (profileNames.has(uid)) return profileNames.get(uid) ?? null
   const snap = await getDoc(doc(db, 'profiles', uid))
-  return snap.exists() ? ((snap.data().name as string) ?? null) : null
+  const name = snap.exists() ? ((snap.data().name as string) ?? null) : null
+  profileNames.set(uid, name)
+  return name
 }
 
 export interface DirectoryEntry {

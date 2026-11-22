@@ -26,8 +26,9 @@ import '../src/index.css'
 import { Sidebar } from '../src/components/Sidebar'
 import { PaneBar } from '../src/components/PaneBar'
 import { NotePane } from '../src/components/NotePane'
+import { TabStrip } from '../src/components/TabStrip'
 import { Workspace } from '../src/components/Workspace'
-import { closePane, listPanes, singlePane, splitPane, type PaneLeaf } from '../src/lib/panes'
+import { closePane, listPanes, openTab, singlePane, splitPane, type PaneLeaf } from '../src/lib/panes'
 import { Menu } from '../src/components/Menu'
 import { NotePanels } from '../src/components/NotePanels'
 import { CollaborativeEditor } from '../src/components/CollaborativeEditor'
@@ -81,6 +82,8 @@ interface ShellProps {
   title?: string
   /** Replaces the single document with the tab/split workspace. */
   paneContent?: React.ReactNode
+  /** Tabs rendered inside the top bar (single-pane layout). */
+  barTabs?: React.ReactNode
 }
 
 function Shell({
@@ -94,6 +97,7 @@ function Shell({
   children,
   title,
   paneContent,
+  barTabs,
 }: ShellProps) {
   // `sidebar=closed` lets the review see the phone layout without the drawer on top.
   const [sidebarOpen] = useState(mobile && params.get('sidebar') !== 'closed')
@@ -119,6 +123,7 @@ function Shell({
         onCollapse={() => setCollapsed((v) => !v)}
         isMobile={mobile}
         isOpen={mobile ? sidebarOpen : !collapsed}
+        status={status}
         loading={loading}
         tagTree={tagTreeOf(list)}
         selectedTags={selectedTags}
@@ -139,6 +144,7 @@ function Shell({
           onToggleSidebar={() => setCollapsed((v) => !v)}
           onMenu={() => {}}
           menuOpen={false}
+          tabs={barTabs}
         />
 
         {paneContent ?? (
@@ -187,15 +193,20 @@ function Shell({
   )
 }
 
-/** Two panes with tabs: the review state for the tab bar and the split. */
-function TabsProbe() {
+/** Two panes with tabs (or one pane whose tabs live in the top bar). */
+function TabsProbe({ single = false }: { single?: boolean }) {
   const [focused, setFocused] = useState('p1')
   const [tree, setTree] = useState(() => {
+    if (single) {
+      let pane = openTab(singlePane('p1', notes[0].id, 't1'), 'p1', notes[1].id, 't2')
+      pane = openTab(pane, 'p1', notes[2].id, 't3')
+      return { ...pane, activeTabId: 't2' }
+    }
     const empty = params.get('empty') === '1'
     const second: PaneLeaf = {
       kind: 'pane',
       id: 'p2',
-      tabs: empty ? [] : [{ id: 't2', noteId: notes[1].id }],
+      tabs: empty ? [] : [{ id: 't2', noteId: params.get('same') === '1' ? activeNote.id : notes[1].id }],
       activeTabId: empty ? null : 't2',
     }
     return splitPane(
@@ -235,6 +246,7 @@ function TabsProbe() {
             onCloseTab={() => {}}
             onNewNote={() => {}}
             onClosePane={closable ? () => setTree((current) => closePane(current, pane.id)) : undefined}
+            hideTabs={single}
             onImport={() => {}}
             emptyWorkspace={false}
             onMenu={() => {}}
@@ -385,6 +397,34 @@ function App() {
           status={connectedStatus}
           presenceUsers={presence as AwarenessUser[]}
           paneContent={<TabsProbe />}
+        />
+      )
+
+    case 'tabs-inline':
+      return (
+        <Shell
+          notes={notes}
+          activeId={activeNote.id}
+          expanded={allExpanded}
+          status={connectedStatus}
+          presenceUsers={presence as AwarenessUser[]}
+          paneContent={<TabsProbe single />}
+          barTabs={
+            <TabStrip
+              compact
+              tabs={[
+                { id: 't1', title: notes[0].title },
+                { id: 't2', title: notes[1].title },
+                { id: 't3', title: notes[2].title },
+              ]}
+              activeTabId="t2"
+              onActivate={() => {}}
+              onClose={() => {}}
+              onNewNote={() => {}}
+              onMenu={() => {}}
+              menuOpen={false}
+            />
+          }
         />
       )
 
@@ -647,6 +687,7 @@ function CollapsedShell() {
         onCollapse={() => {}}
         isMobile={false}
         isOpen={false}
+        status={connectedStatus}
         loading={false}
         tagTree={tagTreeOf(notes)}
         selectedTags={[]}

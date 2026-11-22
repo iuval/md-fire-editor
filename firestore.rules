@@ -201,10 +201,13 @@ service cloud.firestore {
 
     // ---------- notes ----------
 
+    // Bodies live in notes/{id}/body/main; `markdown` stays optional on the note
+    // document only so notes written before the split keep working.
     function validNote(d) {
       return d.keys().hasOnly([
           'ownerId', 'folderId', 'aclSource', 'memberIds', 'roles', 'access',
-          'title', 'markdown', 'tags', 'order', 'version', 'createdAt', 'updatedAt'
+          'title', 'markdown', 'markdownBytes', 'tags', 'order', 'version',
+          'createdAt', 'updatedAt'
         ])
         && isString(d.ownerId)
         // Notes created before folders existed omit both fields: treat as 'own'.
@@ -213,16 +216,32 @@ service cloud.firestore {
         && validAcl(d)
         && isString(d.title)
         && d.title.size() <= 300
-        && isString(d.markdown)
-        && d.markdown.size() <= 250000
+        // Only legacy notes carry the body here. The cap is in bytes and the
+        // client caps at 250.000 characters, which is more than 250.000 bytes
+        // once the text has accents.
+        && (!d.keys().hasAny(['markdown'])
+          || (isString(d.markdown) && d.markdown.size() <= 600000))
+        && (!d.keys().hasAny(['markdownBytes'])
+          || (d.markdownBytes is int && d.markdownBytes >= 0 && d.markdownBytes <= 600000))
         && validTags(d)
         && (!d.keys().hasAny(['order']) || (d.order is int && d.order >= 0))
         && (!d.keys().hasAny(['version']) || d.version is int);
     }
 
+    // A note body. Kept apart from the note document so the workspace list (one
+    // snapshot per user) never downloads every body.
+    function validBody(d) {
+      return d.keys().hasOnly(['markdown', 'bytes', 'version', 'updatedAt'])
+        && isString(d.markdown)
+        && d.markdown.size() <= 600000
+        && (!d.keys().hasAny(['bytes']) || (d.bytes is int && d.bytes >= 0))
+        && (!d.keys().hasAny(['version']) || d.version is int)
+        && (!d.keys().hasAny(['updatedAt']) || isTimestamp(d.updatedAt));
+    }
+
     function contentOnlyChange() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['title', 'markdown', 'tags', 'order', 'updatedAt', 'version']);
+        .hasOnly(['title', 'markdown', 'markdownBytes', 'tags', 'order', 'updatedAt', 'version']);
     }
 
     function ownershipUnchanged(current, next) {
@@ -289,6 +308,18 @@ service cloud.firestore {
 
     function noteAcl(noteId) {
       return aclOf(get(/databases/$(database)/documents/notes/$(noteId)).data);
+    }
+
+    // The note body: one document, same ACL as the note it belongs to.
+    match /notes/{noteId}/body/{docId} {
+      allow read: if canRead(noteAcl(noteId));
+
+      allow create, update: if canWrite(noteAcl(noteId))
+        && docId == 'main'
+        && validBody(request.resource.data);
+
+      // Deleting a note removes its body; writers may also drop it explicitly.
+      allow delete: if canWrite(noteAcl(noteId));
     }
 
     // One block of the Yjs log. The envelope is what makes blocks verifiable and

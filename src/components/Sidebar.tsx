@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, Folder, Link2, MoreHorizontal, PanelLeftClose, Plus, User } from 'lucide-react'
+import type { ProviderStatus } from '../lib/collab/provider'
 import type { Folder as FolderType, Note } from '../lib/notes'
 import { buildFolderTree, type FolderNode } from '../lib/folders'
-import { sortFolders, sortNotes, type SortMode } from '../lib/sorting'
+import { applyOrderOverride, orderKey, sortFolders, sortNotes, type SortMode } from '../lib/sorting'
+import { syncText, syncTone } from '../lib/syncStatus'
 import {
   DEFAULT_SIDEBAR_WIDTH,
   MAX_SIDEBAR_WIDTH,
@@ -23,6 +25,8 @@ export interface SidebarProps {
   onNewNote: (folder?: FolderType) => void
   onHeaderMenu: (pos: { x: number; y: number }) => void
   rootSort: SortMode
+  /** Manual moves applied locally while the write is in flight. */
+  orderOverrides?: Record<string, string[]>
   onFolderMenu: (folder: FolderType, pos: { x: number; y: number }) => void
   expanded: Set<string>
   onToggleFolder: (id: string) => void
@@ -30,6 +34,7 @@ export interface SidebarProps {
   onCollapse: () => void
   isMobile: boolean
   isOpen: boolean
+  status: ProviderStatus
   loading: boolean
   tagTree: TagNode[]
   selectedTags: string[]
@@ -69,6 +74,7 @@ export function Sidebar({
   onNewNote,
   onHeaderMenu,
   rootSort,
+  orderOverrides,
   onFolderMenu,
   expanded,
   onToggleFolder,
@@ -76,6 +82,7 @@ export function Sidebar({
   onCollapse,
   isMobile,
   isOpen,
+  status,
   loading,
   tagTree,
   selectedTags,
@@ -87,6 +94,26 @@ export function Sidebar({
 }: SidebarProps) {
   const [width, setWidth] = useState(initialWidth)
   const [tagsOpen, setTagsOpen] = useState(initialTagsOpen)
+  const [statusOpen, setStatusOpen] = useState(false)
+  const identityRef = useRef<HTMLDivElement>(null)
+
+  // The status word is a popover on the dot: tap to read it, tap outside or
+  // press Escape to put it away.
+  useEffect(() => {
+    if (!statusOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setStatusOpen(false)
+    }
+    const onPointer = (e: PointerEvent) => {
+      if (!identityRef.current?.contains(e.target as Node)) setStatusOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onPointer)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onPointer)
+    }
+  }, [statusOpen])
 
   useEffect(() => {
     try {
@@ -147,7 +174,15 @@ export function Sidebar({
     }
   }
 
-  const rootNotes = sortNotes(notes.filter((n) => !n.folderId), rootSort)
+  const overrideOf = (kind: 'notes' | 'folders', parentId: string | null) =>
+    applyOrderOverrideItems(kind, parentId)
+  const applyOrderOverrideItems = (kind: 'notes' | 'folders', parentId: string | null) =>
+    orderOverrides?.[orderKey(kind, parentId)]
+
+  const rootNotes = applyOrderOverride(
+    sortNotes(notes.filter((n) => !n.folderId), rootSort),
+    overrideOf('notes', null)
+  )
   const byId = new Map(folders.map((f) => [f.id, f]))
   const sortOf = (folderId: string | null): SortMode => {
     let current = folderId
@@ -160,10 +195,18 @@ export function Sidebar({
     }
     return rootSort
   }
-  const notesOf = (folderId: string) => sortNotes(notes.filter((n) => n.folderId === folderId), sortOf(folderId))
+  const notesOf = (folderId: string) =>
+    applyOrderOverride(
+      sortNotes(notes.filter((n) => n.folderId === folderId), sortOf(folderId)),
+      overrideOf('notes', folderId)
+    )
   const tree = buildFolderTree(folders)
   const sortTree = (nodes: FolderNode[]): FolderNode[] => {
-    const ordered = sortFolders(nodes.map((n) => n.folder), sortOf(nodes[0]?.folder.parentId ?? null))
+    const parentId = nodes[0]?.folder.parentId ?? null
+    const ordered = applyOrderOverride(
+      sortFolders(nodes.map((n) => n.folder), sortOf(parentId)),
+      overrideOf('folders', parentId)
+    )
       .map((folder) => nodes.find((n) => n.folder.id === folder.id)!)
       .filter(Boolean)
     return ordered
@@ -356,13 +399,25 @@ export function Sidebar({
       {/* Identity only: the name lives in the menu button's label, not as a
           second line competing with the tree. */}
       <div className="sidebar-foot">
-        {photoURL ? (
-          <img className="avatar" src={photoURL} alt="" referrerPolicy="no-referrer" />
-        ) : (
-          <span className="avatar" aria-hidden="true">
-            {uid ? <User size={11} /> : null}
-          </span>
-        )}
+        <div className="sidebar-identity" ref={identityRef}>
+          {photoURL ? (
+            <img className="avatar" src={photoURL} alt="" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="avatar" aria-hidden="true">
+              {uid ? <User size={11} /> : null}
+            </span>
+          )}
+          <button
+            className={`sync-dot-btn sync--${syncTone(status)}`}
+            onClick={() => setStatusOpen((open) => !open)}
+            aria-label={`Estado de sincronización: ${syncText(status)}`}
+            aria-expanded={statusOpen}
+            title={syncText(status)}
+          >
+            <span className="sync-dot" aria-hidden="true" />
+          </button>
+          {statusOpen && <span className="sync-bubble">{syncText(status)}</span>}
+        </div>
         <button
           className="icon-btn icon-btn--sm"
           onClick={onAccountClick}
