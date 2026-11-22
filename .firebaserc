@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "md-sync-app"
+    "default": "md-sync-app",
+    "staging": "firemd-staging"
   }
 }
