@@ -250,6 +250,32 @@ colaboración **exista**; el costo de entrar bajó de proporcional-a-la-bitácor
 Presence pasó de escribir cada 200 ms por cursor a 1,2 s con dedupe y pausa con la pestaña
 oculta.
 
+## 10bis. Lo que se implementó por la experiencia, no por el costo
+
+El objetivo de esta ronda no fue mover el transporte sino que la colaboración **se sienta**
+mejor. Tres cosas se podían arreglar sin infraestructura nueva y quedaron implementadas:
+
+| Qué se sentía mal | Antes | Ahora |
+|---|---|---|
+| El punto verde mentía con la red caída | `connected` pasaba a `true` en el primer snapshot y nunca volvía | el transporte escucha `online`/`offline` del navegador y clasifica los errores: red caída = «Sin conexión» + «tus cambios se guardan acá», no un error rojo |
+| El texto del estado no explicaba nada | «Sin conexión» para un bloque corrupto o un pegado demasiado grande | palabra + motivo (`syncDetail`): cuántos cambios faltan enviar, por qué falló, qué hacer |
+| Cursor fantasma de una pestaña cerrada | hasta **50 s** (`STALE_AFTER_MS`) | hasta **25 s**: heartbeat 10 s + `pagehide` que borra la presencia en el acto, y `pageshow` que la re-anuncia al volver del bfcache |
+| Dos pestañas de la misma cuenta | esperaban el viaje a Firestore (417 ms) | **`BroadcastChannel`**, un `postMessage` en el mismo tick, sin servidor ni escritura (`src/lib/collab/localChannel.ts`) |
+
+Decisiones que vale registrar:
+
+- **`metadata.fromCache` no sirve como señal de «sin conexión».** También es `true` cuando el
+gestor multi-pestaña entrega datos frescos desde la caché compartida, así que usarlo daba
+falsos positivos en una sesión sana. La señal honesta es `navigator.onLine` más los errores
+clasificados de transporte.
+- **La región `role="status"` anuncia la palabra, nunca el detalle.** El contador de cambios
+pendientes cambia en cada ráfaga de tipeo: anunciarlo haría que el lector de pantalla se
+interrumpa a sí mismo. El motivo vive en la burbuja y en el `aria-label` del punto, que se
+leen cuando el usuario los pide.
+- **El canal local no reemplaza a Firestore.** Aplica el update con origen remoto, así que no
+lo reescribe ni lo reemite; los tests de integración lo desactivan a propósito para seguir
+probando el camino de red.
+
 ## 11. Límites que condicionan el diseño
 
 - **Firestore**: documento ≤ 1 MiB (campo ≤ 1.048.487 bytes); colección con claves
@@ -259,8 +285,17 @@ oculta.
   ~**1.000 escrituras/s**; escritura por operación ≤ 16 MB desde SDK.
 - Para un editor de notas, RTDB es la capa natural para el canal caliente (bloques chicos,
   alta frecuencia, sin costo por escritura) y Firestore para el documento durable (ACL,
-  manifiesto, snapshots). Migrar la bitácora a RTDB es el próximo salto si el volumen crece:
-  con Firestore, tipear 30 min seguidos son ~7.000 escrituras, la mitad del plan diario.
+  manifiesto, snapshots). Con Firestore, tipear 30 min seguidos son ~7.000 escrituras, la
+  mitad del plan diario.
+- **Lo que bloquea RTDB no es el costo, son las reglas.** `firestore.rules` resuelve la ACL
+  con lecturas entre documentos (`noteAcl(noteId)` → `get(/databases/.../notes/$(noteId))`,
+  `folderDoc(id)`, y `hasPaidPlan(user)` para el gate de sharing). RTDB **no puede leer
+  Firestore desde sus reglas**, así que habría que espejar ACL *y* entitlements en el árbol, y
+  la revocación pasaría de inmediata a eventual. Alternativa sin servidor: identificar el
+  nodo con un *capability id* por nota (un bearer token que solo se obtiene leyendo la nota
+  en Firestore, que sí exige permisos) — sirve para presencia, no para el documento.
+- **Las 100 conexiones simultáneas del plan gratuito** son un techo más duro que 20k
+  escrituras/día: cada pestaña abierta es una conexión permanente.
 
 ## Referencias
 
