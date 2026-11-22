@@ -92,7 +92,7 @@ import {
   type Credits,
   type UsageTotals,
 } from './lib/usage'
-import type { SyncStats } from './lib/collab/provider'
+import type { ProviderStatus, SyncStats } from './lib/collab/provider'
 import {
   fetchNoteBodies,
   importNotes,
@@ -333,8 +333,9 @@ function AppTree() {
   const [noteMenu, setNoteMenu] = useState<{ note: Note; x: number; y: number } | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(initialExpanded)
   const [presence, setPresence] = useState<AwarenessUser[]>([])
-  const [status, setStatus] = useState({
+  const [status, setStatus] = useState<ProviderStatus>({
     connected: false,
+    offline: false,
     pendingWrites: 0,
     updateCount: 0,
     error: null as string | null,

@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db as defaultDb } from '../../firebase'
 import { base64ToBytes, bytesToBase64, sha256Hex } from './encoding'
+import { classifyTransportError } from './transportError'
 
 const REMOTE_ORIGIN = Symbol('firestore-remote')
 
@@ -38,6 +39,12 @@ export interface SyncStats {
 
 export interface ProviderStatus {
   connected: boolean
+  /**
+   * The backend is unreachable. Optional because the listener keeps serving
+   * cached snapshots when the socket drops, so `connected` alone cannot tell
+   * "nothing to read" from "nothing to reach".
+   */
+  offline?: boolean
   pendingWrites: number
   updateCount: number
   error: string | null
@@ -100,7 +107,13 @@ export class FirestoreYjsProvider {
   private hydrated = false
   private destroyed = false
   private listeners = new Set<(status: ProviderStatus) => void>()
-  private status: ProviderStatus = { connected: false, pendingWrites: 0, updateCount: 0, error: null }
+  private status: ProviderStatus = {
+    connected: false,
+    offline: false,
+    pendingWrites: 0,
+    updateCount: 0,
+    error: null,
+  }
 
   constructor(noteId: string, doc: Y.Doc = new Y.Doc(), firestore: Firestore | null = defaultDb) {
     this.noteId = noteId
@@ -127,6 +140,19 @@ export class FirestoreYjsProvider {
 
     this.doc.on('update', this.handleLocalUpdate)
 
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.handleOnline)
+      window.addEventListener('offline', this.handleOffline)
+      // The browser's own flag is the only honest one available here: a
+      // listener keeps answering from the local cache while the socket is
+      // down, and `metadata.fromCache` also covers the shared multi-tab cache,
+      // where the data is perfectly fresh. That would have produced a false
+      // "Sin conexión" in a healthy session.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        this.setStatus({ offline: true })
+      }
+    }
+
     const manifestRef = doc(this.fs, 'notes', this.noteId, 'collab', 'manifest')
     this.unsubs.push(
       onSnapshot(
@@ -142,7 +168,7 @@ export class FirestoreYjsProvider {
             this.applySnapshot(base64ToBytes(data.snapshot))
           }
         },
-        (err) => this.setStatus({ error: err.message })
+        (err) => this.setTransportError(err)
       )
     )
 
@@ -172,15 +198,33 @@ export class FirestoreYjsProvider {
           })
           this.setStatus({
             connected: true,
+            offline: false,
             updateCount: this.appliedIds.size,
             error: this.status.error,
           })
           this.hydrated = true
           void this.maybeCompact()
         },
-        (err) => this.setStatus({ connected: false, error: err.message })
+        (err) => this.setTransportError(err)
       )
     )
+  }
+
+  private handleOnline = () => this.setStatus({ offline: false })
+
+  private handleOffline = () => this.setStatus({ offline: true, connected: false })
+
+  /**
+   * A dropped socket is not a broken note: it is queued work, and the words
+   * must say so instead of showing a red dot with a raw SDK message.
+   */
+  private setTransportError(err: unknown) {
+    const failure = classifyTransportError(err)
+    this.setStatus({
+      connected: failure.offline ? false : this.status.connected,
+      offline: failure.offline || Boolean(this.status.offline),
+      error: failure.error,
+    })
   }
 
   private handleLocalUpdate = (update: Uint8Array, origin: unknown) => {
@@ -219,7 +263,9 @@ export class FirestoreYjsProvider {
       this.queuedBytes = 0
       this.setStatus({
         pendingWrites: 0,
-        error: `el cambio es demasiado grande (${Math.round(merged.byteLength / 1024)} KB)`,
+        error: `El último cambio es demasiado grande para sincronizarse (${Math.round(
+          merged.byteLength / 1024
+        )} KB)`,
       })
       return
     }
@@ -253,7 +299,7 @@ export class FirestoreYjsProvider {
       this.nextJid = jid
       this.queued.unshift(merged)
       this.queuedBytes += merged.byteLength
-      this.setStatus({ error: (err as Error).message })
+      this.setTransportError(err)
     } finally {
       this.inflight--
     }
@@ -274,7 +320,7 @@ export class FirestoreYjsProvider {
       bytes = base64ToBytes(block.data)
     } catch {
       this.stats.rejectedBlocks++
-      this.setStatus({ error: 'bloque corrupto (base64 inválido)' })
+      this.setStatus({ error: 'Se descartó un cambio dañado de otro dispositivo' })
       return
     }
 
@@ -283,7 +329,7 @@ export class FirestoreYjsProvider {
       if (expected !== block.hash) {
         // Tampered or truncated block: refuse it, keep the rest flowing.
         this.stats.rejectedBlocks++
-        this.setStatus({ error: 'bloque rechazado: el hash no coincide' })
+        this.setStatus({ error: 'Se descartó un cambio que no coincide con su firma' })
         return
       }
     }
@@ -359,7 +405,7 @@ export class FirestoreYjsProvider {
       this.stats.compactions++
       this.setStatus({ updateCount: this.appliedIds.size, error: null })
     } catch (err) {
-      this.setStatus({ error: (err as Error).message })
+      this.setTransportError(err)
     } finally {
       this.compacting = false
     }
@@ -373,6 +419,10 @@ export class FirestoreYjsProvider {
 
   destroy(): void {
     this.destroyed = true
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.handleOnline)
+      window.removeEventListener('offline', this.handleOffline)
+    }
     if (this.flushTimer) {
       clearTimeout(this.flushTimer)
       this.flushTimer = null

@@ -9,6 +9,10 @@ import { syncText } from '../lib/syncStatus'
  * pane itself, where a layout without a top bar still keeps it mounted.
  */
 export function SyncAnnouncer({ status }: { status: ProviderStatus }) {
+  // The word only, never the detail: this is a live region, and the pending
+  // count changes on every burst of typing, so mentioning it would make a
+  // screen reader interrupt itself constantly. The reason lives in the dot's
+  // label, which is read when the user asks for it.
   return (
     <span className="sr-only" role="status">
       {syncText(status)}

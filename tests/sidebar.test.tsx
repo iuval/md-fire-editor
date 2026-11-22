@@ -329,7 +329,10 @@ describe('sync dot in the footer', () => {
 
     act(() => button.click())
     expect(button.getAttribute('aria-expanded')).toBe('true')
-    expect(el.querySelector('.sync-bubble')!.textContent).toBe('Guardando')
+    const bubble = el.querySelector('.sync-bubble')!
+    expect(bubble.textContent).toContain('Guardando')
+    // The word alone cannot say why the dot is not green.
+    expect(bubble.querySelector('.sync-detail')!.textContent).toBe('1 cambio sin enviar')
 
     act(() => button.click())
     expect(el.querySelector('.sync-bubble')).toBeNull()
@@ -339,7 +342,7 @@ describe('sync dot in the footer', () => {
     const el = render({ status: statusWith({ connected: false }) })
     const button = el.querySelector('.sync-dot-btn') as HTMLButtonElement
     act(() => button.click())
-    expect(el.querySelector('.sync-bubble')!.textContent).toBe('Conectando')
+    expect(el.querySelector('.sync-bubble')!.textContent).toContain('Conectando')
 
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))

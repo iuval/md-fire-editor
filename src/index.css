@@ -428,6 +428,34 @@ button {
   color: light-dark(var(--color-text), var(--color-text-dark));
 }
 
+/* The status word pops above the footer exactly like a notice: the dot is the
+   whole affordance, so the words must never widen the footer row. */
+.sync-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: -6px;
+  z-index: 40;
+  width: max-content;
+  max-width: calc(var(--sidebar-w, 240px) - 30px);
+  padding: 8px 10px;
+  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  border-radius: var(--radius-control);
+  background: light-dark(var(--color-bg), var(--color-bg-dark));
+  font-size: 12px;
+  line-height: 1.4;
+  color: light-dark(var(--color-text), var(--color-text-dark));
+  pointer-events: none;
+}
+
+/* The reason, not the state: "Error de sincronización" without a why is worse
+   than no status at all. */
+.sync-detail {
+  display: block;
+  margin-top: 2px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  font-size: 11px;
+}
+
 .avatar {
   width: 20px;
   height: 20px;

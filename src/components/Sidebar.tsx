@@ -18,7 +18,7 @@ import type { ProviderStatus } from '../lib/collab/provider'
 import type { Folder as FolderType, Note } from '../lib/notes'
 import { buildFolderTree, type FolderNode } from '../lib/folders'
 import { applyOrderOverride, orderKey, sortFolders, sortNotes, type SortMode } from '../lib/sorting'
-import { syncText, syncTone } from '../lib/syncStatus'
+import { syncDetail, syncText, syncTone } from '../lib/syncStatus'
 import {
   DEFAULT_SIDEBAR_WIDTH,
   MAX_SIDEBAR_WIDTH,
@@ -469,13 +469,20 @@ export function Sidebar({
           <button
             className={`sync-dot-btn sync--${syncTone(status)}`}
             onClick={() => setStatusOpen((open) => !open)}
-            aria-label={`Estado de sincronización: ${syncText(status)}`}
+            aria-label={`Estado de sincronización: ${syncText(status)}${
+              syncDetail(status) ? `. ${syncDetail(status)}` : ''
+            }`}
             aria-expanded={statusOpen}
             title={syncText(status)}
           >
             <span className="sync-dot" aria-hidden="true" />
           </button>
-          {statusOpen && <span className="sync-bubble">{syncText(status)}</span>}
+          {statusOpen && (
+            <span className="sync-bubble">
+              {syncText(status)}
+              {syncDetail(status) && <small className="sync-detail">{syncDetail(status)}</small>}
+            </span>
+          )}
           {notice && (
             <button
               className="notice-btn"
