@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 
-const PROJECT_ID = 'demo-mdfire'
+const PROJECT_ID = 'demo-firemd'
 const OWNER = 'owner-uid'
 let env: RulesTestEnvironment
 let core: typeof import('../agent/core.mjs')
@@ -24,9 +24,9 @@ async function anonymousUser(): Promise<{ idToken: string; uid: string }> {
 beforeAll(async () => {
   process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080'
   process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099'
-  process.env.MDFIRE_PROJECT = PROJECT_ID
-  process.env.MDFIRE_API_KEY = 'fake-key'
-  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), 'mdfire-vault-cfg-'))
+  process.env.FIREMD_PROJECT = PROJECT_ID
+  process.env.FIREMD_API_KEY = 'fake-key'
+  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), 'firemd-vault-cfg-'))
 
   env = await initializeTestEnvironment({
     projectId: PROJECT_ID,
@@ -42,7 +42,7 @@ beforeAll(async () => {
 
   const agent = await anonymousUser()
   agentUid = agent.uid
-  process.env.MDFIRE_ID_TOKEN = agent.idToken
+  process.env.FIREMD_ID_TOKEN = agent.idToken
 })
 
 afterAll(async () => {
@@ -74,10 +74,14 @@ beforeEach(async () => {
       roles: { [OWNER]: 'owner', [agentUid]: 'editor' },
       access: 'restricted',
       title: 'Ideas',
-      markdown: '# Ideas\n\n- uno #producto\n',
       tags: ['producto'],
       version: 1,
       createdAt: now,
+      updatedAt: now,
+    })
+    await setDoc(doc(db, 'notes', 'noteideas01', 'body', 'main'), {
+      markdown: '# Ideas\n\n- uno #producto\n',
+      version: 1,
       updatedAt: now,
     })
   })
@@ -92,7 +96,7 @@ describe('vault pull', () => {
     expect(existsSync(join(dir, 'Trabajo', 'Ideas.md'))).toBe(true)
     expect(readFileSync(join(dir, 'Trabajo', 'Ideas.md'), 'utf8')).toContain('# Ideas')
 
-    const manifest = JSON.parse(readFileSync(join(dir, '.mdfire', 'manifest.json'), 'utf8'))
+    const manifest = JSON.parse(readFileSync(join(dir, '.firemd', 'manifest.json'), 'utf8'))
     const entry = manifest.files['Trabajo/Ideas.md']
     expect(entry.id).toBe('noteideas01')
     expect(entry.etag).toMatch(/^1-[0-9a-f]{12}$/)
@@ -111,8 +115,9 @@ describe('vault push', () => {
     expect(result.updated).toBe(1)
     expect(result.conflicts).toHaveLength(0)
 
+    const body = await db.get('notes/noteideas01/body', 'main')
+    expect(body.data.markdown).toContain('#nuevo')
     const note = await db.get('notes', 'noteideas01')
-    expect(note.data.markdown).toContain('#nuevo')
     expect(note.data.tags).toContain('nuevo')
   })
 
@@ -134,8 +139,8 @@ describe('vault push', () => {
     const conflictFile = join(dir, result.conflicts[0].conflict)
     expect(readFileSync(conflictFile, 'utf8')).toContain('mi edición local')
 
-    const note = await db.get('notes', 'noteideas01')
-    expect(note.data.markdown).toContain('rema editado')
+    const body = await db.get('notes/noteideas01/body', 'main')
+    expect(body.data.markdown).toContain('rema editado')
   })
 
   it('creates a note for a new file inside a shared folder', async () => {
