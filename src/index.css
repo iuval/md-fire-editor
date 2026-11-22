@@ -588,6 +588,10 @@ button {
 }
 
 .workspace-pane {
+  /* The tab drag's drop surface is positioned against the pane, and the strip's
+     height is shared with it (see `.pane-drop--below-tabs`). */
+  --tabbar-height: 30px;
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -601,7 +605,7 @@ button {
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 30px;
+  height: var(--tabbar-height, 30px);
   flex-shrink: 0;
   padding: 0 6px;
   /* Inset, so the selected tab can cover it (see `.tab.active`). */
@@ -701,6 +705,80 @@ button {
 .workspace-pane:not(.focused) .tab.active:hover {
   background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
 }
+
+/* The tab in flight stays in place, faded, so the strip does not reflow under
+   the pointer until it lands. */
+.tab--dragging {
+  opacity: 0.45;
+}
+
+/* The insertion gap: hairline plus negative margins, so it costs no layout and
+   the tabs do not jump under the pointer. */
+.tab-drop-line {
+  flex: 0 0 2px;
+  width: 2px;
+  height: 18px;
+  margin: 0 -1px;
+  border-radius: 1px;
+  background: light-dark(var(--color-accent), var(--color-accent-dark));
+}
+
+/* ---------- dropping a dragged tab ----------
+   The pane body is one drop surface while a tab is in flight. It only listens
+   then: otherwise it would sit over the document and swallow every click. */
+.pane-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.pane-drop--below-tabs {
+  top: var(--tabbar-height, 30px);
+}
+
+body.tab-dragging .pane-drop {
+  pointer-events: auto;
+}
+
+/* The highlighted area is exactly the region the drop produces: a side becomes
+   the new pane, the centre receives the tab. */
+.pane-drop-hint {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  border-radius: 6px;
+  background: light-dark(
+    color-mix(in oklab, var(--color-accent) 12%, transparent),
+    color-mix(in oklab, var(--color-accent-dark) 18%, transparent)
+  );
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+}
+
+.pane-drop[data-zone='center'] .pane-drop-hint {
+  inset: 8px;
+}
+
+.pane-drop[data-zone='left'] .pane-drop-hint {
+  inset: 8px 50% 8px 8px;
+}
+
+.pane-drop[data-zone='right'] .pane-drop-hint {
+  inset: 8px 8px 8px 50%;
+}
+
+.pane-drop[data-zone='top'] .pane-drop-hint {
+  inset: 8px 8px 50% 8px;
+}
+
+.pane-drop[data-zone='bottom'] .pane-drop-hint {
 
 .tab-label {
   min-width: 0;

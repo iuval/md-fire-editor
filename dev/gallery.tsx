@@ -28,7 +28,17 @@ import { PaneBar } from '../src/components/PaneBar'
 import { NotePane } from '../src/components/NotePane'
 import { TabStrip } from '../src/components/TabStrip'
 import { Workspace } from '../src/components/Workspace'
-import { closePane, listPanes, openTab, singlePane, splitPane, type PaneLeaf } from '../src/lib/panes'
+import {
+  closePane,
+  listPanes,
+  moveTabToNewPane,
+  moveTabToPane,
+  openTab,
+  singlePane,
+  splitPane,
+  type PaneLeaf,
+} from '../src/lib/panes'
+import type { PaneTabDrop } from '../src/components/NotePane'
 import { Menu } from '../src/components/Menu'
 import { NotePanels } from '../src/components/NotePanels'
 import { CollaborativeEditor } from '../src/components/CollaborativeEditor'
@@ -187,6 +197,39 @@ function Shell({
   )
 }
 
+/**
+ * The strip that lives in the top bar, with its own tabs: dragging one along it
+ * is the same gesture as dragging it across the workspace, so the gallery has to
+ * carry the layout even when there is only one pane.
+ */
+function InlineStripProbe() {
+  const [pane, setPane] = useState<PaneLeaf>(() => {
+    let next = openTab(singlePane('p1', notes[0].id, 't1'), 'p1', notes[1].id, 't2')
+    next = openTab(next, 'p1', notes[2].id, 't3')
+    return next.kind === 'pane' ? { ...next, activeTabId: 't2' } : singlePane('p1')
+  })
+  const titles = new Map(notes.map((note) => [note.id, note.title]))
+  return (
+    <TabStrip
+      compact
+      paneId={pane.id}
+      onDropTab={(source, index) =>
+        setPane((current) => {
+          const next = moveTabToPane(current, source, current.id, index)
+          return next.kind === 'pane' ? next : current
+        })
+      }
+      tabs={pane.tabs.map((tab) => ({ id: tab.id, title: titles.get(tab.noteId) ?? '' }))}
+      activeTabId={pane.activeTabId}
+      onActivate={() => {}}
+      onClose={() => {}}
+      onNewNote={() => {}}
+      onSplitRight={() => {}}
+      onSplitDown={() => {}}
+    />
+  )
+}
+
 /** Two panes with tabs (or one pane whose tabs live in the top bar). */
 function TabsProbe({ single = false }: { single?: boolean }) {
   const [focused, setFocused] = useState('p1')
@@ -215,6 +258,31 @@ function TabsProbe({ single = false }: { single?: boolean }) {
 
   const closable = listPanes(tree).length > 1
 
+  /**
+   * The same drop the app does: the gallery has no router, so the layout state
+   * is all that changes. Used to review the drag and its highlighted landing
+   * area without signing in.
+   */
+  const tabDrop = (paneId: string): PaneTabDrop => ({
+    onDropAt: (source, index) => {
+      setTree((current) => moveTabToPane(current, source, paneId, index))
+      setFocused(paneId)
+    },
+    onDropZone: (source, zone) => {
+      const newPaneId = `pane-drop-${source.tabId}`
+      setTree((current) =>
+        zone === 'center'
+          ? moveTabToPane(current, source, paneId)
+          : moveTabToNewPane(current, source, paneId, zone, {
+              paneId: newPaneId,
+              splitId: `split-drop-${source.tabId}`,
+            })
+      )
+      setFocused(zone === 'center' ? paneId : newPaneId)
+    },
+    canSplit: true,
+  })
+
   return (
     <Workspace
       tree={tree}
@@ -240,6 +308,7 @@ function TabsProbe({ single = false }: { single?: boolean }) {
             onCloseTab={() => {}}
             onNewNote={() => {}}
             onClosePane={closable ? () => setTree((current) => closePane(current, pane.id)) : undefined}
+            tabDrop={tabDrop(pane.id)}
             hideTabs={single}
             onImport={() => {}}
             emptyWorkspace={false}
@@ -404,20 +473,7 @@ function App() {
           presenceUsers={presence as AwarenessUser[]}
           paneContent={<TabsProbe single />}
           barTabs={
-            <TabStrip
-              compact
-              tabs={[
-                { id: 't1', title: notes[0].title },
-                { id: 't2', title: notes[1].title },
-                { id: 't3', title: notes[2].title },
-              ]}
-              activeTabId="t2"
-              onActivate={() => {}}
-              onClose={() => {}}
-              onNewNote={() => {}}
-              onSplitRight={() => {}}
-              onSplitDown={() => {}}
-            />
+            <InlineStripProbe />
           }
         />
       )

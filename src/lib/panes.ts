@@ -219,23 +219,145 @@ function removePane(tree: PaneTree, paneId: string): PaneTree | null {
   return first ?? second
 }
 
+/** A tab anywhere in the tree: the pane it lives in and its id. */
+export interface TabRef {
+  paneId: string
+  tabId: string
+}
+
+/** The side a dropped tab splits a pane from. */
+export type DropSide = 'left' | 'right' | 'top' | 'bottom'
+
+function findTab(tree: PaneTree, ref: TabRef): { pane: PaneLeaf; tab: PaneTab } | null {
+  const pane = findPane(tree, ref.paneId)
+  const tab = pane?.tabs.find((candidate) => candidate.id === ref.tabId)
+  return pane && tab ? { pane, tab } : null
+}
+
+/**
+ * Takes one tab out of its pane, activating the neighbour a close would: the
+ * next tab, else the previous one. The pane is left in place even when that
+ * empties it, so a move can put the tab somewhere before the empty pane has to
+ * be pruned (see `pruneEmptyPanes`).
+ */
+function removeTab(tree: PaneTree, ref: TabRef): PaneTree {
+  return mapPane(tree, ref.paneId, (pane) => {
+    const index = pane.tabs.findIndex((tab) => tab.id === ref.tabId)
+    if (index < 0) return pane
+    const tabs = pane.tabs.filter((tab) => tab.id !== ref.tabId)
+    const nextActive =
+      pane.activeTabId === ref.tabId
+        ? (tabs[index] ?? tabs[index - 1] ?? null)?.id ?? null
+        : pane.activeTabId
+    return { ...pane, tabs, activeTabId: nextActive }
+  })
+}
+
+/**
+ * Collapses every empty pane into its sibling, so a tab that moved away does not
+ * leave a blank half behind. The workspace's last pane is kept even when empty:
+ * there has to be somewhere to open the next file.
+ */
+export function pruneEmptyPanes(tree: PaneTree): PaneTree {
+  if (tree.kind === 'pane') return tree
+  const first = pruneEmptyPanes(tree.first)
+  const second = pruneEmptyPanes(tree.second)
+  const firstEmpty = first.kind === 'pane' && first.tabs.length === 0
+  const secondEmpty = second.kind === 'pane' && second.tabs.length === 0
+  if (firstEmpty !== secondEmpty) return firstEmpty ? second : first
+  if (first === tree.first && second === tree.second) return tree
+  return { ...tree, first, second }
+}
+
 export function closeTab(tree: PaneTree, paneId: string, tabId: string): PaneTree {
   const pane = findPane(tree, paneId)
-  if (!pane) return tree
-  const index = pane.tabs.findIndex((tab) => tab.id === tabId)
-  if (index < 0) return tree
+  if (!pane || !pane.tabs.some((tab) => tab.id === tabId)) return tree
 
-  const tabs = pane.tabs.filter((tab) => tab.id !== tabId)
-  const nextActive =
-    pane.activeTabId === tabId
-      ? (tabs[index] ?? tabs[index - 1] ?? null)?.id ?? null
-      : pane.activeTabId
-  const next: PaneLeaf = { ...pane, tabs, activeTabId: nextActive }
-
-  if (tabs.length > 0) return mapPane(tree, paneId, () => next)
+  const next = removeTab(tree, { paneId, tabId })
+  const emptied = findPane(next, paneId)
+  if (emptied && emptied.tabs.length > 0) return next
   // The last tab is gone: the pane goes with it, its sibling takes the space.
-  const pruned = mapPane(tree, paneId, () => next)
-  return removePane(pruned, paneId) ?? pruned
+  return removePane(next, paneId) ?? next
+}
+
+/**
+ * Moves a tab into a pane, before the tab currently at `index` (end when
+ * omitted), and activates it. Order is the same whether the target is another
+ * pane or the tab's own — dragging a tab along its strip is the same gesture as
+ * dragging it across the workspace.
+ */
+export function moveTabToPane(
+  tree: PaneTree,
+  from: TabRef,
+  toPaneId: string,
+  index?: number
+): PaneTree {
+  const found = findTab(tree, from)
+  const target = findPane(tree, toPaneId)
+  if (!found || !target) return tree
+  const { tab } = found
+
+  if (from.paneId === toPaneId) {
+    const fromIndex = target.tabs.indexOf(tab)
+    const rest = target.tabs.filter((candidate) => candidate.id !== tab.id)
+    // `index` counts the tabs as they are now, the dragged one included.
+    const wanted = index === undefined ? rest.length : index > fromIndex ? index - 1 : index
+    const at = Math.min(rest.length, Math.max(0, wanted))
+    if (at === fromIndex && target.activeTabId === tab.id) return tree
+    const tabs = at === fromIndex ? target.tabs : [...rest.slice(0, at), tab, ...rest.slice(at)]
+    return mapPane(tree, toPaneId, (pane) => ({ ...pane, tabs, activeTabId: tab.id }))
+  }
+
+  const stripped = removeTab(tree, from)
+  // The same note twice in one pane would only be confusing, and a reload drops
+  // one of the two anyway: the tab already there wins.
+  const twin = target.tabs.find((candidate) => candidate.noteId === tab.noteId)
+  const moved = mapPane(stripped, toPaneId, (pane) => {
+    if (twin) return { ...pane, activeTabId: twin.id }
+    const at = Math.min(pane.tabs.length, Math.max(0, index ?? pane.tabs.length))
+    const tabs = [...pane.tabs.slice(0, at), tab, ...pane.tabs.slice(at)]
+    return { ...pane, tabs, activeTabId: tab.id }
+  })
+  return pruneEmptyPanes(moved)
+}
+
+/**
+ * Splits `targetPaneId` on `side` and puts the dragged tab alone in the new
+ * pane — the tab moves, it is not copied. The source pane collapses when the tab
+ * was its last one.
+ */
+export function moveTabToNewPane(
+  tree: PaneTree,
+  from: TabRef,
+  targetPaneId: string,
+  side: DropSide,
+  ids: { paneId: string; splitId: string }
+): PaneTree {
+  const found = findTab(tree, from)
+  const target = findPane(tree, targetPaneId)
+  if (!found || !target) return tree
+  // Splitting a pane against its own only tab would collapse straight back into
+  // one pane. Doing it would only re-mount the editor for nothing.
+  if (from.paneId === targetPaneId && target.tabs.length === 1) return tree
+
+  const newPane: PaneLeaf = {
+    kind: 'pane',
+    id: ids.paneId,
+    tabs: [{ id: found.tab.id, noteId: found.tab.noteId }],
+    activeTabId: found.tab.id,
+  }
+  const direction: SplitDirection = side === 'left' || side === 'right' ? 'row' : 'column'
+  const first = side === 'left' || side === 'top'
+
+  const split = mapPane(removeTab(tree, from), targetPaneId, (pane) => ({
+    kind: 'split' as const,
+    id: ids.splitId,
+    direction,
+    ratio: DEFAULT_RATIO,
+    first: first ? newPane : pane,
+    second: first ? pane : newPane,
+  }))
+  return pruneEmptyPanes(split)
 }
 
 /**

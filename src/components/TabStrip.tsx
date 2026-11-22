@@ -1,5 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Columns2, Plus, Rows2, X } from 'lucide-react'
+import {
+  beginTabDrag,
+  currentTabDrag,
+  dropIndexAt,
+  endTabDrag,
+  type TabDragSource,
+} from '../lib/tabDrag'
 
 export interface TabStripItem {
   id: string
@@ -7,8 +14,15 @@ export interface TabStripItem {
 }
 
 interface TabStripProps {
+  /** The pane these tabs belong to: a tab dragged out of it is moved, not copied. */
+  paneId: string
   tabs: TabStripItem[]
   activeTabId: string | null
+  /**
+   * Drops a tab into this strip at `index`. Absent where a drag is impossible
+   * (a phone has no HTML5 drag), which also leaves the tabs undraggable.
+   */
+  onDropTab?: (source: TabDragSource, index: number) => void
   onActivate: (tabId: string) => void
   onClose: (tabId: string) => void
   onNewNote: () => void
@@ -37,8 +51,10 @@ interface TabStripProps {
  * button elsewhere and a second one would only be a duplicate.
  */
 export function TabStrip({
+  paneId,
   tabs,
   activeTabId,
+  onDropTab,
   onActivate,
   onClose,
   onNewNote,
@@ -50,6 +66,17 @@ export function TabStrip({
 }: TabStripProps) {
   const buttons = useRef(new Map<string, HTMLButtonElement | null>())
   const listRef = useRef<HTMLDivElement>(null)
+  /** The tab being dragged, painted faded while it is in flight. */
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  /** Where an insertion line shows: `tabs.length` is past the last tab. */
+  const [gap, setGap] = useState<number | null>(null)
+
+  /** Live tab positions, in client coordinates: the pointer arrives in those. */
+  const tabRects = () =>
+    Array.from(listRef.current?.querySelectorAll<HTMLElement>('.tab') ?? []).map((node) => {
+      const rect = node.getBoundingClientRect()
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+    })
 
   // Keep the active tab visible: opening a file at the end of a long strip used
   // to leave it scrolled out of sight on narrow panes and phones.
@@ -91,15 +118,60 @@ export function TabStrip({
 
   return (
     <div className={`tabbar${compact ? ' tabbar--inline' : ''}`}>
-      <div className="tabbar-tabs" role="tablist" aria-label="Archivos abiertos" ref={listRef}>
+      <div
+        className="tabbar-tabs"
+        role="tablist"
+        aria-label="Archivos abiertos"
+        ref={listRef}
+        onDragOver={(event) => {
+          if (!onDropTab || !currentTabDrag()) return
+          // Stops at the strip: the pane's body target must not paint behind it.
+          event.preventDefault()
+          event.stopPropagation()
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+          const next = dropIndexAt(tabRects(), event.clientX)
+          if (next !== gap) setGap(next)
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+          if (gap !== null) setGap(null)
+        }}
+        onDrop={(event) => {
+          const source = currentTabDrag()
+          if (!source || !onDropTab) return
+          event.preventDefault()
+          event.stopPropagation()
+          setGap(null)
+          setDraggingId(null)
+          endTabDrag()
+          onDropTab(source, dropIndexAt(tabRects(), event.clientX))
+        }}
+      >
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId
           const title = tab.title || 'Sin título'
+          const draggable = Boolean(onDropTab)
           return (
             <div
               key={tab.id}
-              className={`tab${active ? ' active' : ''}`}
+              className={`tab${active ? ' active' : ''}${draggingId === tab.id ? ' tab--dragging' : ''}`}
+              data-tab-id={tab.id}
+              draggable={draggable}
+              onDragStart={(event) => {
+                if (!draggable) return
+                beginTabDrag({ paneId, tabId: tab.id })
+                setDraggingId(tab.id)
+                // Firefox only starts a drag once some data rides along.
+                event.dataTransfer?.setData('text/plain', tab.id)
+                if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragEnd={() => {
+                setDraggingId(null)
+                setGap(null)
+                endTabDrag()
+              }}
             >
+              {gap === index && <span className="tab-drop-line" aria-hidden="true" />}
               <button
                 ref={(el) => {
                   buttons.current.set(tab.id, el)
@@ -125,6 +197,7 @@ export function TabStrip({
             </div>
           )
         })}
+        {gap === tabs.length && <span className="tab-drop-line" aria-hidden="true" />}
         {/* Next to the last tab, where the eye already is when reading them. */}
         <button
           className="icon-btn icon-btn--sm tab-new"

@@ -5,6 +5,8 @@ import { PaneBar } from './components/PaneBar'
 import { SyncAnnouncer } from './components/SyncAnnouncer'
 import { paneBarNeeded } from './lib/paneBar'
 import { TabStrip } from './components/TabStrip'
+import type { PaneTabDrop } from './components/NotePane'
+import type { DropZone, TabDragSource } from './lib/tabDrag'
 import { Menu, type MenuItem } from './components/Menu'
 import { Workspace } from './components/Workspace'
 
@@ -66,6 +68,8 @@ import {
   listPanes,
   MAX_PANES,
   mergeIntoPane,
+  moveTabToNewPane,
+  moveTabToPane,
   openTab,
   replaceActiveTab,
   sanitizeLayout,
@@ -123,6 +127,11 @@ const SPLIT_LIMIT_LABEL = `Máximo de paneles (${MAX_PANES})`
 interface WorkspaceState {
   layout: PaneTree
   focusedPaneId: string
+}
+
+/** The pane a layout change left focused: the one asked for, else the first. */
+function focusedOrFirst(layout: PaneTree, preferred: string): string {
+  return findPane(layout, preferred)?.id ?? listPanes(layout)[0].id
 }
 
 function newId(prefix: string): string {
@@ -851,6 +860,40 @@ function AppTree() {
     })
   }, [])
 
+  /**
+   * A tab dropped between two tabs of a strip — including its own, which is how
+   * a drag reorders them. The pane under the pointer takes the focus, because it
+   * now holds the tab you were just using.
+   */
+  const dropTabAt = useCallback((source: TabDragSource, paneId: string, index: number) => {
+    setWorkspace((ws) => {
+      const layout = moveTabToPane(ws.layout, source, paneId, index)
+      if (layout === ws.layout) return ws
+      return { layout, focusedPaneId: focusedOrFirst(layout, paneId) }
+    })
+  }, [])
+
+  /**
+   * A tab dropped on a pane's body: the centre moves it in, a side splits the
+   * pane and leaves the tab alone in the new half.
+   */
+  const dropTabOnZone = useCallback((source: TabDragSource, paneId: string, zone: DropZone) => {
+    setWorkspace((ws) => {
+      if (zone === 'center') {
+        const layout = moveTabToPane(ws.layout, source, paneId)
+        if (layout === ws.layout) return ws
+        return { layout, focusedPaneId: focusedOrFirst(layout, paneId) }
+      }
+      // Every pane holds an editor: a split has to fit the same budget the
+      // split buttons respect.
+      if (!canSplit(ws.layout)) return ws
+      const ids = { paneId: newId('pane'), splitId: newId('split') }
+      const layout = moveTabToNewPane(ws.layout, source, paneId, zone, ids)
+      if (layout === ws.layout) return ws
+      return { layout, focusedPaneId: focusedOrFirst(layout, ids.paneId) }
+    })
+  }, [])
+
   const resizeSplit = useCallback((splitId: string, ratio: number) => {
     setWorkspace((ws) => {
       const layout = setRatio(ws.layout, splitId, ratio)
@@ -1356,8 +1399,10 @@ function AppTree() {
   const inlineTabs = inlinePane ? (
     <TabStrip
       compact
+      paneId={inlinePane.id}
       tabs={inlinePane.tabs.map((tab) => ({ id: tab.id, title: titles.get(tab.noteId) ?? '' }))}
       activeTabId={inlinePane.activeTabId}
+      onDropTab={isMobile ? undefined : (source, index) => dropTabAt(source, inlinePane.id, index)}
       onActivate={(tabId) => activateTab(inlinePane.id, tabId)}
       onClose={(tabId) => closePaneTab(inlinePane.id, tabId)}
       onNewNote={() => void handleNewNote(undefined, inlinePane.id)}
@@ -1525,6 +1570,15 @@ function AppTree() {
                 onNewNote={() => void handleNewNote(undefined, pane.id)}
                 onClosePane={panes.length > 1 ? () => closePaneAt(pane.id) : undefined}
                 hideTabs={pane.id === inlinePane?.id}
+                tabDrop={
+                  isMobile
+                    ? undefined
+                    : ({
+                        onDropAt: (source, index) => dropTabAt(source, pane.id, index),
+                        onDropZone: (source, zone) => dropTabOnZone(source, pane.id, zone),
+                        canSplit: splitAllowed,
+                      } satisfies PaneTabDrop)
+                }
                 onImport={() => importRef.current?.click()}
                 emptyWorkspace={notes.length === 0}
                 {...splitActions(pane.id)}

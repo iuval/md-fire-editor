@@ -3,6 +3,8 @@ import { CollaborativeEditor } from './CollaborativeEditor'
 import { CanvasEditor } from './CanvasEditor'
 import { NotePanels, type PropertyChange } from './NotePanels'
 import { TabStrip } from './TabStrip'
+import { PaneDropTarget } from './PaneDropTarget'
+import type { DropZone, TabDragSource } from '../lib/tabDrag'
 import {
   mergeDeferred,
   noteCanEdit,
@@ -303,6 +305,8 @@ interface NotePaneProps {
   onClosePane?: () => void
   /** Its tabs are rendered by the top bar (single-pane layout). */
   hideTabs?: boolean
+  /** Present when tabs can be dragged: absent on a phone, where they cannot. */
+  tabDrop?: PaneTabDrop
   /** The note document is still being written: its tab already exists. */
   creating?: boolean
   onImport: () => void
@@ -317,6 +321,17 @@ interface NotePaneProps {
   onPresence: (users: AwarenessUser[]) => void
   onStatus: (status: ProviderStatus) => void
   onStats?: (stats: SyncStats) => void
+}
+
+/**
+ * Where a dragged tab lands: the pane's strip inserts it between two tabs, its
+ * body moves it in (centre) or splits the pane (the four sides).
+ */
+export interface PaneTabDrop {
+  onDropAt: (source: TabDragSource, index: number) => void
+  onDropZone: (source: TabDragSource, zone: DropZone) => void
+  /** False once the pane budget is spent: only the centre still accepts a drop. */
+  canSplit: boolean
 }
 
 const ignorePresence = () => undefined
@@ -341,6 +356,7 @@ export function NotePane({
   onNewNote,
   onClosePane,
   hideTabs = false,
+  tabDrop,
   creating = false,
   onImport,
   emptyWorkspace,
@@ -364,7 +380,9 @@ export function NotePane({
     >
       {!hideTabs && (
         <TabStrip
+          paneId={pane.id}
           tabs={pane.tabs.map((tab) => ({ id: tab.id, title: titles.get(tab.noteId) ?? '' }))}
+          onDropTab={tabDrop?.onDropAt}
           activeTabId={activeTabId}
           onActivate={onActivateTab}
           onClose={onCloseTab}
@@ -373,6 +391,16 @@ export function NotePane({
           onSplitDown={onSplitDown}
           splitLimitLabel={splitLimitLabel}
           onClosePane={onClosePane}
+        />
+      )}
+
+      {tabDrop && (
+        <PaneDropTarget
+          paneId={pane.id}
+          tabCount={pane.tabs.length}
+          canSplit={tabDrop.canSplit}
+          belowTabs={!hideTabs}
+          onDrop={tabDrop.onDropZone}
         />
       )}
 

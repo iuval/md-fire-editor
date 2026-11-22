@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TabStrip } from '../src/components/TabStrip'
+import { beginTabDrag, endTabDrag } from '../src/lib/tabDrag'
 import { MAX_PANES } from '../src/lib/panes'
 import { Workspace } from '../src/components/Workspace'
 import { singlePane, splitPane, type PaneLeaf } from '../src/lib/panes'
@@ -22,6 +23,7 @@ afterEach(() => {
   roots.forEach((root) => act(() => root.unmount()))
   roots = []
   document.body.innerHTML = ''
+  endTabDrag()
 })
 
 const tabs = [
@@ -33,6 +35,7 @@ const tabs = [
 function strip(handlers: Partial<Parameters<typeof TabStrip>[0]> = {}) {
   return mount(
     <TabStrip
+      paneId="p2"
       tabs={tabs}
       activeTabId="t2"
       onActivate={() => {}}
@@ -154,6 +157,101 @@ describe('tab strip', () => {
     expect(el.querySelector('[aria-label="Cerrar panel"]')).toBeNull()
   })
 })
+
+describe('dragging a tab', () => {
+  /** Tabs laid out 100px wide with a 2px gap, as client rects in a strip. */
+  function stubTabRects() {
+    const ids = ['t1', 't2', 't3']
+    const original = Element.prototype.getBoundingClientRect
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const index = Math.max(0, ids.indexOf(this.getAttribute('data-tab-id') ?? ''))
+      const left = index * 102
+      return { left, top: 0, width: 100, height: 26, right: left + 100, bottom: 26, x: left, y: 0 } as DOMRect
+    }
+    return () => {
+      Element.prototype.getBoundingClientRect = original
+    }
+  }
+
+  function drag(el: Element, type: string, x = 0) {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x })
+    act(() => el.dispatchEvent(event))
+    return event
+  }
+
+  it('picks up a tab and fades it while it is in flight', () => {
+    const restore = stubTabRects()
+    try {
+      const el = strip({ onDropTab: () => {} })
+      const tab = el.querySelectorAll('.tab')[0] as HTMLElement
+      expect(tab.getAttribute('draggable')).toBe('true')
+      drag(tab, 'dragstart')
+      expect(tab.className).toContain('tab--dragging')
+      expect(document.body.classList.contains('tab-dragging')).toBe(true)
+      drag(tab, 'dragend')
+      expect(tab.className).not.toContain('tab--dragging')
+      expect(document.body.classList.contains('tab-dragging')).toBe(false)
+    } finally {
+      restore()
+    }
+  })
+
+  it('shows the gap the tab would land in, and drops it there', () => {
+    const restore = stubTabRects()
+    try {
+      const calls: [string, string, number][] = []
+      const el = strip({ onDropTab: (source, index) => calls.push([source.paneId, source.tabId, index]) })
+      const list = el.querySelector('.tabbar-tabs')!
+      drag(el.querySelectorAll('.tab')[0], 'dragstart')
+
+      drag(list, 'dragover', 250)
+      // The line is painted at the leading edge of the tab it would go before:
+      // two midpoints (50, 152) are left of 250, so it lands before the third.
+      const line = el.querySelector('.tab-drop-line') as HTMLElement
+      expect(line).not.toBeNull()
+      expect(line.closest('.tab')!.getAttribute('data-tab-id')).toBe('t3')
+
+      const drop = drag(list, 'drop', 250)
+      expect(drop.defaultPrevented).toBe(true)
+      expect(calls).toEqual([['p2', 't1', 2]])
+      expect(el.querySelector('.tab-drop-line')).toBeNull()
+      expect(document.body.classList.contains('tab-dragging')).toBe(false)
+    } finally {
+      restore()
+    }
+  })
+
+  it('puts the gap past the last tab when the pointer is at the end', () => {
+    const restore = stubTabRects()
+    try {
+      const el = strip({ onDropTab: () => {} })
+      const list = el.querySelector('.tabbar-tabs')!
+      drag(el.querySelectorAll('.tab')[1], 'dragstart')
+      drag(list, 'dragover', 900)
+      const lines = el.querySelectorAll('.tab-drop-line')
+      expect(lines).toHaveLength(1)
+      // Past the last tab there is no tab to paint the line in: it sits between
+      // them and the +, which rides along after them.
+      expect((lines[0].nextElementSibling as HTMLElement).className).toContain('tab-new')
+    } finally {
+      restore()
+    }
+  })
+
+  it('keeps its tabs still when dropping is not wired up', () => {
+    const el = strip()
+    const tab = el.querySelectorAll('.tab')[0] as HTMLElement
+    expect(tab.getAttribute('draggable')).toBe('false')
+    beginTabDrag({ paneId: 'p1', tabId: 't1' })
+    try {
+      drag(el.querySelector('.tabbar-tabs')!, 'dragover', 250)
+      expect(el.querySelector('.tab-drop-line')).toBeNull()
+    } finally {
+      endTabDrag()
+    }
+  })
+})
+
 
 function leaf(id: string): PaneLeaf {
   return singlePane(id, `note-${id}`, `tab-${id}`)

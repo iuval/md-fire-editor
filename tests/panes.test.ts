@@ -11,6 +11,8 @@ import {
   findPane,
   listPanes,
   mergeIntoPane,
+  moveTabToNewPane,
+  moveTabToPane,
   openNoteIds,
   openTab,
   replaceActiveTab,
@@ -348,5 +350,148 @@ describe('panes: deleting a note', () => {
   it('is a no-op when the note is not open', () => {
     const tree = singlePane('p1', 'n1', 't1')
     expect(closeNote(tree, 'n9')).toBe(tree)
+  })
+})
+
+/** p1: t1 (n1), t2 (n2) — p2 is opened by the caller when it needs one. */
+function twoTabs() {
+  return openTab(singlePane('p1', 'n1', 't1'), 'p1', 'n2', 't2')
+}
+
+const from = (paneId: string, tabId: string) => ({ paneId, tabId })
+
+function splitPair() {
+  return splitPane(twoTabs(), 'p1', 'row', pane('p2', 'n3', 't3'), 's1')
+}
+
+describe('panes: moving a tab between panes', () => {
+  it('moves a tab to the end of another pane and activates it there', () => {
+    const tree = moveTabToPane(splitPair(), from('p1', 't2'), 'p2')
+    const [first, second] = listPanes(tree)
+    expect(first.tabs.map((tab) => tab.id)).toEqual(['t1'])
+    expect(first.activeTabId).toBe('t1')
+    expect(second.tabs.map((tab) => tab.id)).toEqual(['t3', 't2'])
+    expect(second.activeTabId).toBe('t2')
+  })
+
+  it('inserts before the tab at the given index', () => {
+    let tree = splitPane(
+      twoTabs(),
+      'p1',
+      'row',
+      openTab(pane('p2', 'n3', 't3'), 'p2', 'n4', 't4'),
+      's1'
+    )
+    tree = moveTabToPane(tree, from('p1', 't2'), 'p2', 1)
+    expect(listPanes(tree)[1].tabs.map((tab) => tab.id)).toEqual(['t3', 't2', 't4'])
+  })
+
+  it('reorders the tabs of one pane without leaving the pane', () => {
+    const moved = moveTabToPane(twoTabs(), from('p1', 't2'), 'p1', 0)
+    expect(listPanes(moved)[0].tabs.map((tab) => tab.id)).toEqual(['t2', 't1'])
+    expect(listPanes(moved)[0].activeTabId).toBe('t2')
+  })
+
+  it('is a no-op when a tab is dropped back on its own spot', () => {
+    const tree = twoTabs()
+    // Dropping before itself, and before the tab right after it, both keep order.
+    expect(moveTabToPane(tree, from('p1', 't2'), 'p1', 1)).toBe(tree)
+    expect(moveTabToPane(tree, from('p1', 't2'), 'p1', 2)).toBe(tree)
+  })
+
+  it('leaves the source pane alone when other tabs stay in it', () => {
+    const tree = openTab(splitPair(), 'p1', 'n9', 't9')
+    const moved = moveTabToPane(tree, from('p1', 't2'), 'p2')
+    expect(listPanes(moved)[0].tabs.map((tab) => tab.id)).toEqual(['t1', 't9'])
+  })
+
+  it('closes the source pane once its last tab leaves', () => {
+    const tree = splitPane(singlePane('p1', 'n1', 't1'), 'p1', 'row', pane('p2', 'n2', 't2'), 's1')
+    const moved = moveTabToPane(tree, from('p1', 't1'), 'p2')
+    const panes = listPanes(moved)
+    expect(panes.map((p) => p.id)).toEqual(['p2'])
+    expect(panes[0].tabs.map((tab) => tab.id)).toEqual(['t2', 't1'])
+    expect(moved.kind).toBe('pane')
+  })
+
+  it('activates the tab that already has the note instead of a duplicate', () => {
+    // The same note open in both panes: a split copies the active tab.
+    const tree = splitPaneWithActiveTab(singlePane('p1', 'n1', 't1'), 'p1', 'row', {
+      paneId: 'p2',
+      tabId: 't2',
+      splitId: 's1',
+    })
+    const moved = moveTabToPane(tree, from('p1', 't1'), 'p2')
+    const panes = listPanes(moved)
+    expect(panes.map((p) => p.id)).toEqual(['p2'])
+    expect(panes[0].tabs.map((tab) => tab.id)).toEqual(['t2'])
+    expect(panes[0].activeTabId).toBe('t2')
+  })
+
+  it('ignores an unknown pane or tab', () => {
+    const tree = splitPair()
+    expect(moveTabToPane(tree, from('nope', 't1'), 'p2')).toBe(tree)
+    expect(moveTabToPane(tree, from('p1', 'nope'), 'p2')).toBe(tree)
+    expect(moveTabToPane(tree, from('p1', 't1'), 'nope')).toBe(tree)
+  })
+})
+
+describe('panes: splitting with a dropped tab', () => {
+  const ids = { paneId: 'p9', splitId: 's9' }
+
+  it('splits to the right with the tab alone in the new pane', () => {
+    const tree = moveTabToNewPane(splitPair(), from('p1', 't2'), 'p1', 'right', ids)
+    const panes = listPanes(tree)
+    expect(panes.map((p) => p.id)).toEqual(['p1', 'p9', 'p2'])
+    expect(panes[0].tabs.map((tab) => tab.id)).toEqual(['t1'])
+    expect(panes[1].tabs).toEqual([{ id: 't2', noteId: 'n2' }])
+    expect(panes[1].activeTabId).toBe('t2')
+    expect(tree.kind === 'split' && tree.first.kind === 'split').toBe(true)
+    if (tree.kind === 'split' && tree.first.kind === 'split') {
+      expect(tree.first.direction).toBe('row')
+      expect(tree.first.second.kind).toBe('pane')
+    }
+  })
+
+  it('splits to the left, the new pane first', () => {
+    const tree = moveTabToNewPane(splitPair(), from('p1', 't2'), 'p1', 'left', ids)
+    const panes = listPanes(tree)
+    expect(panes.map((p) => p.id)).toEqual(['p9', 'p1', 'p2'])
+    expect(panes[0].tabs).toEqual([{ id: 't2', noteId: 'n2' }])
+  })
+
+  it('splits above and below with a column', () => {
+    const below = moveTabToNewPane(splitPair(), from('p1', 't2'), 'p1', 'bottom', ids)
+    const above = moveTabToNewPane(splitPair(), from('p1', 't2'), 'p1', 'top', ids)
+    expect(listPanes(below).map((p) => p.id)).toEqual(['p1', 'p9', 'p2'])
+    expect(listPanes(above).map((p) => p.id)).toEqual(['p9', 'p1', 'p2'])
+    for (const tree of [below, above]) {
+      const split = tree.kind === 'split' ? tree.first : tree
+      expect(split.kind === 'split' && split.direction).toBe('column')
+    }
+  })
+
+  it('moves the tab across panes and leaves the source pane intact', () => {
+    const tree = moveTabToNewPane(splitPair(), from('p1', 't2'), 'p2', 'right', ids)
+    expect(listPanes(tree).map((p) => p.id)).toEqual(['p1', 'p2', 'p9'])
+    expect(listPanes(tree)[0].tabs.map((tab) => tab.id)).toEqual(['t1'])
+  })
+
+  it('collapses the source pane when the last tab is dropped on another split', () => {
+    const tree = splitPane(singlePane('p1', 'n1', 't1'), 'p1', 'row', pane('p2', 'n2', 't2'), 's1')
+    const moved = moveTabToNewPane(tree, from('p1', 't1'), 'p2', 'right', ids)
+    expect(listPanes(moved).map((p) => p.id)).toEqual(['p2', 'p9'])
+    expect(listPanes(moved)[1].tabs).toEqual([{ id: 't1', noteId: 'n1' }])
+  })
+
+  it('is a no-op when a pane is split against its own only tab', () => {
+    const tree = singlePane('p1', 'n1', 't1')
+    expect(moveTabToNewPane(tree, from('p1', 't1'), 'p1', 'right', ids)).toBe(tree)
+  })
+
+  it('ignores an unknown pane', () => {
+    const tree = splitPair()
+    expect(moveTabToNewPane(tree, from('p1', 't1'), 'nope', 'right', ids)).toBe(tree)
+    expect(moveTabToNewPane(tree, from('nope', 't1'), 'p1', 'right', ids)).toBe(tree)
   })
 })
