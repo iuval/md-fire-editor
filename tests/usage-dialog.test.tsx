@@ -83,13 +83,21 @@ afterEach(() => {
 })
 
 describe('diálogo de uso', () => {
-  it('muestra la cuota gratuita y el uso del mes', () => {
+  it('muestra la cuota mensual y el uso del mes', () => {
     const { host } = mount()
-    expect(host.textContent).toContain('Plan gratuito')
-    expect(host.textContent).toContain('Operaciones de agente')
+    expect(host.textContent).toContain('Cuota mensual')
+    expect(host.textContent).toContain('Operaciones')
     expect(host.textContent).toContain('120')
     expect(host.textContent).toContain('20.0 MB')
-    expect(host.textContent).toContain(`${FREE_TIER.agentOpsPerMonth.toLocaleString('es')}`)
+    expect(host.textContent).toContain(`${FREE_TIER.opsPerMonth.toLocaleString('es')}`)
+  })
+
+  it('muestra la cuenta admin sin tope ni fee', () => {
+    const { host } = mount({ isAdmin: true })
+    expect(host.textContent).toContain('Cuota (admin)')
+    expect(host.textContent).toContain('Sin límite')
+    expect(host.textContent).toContain('Admin (sin cargos)')
+    expect(host.textContent).toContain('$0.00')
   })
 
   it('pide un pack de recarga', () => {

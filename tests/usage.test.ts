@@ -61,7 +61,7 @@ describe('usage accounting', () => {
   })
 
   it('keeps the prepaid top-up floor', () => {
-    expect(MIN_TOP_UP_USD).toBe(2)
+    expect(MIN_TOP_UP_USD).toBe(5)
   })
 
   it('formats bytes and dollars without losing small amounts', () => {

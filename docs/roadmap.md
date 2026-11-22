@@ -203,12 +203,13 @@ anónimo mide en su propio bucket (su uid), no en el del dueño de la carpeta: l
 solo dejan escribir el bucket propio. El rate limit y el presupuesto por corrida siguen
 frenando el costo; el medidor ahora además lo mide.
 
-**Cuota y créditos**: `src/lib/quota.ts` define el free tier permanente (250 MB y 10.000
-operaciones de agente/mes) y el diálogo muestra barras de uso con aviso al 80%. La CLI y el
-MCP cortan al llegar al tope de operaciones. `src/lib/credits.ts` define los packs de
-$5/$15/$50, la configuración de auto top-up (el dueño la edita sin tocar el saldo) y las
-solicitudes de recarga en `credits/{uid}/topups`. Falta el backend que debite saldo y
-acredite recargas, y el proveedor de pagos.
+**Cuota y créditos**: `src/lib/quota.ts` define la cuota mensual renovable (100 MB y 20.000
+operaciones/mes) y el diálogo muestra barras de uso con aviso al 80%. La CLI y el MCP cortan
+al llegar al tope de operaciones; las cuentas admin no tienen tope. `src/lib/credits.ts`
+define los packs de $5/$15/$50 con vencimiento a 24 meses, la configuración de auto top-up
+(el dueño la edita sin tocar el saldo) y las solicitudes de recarga en
+`credits/{uid}/topups`. Falta el backend que debite saldo y acredite recargas, y el proveedor
+de pagos.
 
 > **Superado** por [`prepaid-usage-model.md`](prepaid-usage-model.md) D6: la gratuidad pasa a
 > ser una **cuota mensual renovable de 100 MB + 20.000 operaciones** (mismo contador para
@@ -217,9 +218,9 @@ acredite recargas, y el proveedor de pagos.
 
 ---
 
-## 5. Auto top-up de créditos (mínimo $2) — 🟡 modelo, UI y solicitudes listos, falta el cobro
+## 5. Auto top-up de créditos (mínimo $5) — 🟡 modelo, UI y solicitudes listos, falta el cobro
 
-**Qué**: recarga automática cuando el saldo baja de un umbral, con un mínimo de $2.
+**Qué**: recarga automática cuando el saldo baja de un umbral, con un mínimo de $5.
 
 **Diseño**
 
@@ -249,7 +250,7 @@ acredite recargas, y el proveedor de pagos.
 §3 (es el que debita y acredita), proveedor de pagos elegido y punto 4 (medición real).
 Ya **no** depende de `entitlements`: ese eje se retira (D8 de ese documento).
 
-**Hecho**: `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (regla: **≥ $2**),
+**Hecho**: `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (regla: **≥ $5**),
 `autoTopUp` y libro mayor `ledger/` **inmutable**; el usuario solo lee, un admin escribe (un
 cliente no puede acreditarse saldo). La UI muestra saldo, umbral y recarga mínima dentro del
 diálogo de uso. **Falta**: cobro off-session, webhook idempotente, SCA/3DS, reintentos,

@@ -30,6 +30,14 @@ Tres cosas del brief no se sostienen contra el código actual:
 Orden correcto: **(1)** decisión de modelo comercial → **(2)** modo visitante con borrador
 local → **(3)** capa de descubrimiento → **(4)** `/planes` + SEO.
 
+**Corrección del 22-nov-2026 (usuario).** El visitante **no** ve una página distinta: ve el
+**mismo editor** de la app. La cuota gratuita se renueva cada mes, así que la app se puede
+usar tal cual sin cuenta; lo único que cambia es **dónde vive el documento** (navegador
+primero, Firestore al entrar). Un editor propio para el visitante (textarea, página aparte) es un
+error de producto: duplica la superficie y muestra un producto que no es el que se vende.
+La primera implementación usó un `<textarea>`; se reemplazó por el stack real de edición
+(§5b).
+
 ---
 
 ## 1. Estado actual verificado
@@ -113,17 +121,18 @@ desde el principio para no tener que corregirlo después.
 ## 3. Decisiones que hay que tomar (bloqueantes)
 
 > **Cerradas el 22-nov-2026.** El modelo comercial quedó definido por el usuario:
-> **cuota gratuita permanente + saldo prepago con top-up**. Eso resuelve D1 y
-> convierte el "flat ahora" de la recomendación original en una alternativa
-> descartada. Las cuatro decisiones se registran acá para que el código y el copy
-> no vuelvan a contradecirse.
+> **cuota gratuita mensual renovable + saldo prepago con top-up**, con el tiempo real
+> como feature paga (D1 de `prepaid-usage-model.md`). Eso resuelve D1 y convierte el
+> "flat ahora" de la recomendación original en una alternativa descartada. Las cuatro
+> decisiones se registran acá para que el código y el copy no vuelvan a contradecirse.
 >
 > | # | Decisión | Implementación |
 > |---|---|---|
-> | D1 | **Cuota gratuita permanente + créditos prepagos** (no flat, no pay-per-use puro). | `src/lib/quota.ts`, `src/lib/credits.ts`, `docs/pricing.md` |
+> | D1 | **Cuota gratuita mensual + créditos prepagos** (pay-per-use + fee; el tiempo real es pago). | `src/lib/quota.ts`, `src/lib/credits.ts`, `docs/prepaid-usage-model.md` |
 > | D2 | **Borrador local-first** en `localStorage` (`firemd-guest-draft`), migrado al entrar. | `src/lib/guestDraft.ts`, `src/lib/guestMigration.ts` |
 > | D3 | **Página estática** `public/planes/index.html` con HTML prerenderizado y rewrite en `firebase.json`. | `public/planes/index.html`, `firebase.json` |
 > | D4 | **La franja y la landing solo en visitante sin sesión y sin nota compartida.** | `src/lib/guestMode.ts`, `src/AppTree.tsx` |
+| D5 | **El visitante usa el mismo editor que la app** (Tiptap + Yjs + markdown), con sesión local sin Firestore. No hay editor propio ni página aparte. | `src/components/GuestWorkspace.tsx`, `src/lib/collab/noteSession.ts` (`local`) |
 
 **D1 — Modelo comercial: flat o pay-per-use.**
 Recomendación: **flat ahora, pay-per-use cuando el medidor sea confiable**. Razones:
@@ -168,7 +177,11 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
 - [x] Interfaz mínima: `guestDraft.ts` (persistencia local) y `guestMigration.ts` (crear la
       nota real con `createNote` + `saveNoteContent`). No se reescribió `notes.ts`.
 - [x] `AppTree`: si no hay `user` y no hay nota compartida, monta `GuestWorkspace` con el
-      editor local. Sin modal, sin muro. El cursor queda listo.
+      **editor real** (`CollaborativeEditor` + sesión local de `noteSession`), no un textarea.
+      Sin modal, sin muro. El cursor queda listo.
+- [ ] Shell completo para el visitante: sidebar, carpetas y varias notas locales. Hoy ve una
+      sola nota con el editor real; el resto del shell sigue siendo solo-sesión. Es el paso
+      que falta para que "usa la app tal cual" sea literal.
 - [x] Persistencia: guardado con debounce + flush en `beforeunload`/desmontaje. Clave
       `firemd-guest-draft`.
 - [x] Migración al login: `GuestDraftDialog` ofrece guardar; el borrador se borra solo
@@ -258,7 +271,7 @@ Archivos nuevos:
 | `src/lib/guestMigration.ts` | Crea la nota real con `createNote` + `saveNoteContent`. |
 | `src/lib/guestMode.ts` | Condición única D4: `!user && !sharedNote`. |
 | `src/lib/guestAnalytics.ts` | Contador local del embudo y volcado a `analytics` al entrar. |
-| `src/components/GuestWorkspace.tsx` | Editor local + franja + CTA progresivo. |
+| `src/components/GuestWorkspace.tsx` | **El editor real** (`CollaborativeEditor` con sesión local) + franja + CTA progresivo. |
 | `src/components/GuestDraftDialog.tsx` | Oferta de guardar el borrador al entrar. |
 | `public/planes/index.html` | Landing estática con SEO propio. |
 | `public/robots.txt`, `public/sitemap.xml` | Indexación. |
@@ -268,6 +281,11 @@ Cambios:
 - `src/AppTree.tsx`: sin sesión y sin `?note=` monta `GuestWorkspace`; con sesión ofrece
   migrar el borrador. Se retiró el gating flat (`UpgradeDialog`, `entitlements`) porque el
   modelo decidido es cuota + créditos.
+- `src/lib/collab/noteSession.ts`: `acquireNoteSession(..., local)` construye el provider y la
+  awareness con `null` en lugar de Firestore. El stack de edición es el mismo; solo cambia el
+  transporte. `FirestoreYjsProvider` y `FirestoreAwareness` ya aceptaban `null`.
+- `src/components/CollaborativeEditor.tsx`: props `local` y `placeholder`; el visitante ve el
+  mismo editor con el placeholder de bienvenida.
 - `firestore.rules`: compartir dejó de exigir plan pago; eventos de embudo agregados a la
   lista validada.
 - `firebase.json`: rewrite `/planes` → `public/planes/index.html`.
@@ -281,6 +299,8 @@ Pendiente y por qué:
 3. **Cobro real y débito de créditos**: requiere checkout y backend.
 4. **Eventos del visitante en servidor**: hoy son locales y se vuelcan al entrar; una
    colección anónima con reglas propias es la alternativa si se quiere medir sin login.
+5. **Shell completo para el visitante**: sidebar, carpetas y varias notas locales. Hoy la
+   vista de visitante es una sola nota con el editor real; el shell sigue siendo solo-sesión.
 
 ---
 
@@ -302,6 +322,8 @@ Pendiente y por qué:
 ## 7. Qué NO hacer
 
 - No poner un hero comercial encima del editor.
+- **No construir un editor propio para el visitante** (textarea, página aparte): el visitante
+  usa el mismo stack de edición que la app. Lo que cambia es dónde vive el documento.
 - No disparar popup de login al teclear.
 - No mostrar la landing en notas compartidas ni en sesión logueada.
 - No prometer E2EE, archivos en disco ni "exportable siempre" sin export.
@@ -312,16 +334,21 @@ Pendiente y por qué:
 ## 8. Cómo verificar el estado documentado
 
 ```bash
-# el muro de login
-grep -n "if (!user)" src/AppTree.tsx
+# el visitante usa el editor real, no un textarea
+grep -n "local" src/components/GuestWorkspace.tsx
+grep -n "local = false" src/lib/collab/noteSession.ts
+grep -n "textarea" src/components/GuestWorkspace.tsx   # sin resultados
 
-# sin router y sin rewrites
-grep -rn "pushState\|location.pathname" src/ ; grep -c rewrites firebase.json
+# la sesión local no toca Firestore
+grep -n "local ? null : undefined" src/lib/collab/noteSession.ts
 
-# sin robots/sitemap
+# rutas: /planes es estática con rewrite
+grep -c rewrites firebase.json
+ls public/planes/index.html
+
+# SEO
 ls public | grep -iE 'robots|sitemap'
 
-# planes flat vs pay-per-use
-grep -n "Plan(es)? previstos" src/components/UpgradeDialog.tsx
+# modelo de cuota + créditos
 grep -n "MIN_TOP_UP_USD" src/lib/usage.ts
 ```

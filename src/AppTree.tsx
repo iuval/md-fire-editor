@@ -25,7 +25,7 @@ import { InputDialog } from './components/InputDialog'
 import { AgentsDialog } from './components/AgentsDialog'
 import { UsageDialog } from './components/UsageDialog'
 import { ThemeDialog } from './components/ThemeDialog'
-import { useAgents, useAuth, useWorkspace } from './hooks/useFirebase'
+import { useAgents, useAuth, useIsAdmin, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, safeFileName } from './lib/export'
 import { buildVault, planVault, streamVaultNotes } from './lib/vault'
@@ -247,6 +247,7 @@ function initialWorkspace(): WorkspaceState {
 function AppTree() {
   const t = useT()
   const { user, loading: authLoading, error: authError, doGoogleSignIn, doSignOut } = useAuth()
+  const isAdmin = useIsAdmin(user)
   const {
     notes,
     folders,
@@ -1888,6 +1889,7 @@ function AppTree() {
         <UsageDialog
           usage={usage}
           credits={credits}
+          isAdmin={isAdmin}
           notes={notes.length}
           folders={folders.length}
           diagnostics={{

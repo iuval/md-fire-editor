@@ -18,6 +18,7 @@ import {
 } from '../lib/notes'
 import { publishOwnDirectoryEntry } from '../lib/directory'
 import { subscribeMyAgents, type Agent } from '../lib/agents'
+import { resolveIsAdmin } from '../lib/admin'
 import { t } from '../i18n/index.ts'
 
 export function useAuth() {
@@ -68,6 +69,30 @@ export function useAuth() {
   }, [])
 
   return { user, loading, error, doGoogleSignIn, doSignOut }
+}
+
+/**
+ * ¿La sesión es admin? Los admins no pagan ni tienen tope de cuota. El email
+ * resuelve el caso al instante; el documento `admins/{uid}` confirma el resto.
+ */
+export function useIsAdmin(user: User | null) {
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false)
+      return
+    }
+    let cancelled = false
+    void resolveIsAdmin(user.uid, user.email).then((admin) => {
+      if (!cancelled) setIsAdmin(admin)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  return isAdmin
 }
 
 export function useWorkspace(uid: string | undefined) {

@@ -1,8 +1,10 @@
 # Uso prepago + cuota gratuita — diseño y plan
 
-**Estado**: diseño aprobado, **nada implementado**. Reemplaza el modelo comercial de
-[`pricing.md`](pricing.md) §4 y el orden de [`pricing.md`](pricing.md) §7.
-**Fecha**: 22-nov-2026.
+**Estado**: decisiones confirmadas; implementación en curso. D1, D6, D8 y D12 están
+confirmadas; E7 y el bootstrap admin están hechos; E0 está parcial. Reemplaza el modelo
+comercial de [`pricing.md`](pricing.md) §4 y el orden de [`pricing.md`](pricing.md) §7.
+**Fecha**: 22-nov-2026. **Actualizado**: 22-nov-2026 (decisiones de producto y arranque de
+implementación).
 **Fuente de los números de costo**: [`pricing.md`](pricing.md) §1-§2 y
 `node scripts/pricing-model.mjs`. Los números de este documento son derivados de esos.
 
@@ -28,6 +30,9 @@ producto; las demás son consecuencias que se derivan de ellas y que el diseño 
 | **D8** | Se retira `entitlements` / `hasPaidPlan()` / `UpgradeDialog`. **Compartir vuelve a ser gratis.** | Menos estados, menos UI, menos soporte. |
 | **D9** | **Nunca** se cortan las lecturas de los datos propios, ni se borra nada por falta de pago. | El export y la lectura sobreviven a cualquier corte. Requisito legal y de confianza. |
 | **D10** | El corte es **degradación a local durable**, nunca negación seca. | Escribir cuesta lo mismo que hoy hasta que el proxy dice "no"; ahí se escribe local y se avisa. |
+| **D11** | Las **cuentas admin no pagan** ni tienen tope. El bootstrap es `iuvalgoldansky@gmail.com`; el admin se marca en `admins/{uid}`. | `freeTierStatus()` y `agentOpsAllowed()` reciben `admin`; el proxy no debita. |
+| **D12** | El proxy corre en **Cloud Run**. | Se reusa el stack actual (Node/TypeScript), y la decisión es reversible. |
+| **D13** | **No hay cuentas legacy**: la app no está en producción. Se migra todo al modelo nuevo. | `entitlements` se elimina; no hay datos que preservar. |
 
 ---
 
@@ -37,11 +42,11 @@ Ninguna de estas es una opinión; están verificadas en el árbol.
 
 | Pieza | Dónde | Qué hace hoy | Problema |
 |---|---|---|---|
-| Cuota gratuita declarada | `src/lib/quota.ts:15,17` | `250 MB` + `10.000` ops de agente/mes | Solo dibuja barras (`UsageDialog.tsx:127,134`). No frena nada. |
+| Cuota gratuita declarada | `src/lib/quota.ts:16-22` | `100 MB` + `20.000` ops/mes | Solo dibuja barras (`UsageDialog.tsx:139-152`). No frena nada. |
 | Predicado de cuota | `src/lib/quota.ts:69` | `agentOpsAllowed()` | Exportado y **sin un solo uso** en `src/`. |
 | Freno de agentes | `agent/cli.mjs:122`, `agent/mcp.mjs:206` | Corta a 10k ops leyendo el bucket | El bucket lo escribe el cliente (`firestore.rules:531-560`), y `agentOps` está en la whitelist → `PATCH {agentOps: 0}` resetea la cuota. |
 | Créditos | `src/lib/credits.ts` + `firestore.rules:587` | `balanceUsd`, ledger inmutable, `requestTopUp` | **Nada debita.** Las recargas quedan `pending` para siempre. |
-| Gating por plan | `firestore.rules:90-104,97`; `AppTree.tsx:1261,1352,1691` | Compartir y agentes exigen `plan === 'paid'` | Modelo que D5/D8 retiran. |
+| Gating por plan | retirado | Compartir y agentes ya no exigen plan | D8 hecho; `entitlements` se elimina con D13. |
 | Caché local | `src/firebase.ts:36` | `persistentLocalCache` 20 MB | Es caché LRU del SDK, no un archivo del usuario. Sin `navigator.storage.persist()` en todo `src/` → evictable. |
 | Cola CRDT | `src/lib/collab/provider.ts:343` | `this.queued` en memoria | Reload = se pierde lo no enviado. La única durabilidad es el body con debounce 1,2 s (`NotePane.tsx:147`). |
 | Metring del escritorio | `desktop/src` | Cero referencias a usage | El sync de escritorio es uso ilimitado y gratis de Firestore. |
@@ -330,15 +335,15 @@ nota, con su `id` y su `etag`, no un borrador suelto) ni la cola CRDT.
 | **E6** | Checkout MoR (packs $5/$15/$50, fee $0,50, vigencia 24 meses, factura) | E3 | L |
 | **E7** | Retirar `entitlements`/`hasPaidPlan`/`UpgradeDialog`; reescribir el copy de "gratis para siempre" | E3, E6 | S |
 
-**Estado observado en el árbol de trabajo (22-nov-2026, sin commitear).** Parte de E0 y de E7
-está en curso en otra rama de trabajo: ya hay modo invitado (`src/lib/guestMode.ts`,
-`GuestWorkspace`, `guestDraft.ts` con borrador en `localStorage` y migración al entrar), y
-`src/lib/entitlements.ts` + `src/components/UpgradeDialog.tsx` figuran borrados. Nada de eso
-cubre todavía lo de este documento: no hay cola CRDT persistida, no hay `storage.persist()`,
-no hay proxy, y `quota.ts` sigue declarando 250 MB / 10.000 ops de agente.
+**Estado observado en el árbol de trabajo (22-nov-2026).** E7 está hecha: `entitlements` y
+`UpgradeDialog` se eliminaron y compartir ya no pide plan. También está el modo invitado
+(`src/lib/guestMode.ts`, `GuestWorkspace`, `guestDraft.ts` con borrador en `localStorage` y
+migración al entrar). Queda de E0: no hay cola CRDT persistida, no hay `storage.persist()`.
+E1-E6 no empezaron: no hay proxy, no hay `allowance`, no hay débito de créditos.
 
 E0 se puede hacer **hoy** y no depende de ninguna decisión pendiente: arregla pérdida de
-datos real (la cola en memoria) y es la base de D10.
+datos real (la cola en memoria) y es la base de D10. E1 arranca con el proxy en Cloud Run
+(D12).
 
 ---
 
@@ -391,15 +396,15 @@ Sin el 6, la cuota es una sugerencia. Sin el 2 y el 3, se pierden datos.
 
 ## 11. Decisiones abiertas
 
-| # | Pregunta | Dueño |
-|---|---|---|
-| 1 | ¿Cloud Run (rápido) o Workers/DO (más barato por mensaje)? | técnico, reversible |
-| 2 | ¿100 MB o menos para el muro de storage? | producto |
-| 3 | ¿El fee de $0,50 aplica a toda cuenta con saldo o solo a la que tuvo actividad? | producto/financiero |
-| 4 | ¿12 meses de dormancia es razonable antes de borrar? | legal/producto |
-| 5 | ¿Qué pasa con las cuentas que hoy tienen `entitlements.plan = 'paid'` (los que ya pagaron a mano)? | producto |
-| 6 | ¿El invitado de un link de **escritura** cuenta para el tope de 5 aunque no tenga cuenta? | producto |
-| 7 | ¿Se publica el tarifario por operación o se traduce a "horas de edición" para el usuario? | marketing |
+| # | Pregunta | Dueño | Estado |
+|---|---|---|---|
+| 1 | ¿Cloud Run (rápido) o Workers/DO (más barato por mensaje)? | técnico, reversible | **Cloud Run** (D12). |
+| 2 | ¿100 MB o menos para el muro de storage? | producto | Adoptado 100 MB (D6). |
+| 3 | ¿El fee de $0,50 aplica a toda cuenta con saldo o solo a la que tuvo actividad? | producto/financiero | Propuesto: **solo con actividad**; pendiente de confirmar. |
+| 4 | ¿12 meses de dormancia es razonable antes de borrar? | legal/producto | Pendiente. |
+| 5 | ¿Qué pasa con las cuentas que hoy tienen `entitlements.plan = 'paid'`? | producto | **No hay**: la app no está en producción (D13). |
+| 6 | ¿El invitado de un link de **escritura** cuenta para el tope de 5 aunque no tenga cuenta? | producto | Pendiente. |
+| 7 | ¿Se publica el tarifario por operación o se traduce a "horas de edición" para el usuario? | marketing | Pendiente. |
 
 ---
 

@@ -203,10 +203,10 @@ aceptar $2 como mínimo configurable.
 | Diálogo de uso | `src/components/UsageDialog.tsx` | Desglose de costo del mes, operaciones (incluye borrados), storage, créditos y diagnóstico de memoria. |
 | Rate limit y presupuesto del agente | `agent/rate-limit.mjs` + `agent/firestore-rest.mjs` + `agent/mcp.mjs` | Ventana fija por minuto (`FIREMD_AGENT_RATE_LIMIT`, default 60) y techo de requests por corrida (`FIREMD_REQUEST_BUDGET`, default 2000); el MCP resetea el presupuesto por tool call. |
 | Metering de agentes | `agent/firestore-rest.mjs` + `agent/cli.mjs` + `agent/mcp.mjs` | El store REST cuenta reads/writes/deletes por request; `flushUsage()` los vuelca con incrementos al bucket `usage/{uid}/months/{YYYY-MM}`. La CLI vuelca al terminar cada comando y el MCP cada 30 s y al recibir SIGINT/SIGTERM. Best-effort: si el volcado falla, se descarta (subcontar antes que duplicar). |
-| Cuota gratuita | `src/lib/quota.ts` + `src/components/UsageDialog.tsx` | `FREE_TIER` con 250 MB y 10.000 operaciones de agente/mes; `quotaLine()` calcula uso, tope y aviso (80% suave, 100% duro); el diálogo muestra barras de storage y operaciones. |
-| Saldo prepago | `src/lib/credits.ts` + `src/components/UsageDialog.tsx` | Packs de $5/$15/$50 que no vencen; `updateCreditSettings()` guarda umbral/monto/auto top-up; `requestTopUp()` crea una solicitud pendiente en `credits/{uid}/topups`. El saldo sigue siendo del servidor. |
-| Créditos (modelo) | `src/lib/usage.ts:182-208` + `firestore.rules:587-631` | `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (≥ $2), `autoTopUp`; el dueño edita solo la configuración (el saldo no cambia); ledger inmutable; solicitudes de recarga en `topups`. |
-| Entitlements (legado) | `firestore.rules:502-512` | `entitlements/{uid}` sigue existiendo para grants manuales y registros viejos, pero ya no condiciona compartir ni agentes. El cliente dejó de leerlo. |
+| Cuota gratuita | `src/lib/quota.ts` + `src/components/UsageDialog.tsx` | `FREE_TIER` con 100 MB y 20.000 operaciones/mes; `quotaLine()` calcula uso, tope y aviso (80% suave, 100% duro); el diálogo muestra barras de storage y operaciones. Las cuentas admin no tienen tope. |
+| Saldo prepago | `src/lib/credits.ts` + `src/components/UsageDialog.tsx` | Packs de $5/$15/$50 con vencimiento a 24 meses; `updateCreditSettings()` guarda umbral/monto/auto top-up; `requestTopUp()` crea una solicitud pendiente en `credits/{uid}/topups`. El saldo sigue siendo del servidor. |
+| Créditos (modelo) | `src/lib/usage.ts:182-208` + `firestore.rules:570-631` | `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (≥ $5), `autoTopUp`; el dueño edita solo la configuración (el saldo no cambia); ledger inmutable; solicitudes de recarga en `topups`. |
+| Admin | `src/lib/admin.ts` + `firestore.rules:83-95` | `admins/{uid}` marca la cuenta; el bootstrap por email es `iuvalgoldansky@gmail.com`; los admins no pagan ni tienen tope. |
 | Gating flat | retirado | `sharingUnlocked` y `UpgradeDialog` se eliminaron: compartir y agentes son parte del free tier. El cobro es por uso (cuota + créditos). |
 | Reglas de uso y créditos | `firestore.rules:531-631` | Solo el dueño escribe el bucket mensual (id `YYYY-MM`, enteros ≥ 0, campos con lista blanca, `agentOps` incluido); en `credits`, el dueño edita configuración sin tocar el saldo y pide recargas; saldo y ledger, solo admin. |
 | Tests | `tests/usage.test.ts`; `tests/quota.test.ts`; `tests/credits.test.ts`; `tests/agent-rate-limit.test.ts`; `tests/agent.test.ts`; `tests/firestore.rules.test.ts:1089+` | Tarifas, desglose, rollover de mes, cuota, créditos, rate limiter y presupuesto; metering del agente contra el emulador; reglas del bucket, `credits` y `topups`. |
@@ -221,7 +221,7 @@ se agregó después y el gating flat se retiró. Queda:
 | # | Falta | Evidencia del hueco | Tamaño |
 |---|---|---|---|
 | 1 | **Medición confiable server-side** | El bucket lo escribe el cliente (y ahora también la CLI/MCP) y las reglas lo permiten (`firestore.rules:531-631`): sirve para mostrar, no para cobrar. El propio código lo dice (`usage.ts:15-18`). | L — Cloud Function + contadores. |
-| 2 | **Tope duro de storage** | La cuota de 250 MB se muestra y se avisa, pero no se bloquea: el storage lo calcula el cliente y las reglas no lo verifican. | M — reglas + contador server-side. |
+| 2 | **Tope duro de storage** | La cuota de 100 MB se muestra y se avisa, pero no se bloquea: el storage lo calcula el cliente y las reglas no lo verifican. | M — reglas + contador server-side. |
 | 3 | **Consumo de créditos** | `credits` y `topups` existen, pero nada debita el saldo ni acredita una recarga; el ledger es inmutable desde el cliente. | M — backend. |
 | 4 | **Checkout / proveedor** | La solicitud de recarga queda pendiente; no hay pasarela. Stripe no opera en UY. | L — MoR o MercadoPago/dLocal. |
 | 5 | **Throttle 500–600 ms** | Sigue en 350 ms (`provider.ts:25`). Es una decisión de UX, no un bug: medir la latencia antes de cambiarlo. | S — una constante + medir. |
@@ -249,8 +249,8 @@ se agregó después y el gating flat se retiró. Queda:
 3. ~~**Metering de agentes**~~ (hecho): el store REST cuenta operaciones y la CLI/MCP
    vuelcan al bucket mensual.
 4. ~~**Decidir el modelo comercial**~~ (hecho): free tier + créditos prepagos.
-5. ~~**Cuota free tier**~~ (hecho): 250 MB y 10k operaciones, con aviso en el diálogo y
-   corte en la CLI/MCP.
+5. ~~**Cuota free tier**~~ (hecho): 100 MB y 20k operaciones mensuales, con aviso en el
+   diálogo y corte en la CLI/MCP. Las cuentas admin no tienen tope.
 6. ~~**Saldo prepago**~~ (hecho): packs, configuración de auto top-up y solicitudes.
 7. **Medición server-side** (L): Cloud Function que agregue eventos y escriba el bucket;
    el cliente pasa a solo lectura. Recién ahí el cobro es posible.
@@ -258,4 +258,4 @@ se agregó después y el gating flat se retiró. Queda:
 9. ~~**Retirar el gating flat**~~ (hecho): compartir y agentes ya no piden plan pago.
 
 Los pasos 1–6 y 9 ya están hechos y no dependen de Blaze ni del proveedor de pagos. El paso 7
-depende de Cloud Functions; el 8, de elegir pasarela.
+depende de Cloud Run (decisión D12); el 8, de elegir pasarela.

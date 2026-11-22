@@ -118,14 +118,16 @@ try {
       const db = await openStore()
 
       // Cuota gratuita de agentes: se frena antes de tocar Firestore si el mes
-      // ya llegó al tope. El mensaje dice cómo seguir.
-      const used = await db.agentOpsUsed()
-      if (used >= AGENT_OPS_PER_MONTH) {
-        fail(
-          `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_MONTH.toLocaleString('es')}/mes). ` +
-            'Cargá saldo en FireMD para seguir usando la CLI.',
-          3
-        )
+      // ya llegó al tope. Los admins no tienen tope. El mensaje dice cómo seguir.
+      if (!(await db.isAdmin())) {
+        const used = await db.agentOpsUsed()
+        if (used >= AGENT_OPS_PER_MONTH) {
+          fail(
+            `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_MONTH.toLocaleString('es')}/mes). ` +
+              'Cargá saldo en FireMD para seguir usando la CLI.',
+            3
+          )
+        }
       }
       db.meterAgentOp()
 

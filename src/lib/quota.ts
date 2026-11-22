@@ -1,23 +1,26 @@
 import type { UsageTotals } from './usage'
 
 /**
- * Free tier permanente.
+ * Cuota gratuita mensual renovable (D6 de `docs/prepaid-usage-model.md`).
  *
- * La edición humana (notas, carpetas y colaboración) es ilimitada: es lo que
- * sostiene la adopción y compartir links no cuesta cuota. Lo que se mide es lo
- * que escala con volumen: el almacenamiento guardado y las operaciones que
- * ejecutan los agentes CLI/MCP.
+ * El tiempo real es pago (D1): el modo gratuito edita en modo liviano. La
+ * cuota se renueva sola el 1° de cada mes calendario UTC y tiene dos muros:
+ * almacenamiento y operaciones. Leer los datos propios nunca se corta y nunca
+ * se borra nada por falta de pago (D9).
  *
- * Las operaciones se cuentan por mes calendario UTC, en el mismo bucket
- * `usage/{uid}/months/{YYYY-MM}` que ya usa el medidor. La cuota es una
- * política de producto: el cliente la muestra y la CLI/MCP la respetan, pero
- * el cobro real necesita medición server-side (ver docs/pricing.md §6).
+ * Las cuentas admin no pagan ni tienen tope: `freeTierStatus` y
+ * `agentOpsAllowed` reciben `admin` y devuelven una cuota ilimitada.
+ *
+ * El medidor de hoy es del cliente y sirve para transparencia; el cobro real
+ * necesita el proxy (D2) y el tope duro se aplica ahí.
  */
 export const FREE_TIER = {
-  /** 250 MB de notas, historial y snapshots. */
-  storageBytes: 250 * 1024 * 1024,
-  /** 10.000 operaciones de agente por mes. */
-  agentOpsPerMonth: 10_000,
+  /** 100 MB de notas, historial y adjuntos. */
+  storageBytes: 100 * 1024 * 1024,
+  /** 20.000 operaciones por mes: mismas para humanos y agentes. */
+  opsPerMonth: 20_000,
+  /** Alias histórico: las operaciones de agente son operaciones. */
+  agentOpsPerMonth: 20_000,
 } as const
 
 export interface QuotaLine {
@@ -27,6 +30,8 @@ export interface QuotaLine {
   /** 0..1, recortado para barras de progreso. */
   percent: number
   over: boolean
+  /** Cuenta admin: sin tope, sin cargo. */
+  unlimited?: boolean
 }
 
 export function quotaLine(used: number, limit: number): QuotaLine {
@@ -42,30 +47,53 @@ export function quotaLine(used: number, limit: number): QuotaLine {
   }
 }
 
+export function unlimitedQuota(used: number): QuotaLine {
+  return {
+    used: Math.max(0, Number(used) || 0),
+    limit: 0,
+    remaining: 0,
+    percent: 0,
+    over: false,
+    unlimited: true,
+  }
+}
+
 export interface FreeTierStatus {
   storage: QuotaLine
+  ops: QuotaLine
+  /** Alias histórico de `ops`. */
   agentOps: QuotaLine
 }
 
 export function freeTierStatus(
-  usage: Pick<UsageTotals, 'storageBytes' | 'agentOps'> | null
+  usage: Pick<UsageTotals, 'storageBytes' | 'agentOps'> | null,
+  admin = false
 ): FreeTierStatus {
-  return {
-    storage: quotaLine(usage?.storageBytes ?? 0, FREE_TIER.storageBytes),
-    agentOps: quotaLine(usage?.agentOps ?? 0, FREE_TIER.agentOpsPerMonth),
-  }
+  const storageUsed = usage?.storageBytes ?? 0
+  const opsUsed = usage?.agentOps ?? 0
+  const storage = admin ? unlimitedQuota(storageUsed) : quotaLine(storageUsed, FREE_TIER.storageBytes)
+  const ops = admin ? unlimitedQuota(opsUsed) : quotaLine(opsUsed, FREE_TIER.opsPerMonth)
+  return { storage, ops, agentOps: ops }
 }
 
 export type QuotaWarning = 'none' | 'soft' | 'hard'
 
 /** Aviso suave al 80%; duro cuando se pasó del tope. */
 export function quotaWarning(line: QuotaLine, softAt = 0.8): QuotaWarning {
+  if (line.unlimited) return 'none'
   if (line.over) return 'hard'
   if (line.percent >= softAt) return 'soft'
   return 'none'
 }
 
-/** ¿La cuenta puede seguir usando agentes este mes? */
-export function agentOpsAllowed(usage: Pick<UsageTotals, 'agentOps'> | null): boolean {
-  return quotaLine(usage?.agentOps ?? 0, FREE_TIER.agentOpsPerMonth).over === false
+/** ¿La cuenta puede seguir operando este mes? */
+export function agentOpsAllowed(
+  usage: Pick<UsageTotals, 'agentOps'> | null,
+  admin = false
+): boolean {
+  if (admin) return true
+  return quotaLine(usage?.agentOps ?? 0, FREE_TIER.opsPerMonth).over === false
 }
+
+/** Alias: la cuota de operaciones es una sola para humanos y agentes. */
+export const opsAllowed = agentOpsAllowed

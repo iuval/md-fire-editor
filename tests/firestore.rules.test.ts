@@ -72,17 +72,6 @@ async function seedNote(id: string, overrides: Record<string, unknown> = {}) {
   })
 }
 
-async function grantPaid(uid: string, plan: 'paid' | 'free' = 'paid') {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'entitlements', uid), {
-      plan,
-      source: 'test',
-      expiresAt: null,
-      updatedAt: ts(),
-    })
-  })
-}
-
 async function seedFolder(id: string, overrides: Record<string, unknown> = {}) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'folders', id), folderDoc(overrides))
@@ -928,7 +917,6 @@ describe('tags', () => {
   })
 
   it('tagging does not require a paid plan', async () => {
-    await grantPaid(OWNER, 'free')
     await seedNote('n1')
     await assertSucceeds(
       updateDoc(doc(db(OWNER), 'notes', 'n1'), { tags: ['gratis'], updatedAt: ts() })
@@ -938,7 +926,6 @@ describe('tags', () => {
 
 describe('sharing is not gated by plan', () => {
   it('a free owner can change the ACL of a note', async () => {
-    await grantPaid(OWNER, 'free')
     await seedNote('n1')
     await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { access: 'link-view', updatedAt: ts() }))
     await assertSucceeds(
@@ -951,76 +938,42 @@ describe('sharing is not gated by plan', () => {
   })
 
   it('a free owner can still edit content and the title', async () => {
-    await grantPaid(OWNER, 'free')
     await seedNote('n1')
     await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { markdown: 'nuevo', updatedAt: ts() }))
     await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { title: 'Otro', updatedAt: ts() }))
   })
 
   it('a free owner can reshare a folder and rename it', async () => {
-    await grantPaid(OWNER, 'free')
     await seedFolder('f1')
     await assertSucceeds(updateDoc(doc(db(OWNER), 'folders', 'f1'), { access: 'link-view', updatedAt: ts() }))
     await assertSucceeds(updateDoc(doc(db(OWNER), 'folders', 'f1'), { name: 'Nuevo', updatedAt: ts() }))
   })
 
-  it('an expired plan does not block sharing either', async () => {
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'entitlements', OWNER), {
-        plan: 'paid',
-        source: 'test',
-        expiresAt: new Date('2020-01-01T00:00:00Z'),
-        updatedAt: ts(),
-      })
-    })
-    await seedNote('n1')
-    await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { access: 'link-view', updatedAt: ts() }))
+  it('reading a shared document needs no plan', async () => {
+    await seedNote('n1', everyRole)
+    await assertSucceeds(getDoc(doc(db(VIEWER), 'notes', 'n1')))
+  })
+})
+
+describe('admins', () => {
+  it('the bootstrap admin creates its own admins document', async () => {
+    const adminDb = env
+      .authenticatedContext(OWNER, { email: 'iuvalgoldansky@gmail.com' })
+      .firestore()
+    await assertSucceeds(setDoc(doc(adminDb, 'admins', OWNER), { createdAt: ts() }))
   })
 
-  it('a client cannot grant itself a plan', async () => {
-    await assertFails(
-      setDoc(doc(db(VIEWER), 'entitlements', VIEWER), {
-        plan: 'paid',
-        source: 'self',
-        expiresAt: null,
-        updatedAt: ts(),
-      })
-    )
-    await assertFails(
-      setDoc(doc(db(OWNER), 'entitlements', OWNER), {
-        plan: 'paid',
-        source: 'self',
-        expiresAt: null,
-        updatedAt: ts(),
-      })
-    )
+  it('nobody else can create an admins document', async () => {
+    await assertFails(setDoc(doc(db(VIEWER), 'admins', VIEWER), { createdAt: ts() }))
+    await assertFails(setDoc(doc(db(VIEWER), 'admins', OWNER), { createdAt: ts() }))
   })
 
-  it('only an admin can grant a plan', async () => {
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'admins', OWNER), { createdAt: ts() })
-    })
-    await assertSucceeds(
-      setDoc(doc(db(OWNER), 'entitlements', EDITOR), {
-        plan: 'paid',
-        source: 'manual',
-        expiresAt: null,
-        updatedAt: ts(),
-      })
-    )
-    await assertFails(
-      setDoc(doc(db(EDITOR), 'entitlements', VIEWER), {
-        plan: 'paid',
-        source: 'manual',
-        expiresAt: null,
-        updatedAt: ts(),
-      })
-    )
-  })
-
-  it('users can read their own entitlement but not somebody else\'s', async () => {
-    await assertSucceeds(getDoc(doc(db(OWNER), 'entitlements', OWNER)))
-    await assertFails(getDoc(doc(db(VIEWER), 'entitlements', OWNER)))
+  it('the bootstrap email is admin without a document', async () => {
+    const adminDb = env
+      .authenticatedContext(OWNER, { email: 'iuvalgoldansky@gmail.com' })
+      .firestore()
+    await assertSucceeds(getDoc(doc(adminDb, 'usage', VIEWER)))
+    await assertFails(getDoc(doc(db(VIEWER), 'usage', OWNER)))
   })
 })
 
@@ -1233,7 +1186,7 @@ describe('usage and credits', () => {
       setDoc(doc(db(OWNER), 'credits', EDITOR), {
         balanceUsd: 5,
         thresholdUsd: 1,
-        topUpUsd: 2,
+        topUpUsd: 5,
         autoTopUp: true,
         updatedAt: ts(),
       })
@@ -1312,7 +1265,6 @@ describe('folder ordering', () => {
   })
 
   it('an editor can reorder without a paid plan', async () => {
-    await grantPaid(EDITOR, 'free')
     await seedNote('n1', everyRole)
     await assertSucceeds(updateDoc(doc(db(EDITOR), 'notes', 'n1'), { order: 20, updatedAt: ts() }))
   })

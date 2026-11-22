@@ -203,12 +203,14 @@ rl.on('line', async (line) => {
       try {
         limiter.charge()
         db.resetBudget()
-        const used = await db.agentOpsUsed()
-        if (used >= AGENT_OPS_PER_MONTH) {
-          throw new AgentError(
-            `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_MONTH.toLocaleString('es')}/mes). Cargá saldo en FireMD para seguir.`,
-            'E_QUOTA'
-          )
+        if (!(await db.isAdmin())) {
+          const used = await db.agentOpsUsed()
+          if (used >= AGENT_OPS_PER_MONTH) {
+            throw new AgentError(
+              `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_MONTH.toLocaleString('es')}/mes). Cargá saldo en FireMD para seguir.`,
+              'E_QUOTA'
+            )
+          }
         }
         db.meterAgentOp()
         const result = await callTool(db, params?.name, params?.arguments ?? {})

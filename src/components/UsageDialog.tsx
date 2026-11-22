@@ -15,6 +15,7 @@ import {
 import { FREE_TIER, freeTierStatus, quotaWarning } from '../lib/quota'
 import {
   CREDIT_PACKS,
+  monthlyFeeUsd,
   validateCreditSettings,
   type CreditSettings,
 } from '../lib/credits'
@@ -33,6 +34,8 @@ export interface Diagnostics {
 interface UsageDialogProps {
   usage: UsageTotals | null
   credits: Credits | null
+  /** Cuenta admin: sin tope y sin fee. */
+  isAdmin?: boolean
   notes: number
   folders: number
   diagnostics: Diagnostics
@@ -50,6 +53,7 @@ interface UsageDialogProps {
 export function UsageDialog({
   usage,
   credits,
+  isAdmin = false,
   notes,
   folders,
   diagnostics,
@@ -70,7 +74,7 @@ export function UsageDialog({
     agentOps: 0,
   }
   const cost = costBreakdown(totals)
-  const quota = freeTierStatus(totals)
+  const quota = freeTierStatus(totals, isAdmin)
   const [settings, setSettings] = useState<CreditSettings>({
     thresholdUsd: credits?.thresholdUsd ?? 1,
     topUpUsd: credits?.topUpUsd ?? 5,
@@ -129,27 +133,27 @@ export function UsageDialog({
         </span>
       </div>
 
-      <p className="usage-section-title">Plan gratuito</p>
+      <p className="usage-section-title">{isAdmin ? 'Cuota (admin)' : 'Cuota mensual'}</p>
       <div className="usage-grid">
         <QuotaBar
           label="Almacenamiento"
           used={formatBytes(quota.storage.used)}
-          limit={formatBytes(FREE_TIER.storageBytes)}
+          limit={quota.storage.unlimited ? 'Sin límite' : formatBytes(FREE_TIER.storageBytes)}
           percent={quota.storage.percent}
           warning={quotaWarning(quota.storage)}
         />
         <QuotaBar
-          label="Operaciones de agente"
-          used={quota.agentOps.used.toLocaleString('es')}
-          limit={FREE_TIER.agentOpsPerMonth.toLocaleString('es')}
-          percent={quota.agentOps.percent}
-          warning={quotaWarning(quota.agentOps)}
+          label="Operaciones"
+          used={quota.ops.used.toLocaleString('es')}
+          limit={quota.ops.unlimited ? 'Sin límite' : FREE_TIER.opsPerMonth.toLocaleString('es')}
+          percent={quota.ops.percent}
+          warning={quotaWarning(quota.ops)}
         />
       </div>
       <p className="hint">
-        Notas, carpetas y colaboración en tiempo real son ilimitadas. La cuota gratuita cubre
-        {' '}{formatBytes(FREE_TIER.storageBytes)} de almacenamiento y{' '}
-        {FREE_TIER.agentOpsPerMonth.toLocaleString('es')} operaciones de agente por mes.
+        {isAdmin
+          ? 'Cuenta admin: sin tope de cuota y sin cargos. Leer tus datos siempre está permitido.'
+          : `La cuota se renueva el 1° de cada mes. Cubre ${formatBytes(FREE_TIER.storageBytes)} de almacenamiento y ${FREE_TIER.opsPerMonth.toLocaleString('es')} operaciones por mes. El tiempo real es pago; el modo gratuito edita en modo liviano.`}
       </p>
 
       <div className="usage-sep" />
@@ -225,7 +229,8 @@ export function UsageDialog({
 
       <p className="usage-section-title">Saldo prepago</p>
       <div className="usage-grid">
-        <Row label="Plan" value="Gratuito + créditos" />
+        <Row label="Modelo" value={isAdmin ? 'Admin (sin cargos)' : 'Uso prepago + fee'} />
+        <Row label="Fee mensual" value={formatUsd(monthlyFeeUsd(isAdmin))} />
         <Row label="Saldo" value={credits ? formatUsd(credits.balanceUsd) : 'sin cargar'} />
       </div>
 
@@ -237,8 +242,9 @@ export function UsageDialog({
         ))}
       </div>
       <p className="hint">
-        Los packs no vencen. El pago con tarjeta todavía no está habilitado: el pedido queda
-        pendiente y se acredita cuando se confirme.
+        El saldo vence a los 24 meses. El fee mensual se descuenta del saldo y solo se cobra
+        en cuentas con actividad; las cuentas admin no pagan. El pago con tarjeta todavía no
+        está habilitado: el pedido queda pendiente y se acredita cuando se confirme.
       </p>
 
       <div className="usage-sep" />

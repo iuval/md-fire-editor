@@ -26,8 +26,10 @@ credenciales de la CLI.
 
 ## Planes y cuota
 
-- Cuota gratuita permanente: 250 MB de almacenamiento y 10.000 operaciones de agente por mes.
-- Saldo prepago con recarga (top-up) en packs de USD 5, 15 y 50. Sin suscripción obligatoria.
+- Cuota gratuita mensual que se renueva: 100 MB de almacenamiento y 20.000 operaciones por mes.
+- Saldo prepago con recarga (top-up) en packs de USD 5, 15 y 50; vence a los 24 meses.
+- Fee mensual de USD 0,50 por cuenta con actividad. Las cuentas admin no pagan.
+- El tiempo real (presencia y cursores) se paga con saldo; el modo gratuito edita en modo liviano.
 - [Planes y uso](https://firemd.app/planes): detalle de la cuota, los packs y las preguntas
   frecuentes.
 - La app muestra el consumo y el costo estimado. El cobro con tarjeta todavía no está

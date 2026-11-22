@@ -80,12 +80,14 @@ service cloud.firestore {
     }
 
     // ---------- admins ----------
-    // `entitlements` stays as an admin-only collection for manual grants and
-    // legacy records, but it no longer gates sharing or agents: the product
-    // model is a permanent free tier plus prepaid usage credits.
+    // Admin accounts do not pay and have no quota. The bootstrap admin is
+    // identified by email so the account works before its `admins/{uid}` doc
+    // exists; the app creates that doc on first sign-in.
 
     function isAdmin() {
-      return signedIn() && exists(/databases/$(database)/documents/admins/$(uid()));
+      return signedIn()
+        && (exists(/databases/$(database)/documents/admins/$(uid()))
+          || request.auth.token.email == 'iuvalgoldansky@gmail.com');
     }
 
     // ---------- shared validation ----------
@@ -479,22 +481,15 @@ service cloud.firestore {
       allow delete: if resource != null && resource.data.ownerUid == uid();
     }
 
-    // ---------- plans ----------
+    // ---------- admins ----------
     match /admins/{adminId} {
       allow get: if signedIn();
-      allow list, write: if false;
-    }
-
-    match /entitlements/{userId} {
-      allow get: if signedIn() && (uid() == userId || isAdmin());
       allow list: if false;
-
-      allow write: if isAdmin()
-        && request.resource.data.keys().hasOnly(['plan', 'source', 'expiresAt', 'updatedAt'])
-        && request.resource.data.plan in ['free', 'paid']
-        && isString(request.resource.data.source)
-        && request.resource.data.source.size() <= 40
-        && isTimestamp(request.resource.data.updatedAt);
+      // El bootstrap por email crea su propio documento; nadie más escribe.
+      allow create: if signedIn()
+        && adminId == uid()
+        && request.auth.token.email == 'iuvalgoldansky@gmail.com';
+      allow update, delete: if false;
     }
 
     // ---------- user settings ----------
@@ -581,7 +576,7 @@ service cloud.firestore {
           && request.resource.data.balanceUsd is number && request.resource.data.balanceUsd >= 0
           && request.resource.data.thresholdUsd is number && request.resource.data.thresholdUsd >= 0
           && request.resource.data.topUpUsd is number
-          && request.resource.data.topUpUsd >= 2
+          && request.resource.data.topUpUsd >= 5
           && request.resource.data.autoTopUp is bool
           && isTimestamp(request.resource.data.updatedAt);
       }

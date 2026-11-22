@@ -50,7 +50,13 @@ export const RATE_EGRESS_GIB = 0.12
 export const RATE_PITR_GIB_MONTH = 0.15
 export const RATE_BACKUP_GIB_MONTH = 0.03
 
-export const MIN_TOP_UP_USD = 2
+export const MIN_TOP_UP_USD = 5
+
+/** Fee fijo mensual por cuenta con actividad (D3/D5). Las cuentas admin no pagan. */
+export const MONTHLY_FEE_USD = 0.5
+
+/** El saldo prepago vence a los 24 meses (D3). */
+export const CREDIT_EXPIRY_MONTHS = 24
 
 const GIB = 1024 ** 3
 

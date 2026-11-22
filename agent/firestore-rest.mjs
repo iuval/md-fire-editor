@@ -12,8 +12,8 @@ function emptyUsage() {
   return { reads: 0, writes: 0, deletes: 0, bytesRead: 0, bytesWritten: 0, agentOps: 0 }
 }
 
-/** Espejo de FREE_TIER.agentOpsPerMonth en src/lib/quota.ts. */
-export const AGENT_OPS_PER_MONTH = 10_000
+/** Espejo de FREE_TIER.opsPerMonth en src/lib/quota.ts. */
+export const AGENT_OPS_PER_MONTH = 20_000
 
 function base(projectId) {
   const host = process.env.FIRESTORE_EMULATOR_HOST
@@ -101,6 +101,23 @@ export class RestStore {
   /** Una tool call o un comando cuentan como una operación de agente. */
   meterAgentOp() {
     this.usage.agentOps += 1
+  }
+
+  /** ¿La cuenta es admin? Los admins no pagan ni tienen tope. Caché de un minuto. */
+  async isAdmin() {
+    const now = Date.now()
+    if (this.adminCache && now - this.adminCache.at < 60_000) return this.adminCache.value
+    const uid = this.uid
+    let value = false
+    if (uid && typeof uid === 'string') {
+      try {
+        value = Boolean(await this.get('admins', uid))
+      } catch {
+        value = false
+      }
+    }
+    this.adminCache = { at: now, value }
+    return value
   }
 
   /** Operaciones de agente del mes en curso, con caché de un minuto. */

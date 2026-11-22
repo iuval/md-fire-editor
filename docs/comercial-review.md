@@ -21,7 +21,7 @@ de $4 tiene margen holgado.
 | 1 | "Markdown local, archivos .md en disco" es falso: la fuente de verdad es Firestore | no hay acceso a filesystem ni export; "abrir la misma carpeta" (§7.3) no existe | (a) construir vault local (File System Access API, solo Chromium; o app de escritorio) o (b) reposicionar a "markdown exportable" + Export .md/ZIP e Import |
 | 2 | "E2E encryption" | no existe; incompatible con búsqueda server-side, agentes y ACLs actuales | quitarlo del copy |
 | 3 | "Exportable siempre" | no hay export | Export por nota y ZIP de todo (implementado) |
-| 4 | Sin monetización completa: cuota y créditos implementados, checkout pendiente | el medidor, la cuota gratuita y el saldo prepago existen; no hay pasarela ni débito automático | cuota gratuita permanente + créditos prepagos; checkout con MoR o MercadoPago/dLocal |
+| 4 | Sin monetización completa: cuota y créditos implementados, checkout pendiente | el medidor, la cuota gratuita y el saldo prepago existen; no hay pasarela ni débito automático | cuota gratuita mensual renovable + créditos prepagos; checkout con MoR o MercadoPago/dLocal |
 | 5 | Stripe no opera desde Uruguay | stripe.com/global lista Brasil, México, España; no Uruguay | MoR (Paddle/Lemon Squeezy/Polar ~5% + $0.50) o entidad US/EU; MercadoPago/dLocal local |
 | 6 | $0.05–0.10 por sesión | fee mínimo $0.30 → 300% del precio | mínimo de cobro $3 prepago, o sesiones dentro del plan team |
 | 7 | Sin analítica: los KPIs de §7.4 son inmedibles | no hay eventos | 5–7 eventos (implementado) |

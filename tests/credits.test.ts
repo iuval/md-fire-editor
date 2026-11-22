@@ -3,18 +3,31 @@ import {
   CREDIT_PACKS,
   EXTRA_STORAGE_PRICE_PER_GB_MONTH,
   AGENT_OPS_PRICE_PER_100K,
+  creditExpiryDate,
+  monthlyFeeUsd,
   needsTopUp,
   validateCreditSettings,
 } from '../src/lib/credits'
+import { CREDIT_EXPIRY_MONTHS, MONTHLY_FEE_USD } from '../src/lib/usage'
 
 describe('prepaid credits', () => {
-  it('offers packs that do not expire', () => {
+  it('offers packs that expire after 24 months', () => {
     expect([...CREDIT_PACKS]).toEqual([5, 15, 50])
+    expect(CREDIT_EXPIRY_MONTHS).toBe(24)
+    expect(creditExpiryDate(new Date('2026-11-22T00:00:00Z')).toISOString()).toBe(
+      '2028-11-01T00:00:00.000Z'
+    )
   })
 
   it('prices agent operations and extra storage at the published rates', () => {
     expect(AGENT_OPS_PRICE_PER_100K).toBe(0.5)
-    expect(EXTRA_STORAGE_PRICE_PER_GB_MONTH).toBe(0.5)
+    expect(EXTRA_STORAGE_PRICE_PER_GB_MONTH).toBe(0.6)
+  })
+
+  it('charges the monthly fee only to non-admin accounts', () => {
+    expect(MONTHLY_FEE_USD).toBe(0.5)
+    expect(monthlyFeeUsd()).toBe(0.5)
+    expect(monthlyFeeUsd(true)).toBe(0)
   })
 
   it('rejects invalid settings', () => {
@@ -32,7 +45,7 @@ describe('prepaid credits', () => {
     ).toBeNull()
   })
 
-  it('does not need a top-up without credits or without a cost', () => {
+  it('does not need a top-up without credits or without an estimated cost', () => {
     expect(needsTopUp(null, 0.5)).toBe(false)
     expect(
       needsTopUp({ balanceUsd: 0, thresholdUsd: 1, topUpUsd: 5, autoTopUp: false }, 0)
