@@ -525,6 +525,9 @@ service cloud.firestore {
 
     // ---------- usage ----------
     // Client-measured counters: good for transparency, never for billing.
+    // Each month is its own bucket, so a rollover cannot mislabel last month's
+    // totals as this month's. The legacy single document stays writable for one
+    // deploy cycle so a cached bundle does not break.
     match /usage/{userId} {
       allow get: if signedIn() && (uid() == userId || isAdmin());
       allow list: if false;
@@ -532,40 +535,100 @@ service cloud.firestore {
       allow write: if signedIn()
         && uid() == userId
         && request.resource.data.keys().hasOnly([
-            'month', 'writes', 'reads', 'bytesWritten', 'bytesRead', 'storageBytes', 'updatedAt'
+            'month', 'writes', 'reads', 'deletes', 'bytesWritten', 'bytesRead', 'storageBytes', 'updatedAt'
           ])
         && request.resource.data.month is string
         && request.resource.data.month.matches('^[0-9]{4}-[0-9]{2}$')
         && request.resource.data.writes is int && request.resource.data.writes >= 0
         && request.resource.data.reads is int && request.resource.data.reads >= 0
+        && (!request.resource.data.keys().hasAny(['deletes'])
+          || (request.resource.data.deletes is int && request.resource.data.deletes >= 0))
         && request.resource.data.bytesWritten is int && request.resource.data.bytesWritten >= 0
         && request.resource.data.bytesRead is int && request.resource.data.bytesRead >= 0
         && (!request.resource.data.keys().hasAny(['storageBytes'])
           || (request.resource.data.storageBytes is int && request.resource.data.storageBytes >= 0))
         && isTimestamp(request.resource.data.updatedAt);
+
+      match /months/{month} {
+        allow get: if signedIn() && (uid() == userId || isAdmin());
+        allow list: if false;
+
+        // Counters are optional so the storage write and the counter write can
+        // create the bucket independently; each one is validated when present.
+        allow write: if signedIn()
+          && uid() == userId
+          && request.resource.data.keys().hasOnly([
+              'month', 'writes', 'reads', 'deletes', 'bytesWritten', 'bytesRead', 'storageBytes', 'agentOps', 'updatedAt'
+            ])
+          && request.resource.data.month == month
+          && month.matches('^[0-9]{4}-[0-9]{2}$')
+          && (!request.resource.data.keys().hasAny(['writes'])
+            || (request.resource.data.writes is int && request.resource.data.writes >= 0))
+          && (!request.resource.data.keys().hasAny(['reads'])
+            || (request.resource.data.reads is int && request.resource.data.reads >= 0))
+          && (!request.resource.data.keys().hasAny(['deletes'])
+            || (request.resource.data.deletes is int && request.resource.data.deletes >= 0))
+          && (!request.resource.data.keys().hasAny(['bytesWritten'])
+            || (request.resource.data.bytesWritten is int && request.resource.data.bytesWritten >= 0))
+          && (!request.resource.data.keys().hasAny(['bytesRead'])
+            || (request.resource.data.bytesRead is int && request.resource.data.bytesRead >= 0))
+          && (!request.resource.data.keys().hasAny(['storageBytes'])
+            || (request.resource.data.storageBytes is int && request.resource.data.storageBytes >= 0))
+          && (!request.resource.data.keys().hasAny(['agentOps'])
+            || (request.resource.data.agentOps is int && request.resource.data.agentOps >= 0))
+          && isTimestamp(request.resource.data.updatedAt);
+      }
     }
 
     // ---------- credits ----------
-    // Balances and auto top-up settings are written by an admin only: a client
-    // must never be able to grant itself money.
+    // El saldo y el libro los escribe solo el servidor: un cliente nunca puede
+    // acreditarse dinero. El dueño sí puede editar su configuración de recarga
+    // (umbral, monto y auto top-up) sin tocar el saldo, y pedir una recarga.
     match /credits/{userId} {
       allow get: if signedIn() && (uid() == userId || isAdmin());
       allow list: if false;
 
-      allow write: if isAdmin()
-        && request.resource.data.keys().hasOnly([
+      function validCredits() {
+        return request.resource.data.keys().hasOnly([
             'balanceUsd', 'thresholdUsd', 'topUpUsd', 'autoTopUp', 'updatedAt'
           ])
-        && request.resource.data.balanceUsd is number && request.resource.data.balanceUsd >= 0
-        && request.resource.data.thresholdUsd is number && request.resource.data.thresholdUsd >= 0
-        && request.resource.data.topUpUsd is number
-        && request.resource.data.topUpUsd >= 2
-        && request.resource.data.autoTopUp is bool
-        && isTimestamp(request.resource.data.updatedAt);
+          && request.resource.data.balanceUsd is number && request.resource.data.balanceUsd >= 0
+          && request.resource.data.thresholdUsd is number && request.resource.data.thresholdUsd >= 0
+          && request.resource.data.topUpUsd is number
+          && request.resource.data.topUpUsd >= 2
+          && request.resource.data.autoTopUp is bool
+          && isTimestamp(request.resource.data.updatedAt);
+      }
 
+      allow create: if isAdmin() && validCredits();
+      allow update: if validCredits()
+        && (isAdmin()
+          || (signedIn()
+            && uid() == userId
+            && request.resource.data.balanceUsd == resource.data.balanceUsd));
+      allow delete: if isAdmin();
+
+      // El libro mayor es inmutable desde el cliente.
       match /ledger/{entryId} {
         allow read: if signedIn() && (uid() == userId || isAdmin());
         allow write: if false;
+      }
+
+      // Solicitudes de recarga: el dueño crea la suya en estado pendiente y
+      // solo el servidor la marca pagada o cancelada.
+      match /topups/{topUpId} {
+        allow get: if signedIn() && (uid() == userId || isAdmin());
+        allow list: if signedIn() && uid() == userId;
+
+        allow create: if signedIn()
+          && uid() == userId
+          && request.resource.data.keys().hasOnly(['amountUsd', 'status', 'requestedAt'])
+          && request.resource.data.amountUsd is number
+          && request.resource.data.amountUsd >= 2
+          && request.resource.data.status == 'pending'
+          && isTimestamp(request.resource.data.requestedAt);
+
+        allow update, delete: if isAdmin();
       }
     }
 

@@ -20,7 +20,7 @@ import { DEFAULT_SORT, type SortMode } from './sorting'
 import { EMPTY_CANVAS_JSON, MAX_CANVAS_CHARS } from './canvas/model'
 
 export type { Access, Acl, Role } from './acl'
-export { ACCESS_LABELS, ROLE_LABELS, aclMembers, canReadAcl, canWriteAcl, isAclOwner, roleOf } from './acl'
+export { accessLabel, roleLabel, aclMembers, canReadAcl, canWriteAcl, isAclOwner, roleOf } from './acl'
 
 export type AclSource = 'own' | 'folder'
 

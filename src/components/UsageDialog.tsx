@@ -1,15 +1,23 @@
+import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { Modal } from './Modal'
 import {
   MIN_TOP_UP_USD,
+  RATE_DELETES_PER_100K,
   RATE_READS_PER_100K,
   RATE_WRITES_PER_100K,
-  estimateCost,
+  costBreakdown,
   formatBytes,
   formatUsd,
   type Credits,
   type UsageTotals,
 } from '../lib/usage'
+import { FREE_TIER, freeTierStatus, quotaWarning } from '../lib/quota'
+import {
+  CREDIT_PACKS,
+  validateCreditSettings,
+  type CreditSettings,
+} from '../lib/credits'
 
 export interface Diagnostics {
   /** V8 heap of this tab, and the ceiling that would crash it. */
@@ -31,6 +39,8 @@ interface UsageDialogProps {
   diagnostics: Diagnostics
   onRefreshDiagnostics: () => void
   onMigrateBodies: () => void
+  onUpdateCredits: (settings: CreditSettings) => Promise<void>
+  onRequestTopUp: (amountUsd: number) => Promise<void>
   onClose: () => void
 }
 
@@ -47,17 +57,63 @@ export function UsageDialog({
   diagnostics,
   onRefreshDiagnostics,
   onMigrateBodies,
+  onUpdateCredits,
+  onRequestTopUp,
   onClose,
 }: UsageDialogProps) {
   const totals: UsageTotals = usage ?? {
     month: '',
     writes: 0,
     reads: 0,
+    deletes: 0,
     bytesWritten: 0,
     bytesRead: 0,
     storageBytes: 0,
+    agentOps: 0,
   }
-  const cost = estimateCost(totals)
+  const cost = costBreakdown(totals)
+  const quota = freeTierStatus(totals)
+  const [settings, setSettings] = useState<CreditSettings>({
+    thresholdUsd: credits?.thresholdUsd ?? 1,
+    topUpUsd: credits?.topUpUsd ?? 5,
+    autoTopUp: credits?.autoTopUp ?? false,
+  })
+  const [feedback, setFeedback] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  const settingsError = validateCreditSettings(settings)
+
+  // `credits` llega por snapshot después de abrir el diálogo; cuando cambia,
+  // reflejamos lo guardado en el formulario.
+  useEffect(() => {
+    if (!credits) return
+    setSettings({
+      thresholdUsd: credits.thresholdUsd,
+      topUpUsd: credits.topUpUsd,
+      autoTopUp: credits.autoTopUp,
+    })
+  }, [credits])
+
+  const saveSettings = async () => {
+    const problem = validateCreditSettings(settings)
+    if (problem) {
+      setFeedback({ tone: 'error', text: problem })
+      return
+    }
+    try {
+      await onUpdateCredits(settings)
+      setFeedback({ tone: 'ok', text: 'Recarga automática guardada.' })
+    } catch (error) {
+      setFeedback({ tone: 'error', text: String((error as Error)?.message ?? error) })
+    }
+  }
+
+  const requestPack = async (amountUsd: number) => {
+    try {
+      await onRequestTopUp(amountUsd)
+      setFeedback({ tone: 'ok', text: `Pedido de ${formatUsd(amountUsd)} enviado. Se acredita al confirmarse el pago.` })
+    } catch (error) {
+      setFeedback({ tone: 'error', text: String((error as Error)?.message ?? error) })
+    }
+  }
 
   return (
     <Modal labelledBy="usage-heading" onClose={onClose}>
@@ -69,18 +125,57 @@ export function UsageDialog({
       </div>
 
       <div className="usage-hero">
-        <span className="usage-hero-value">{formatUsd(cost)}</span>
+        <span className="usage-hero-value">{formatUsd(cost.total)}</span>
         <span className="usage-hero-label">
           Costo estimado{totals.month ? ` · ${totals.month}` : ''}
         </span>
       </div>
 
+      <p className="usage-section-title">Plan gratuito</p>
+      <div className="usage-grid">
+        <QuotaBar
+          label="Almacenamiento"
+          used={formatBytes(quota.storage.used)}
+          limit={formatBytes(FREE_TIER.storageBytes)}
+          percent={quota.storage.percent}
+          warning={quotaWarning(quota.storage)}
+        />
+        <QuotaBar
+          label="Operaciones de agente"
+          used={quota.agentOps.used.toLocaleString('es')}
+          limit={FREE_TIER.agentOpsPerMonth.toLocaleString('es')}
+          percent={quota.agentOps.percent}
+          warning={quotaWarning(quota.agentOps)}
+        />
+      </div>
+      <p className="hint">
+        Notas, carpetas y colaboración en tiempo real son ilimitadas. La cuota gratuita cubre
+        {' '}{formatBytes(FREE_TIER.storageBytes)} de almacenamiento y{' '}
+        {FREE_TIER.agentOpsPerMonth.toLocaleString('es')} operaciones de agente por mes.
+      </p>
+
+      <div className="usage-sep" />
+
+      <p className="usage-section-title">Desglose del mes</p>
+      <div className="usage-grid">
+        <Row label="Escrituras" value={formatUsd(cost.writes)} />
+        <Row label="Lecturas" value={formatUsd(cost.reads)} />
+        <Row label="Borrados" value={formatUsd(cost.deletes)} />
+        <Row label="Almacenamiento" value={formatUsd(cost.storage)} />
+        <Row label="PITR + backup" value={formatUsd(cost.pitr + cost.backup)} />
+        <Row label="Transferencia" value={formatUsd(cost.egress)} />
+      </div>
+
+      <div className="usage-sep" />
+
+      <p className="usage-section-title">Operaciones</p>
       <div className="usage-grid">
         <Row label="Notas" value={String(notes)} />
         <Row label="Carpetas" value={String(folders)} />
-        <Row label="Almacenamiento" value={formatBytes(totals.storageBytes)} />
         <Row label="Escrituras de sync" value={totals.writes.toLocaleString('es')} />
         <Row label="Lecturas de sync" value={totals.reads.toLocaleString('es')} />
+        <Row label="Borrados (compactación)" value={totals.deletes.toLocaleString('es')} />
+        <Row label="Almacenamiento" value={formatBytes(totals.storageBytes)} />
         <Row label="Transferido (envío)" value={formatBytes(totals.bytesWritten)} />
         <Row label="Transferido (recepción)" value={formatBytes(totals.bytesRead)} />
       </div>
@@ -130,24 +225,87 @@ export function UsageDialog({
 
       <div className="usage-sep" />
 
+      <p className="usage-section-title">Saldo prepago</p>
       <div className="usage-grid">
         <Row label="Plan" value={paid ? 'Pago' : 'Gratuito'} />
         <Row label="Saldo" value={credits ? formatUsd(credits.balanceUsd) : 'sin cargar'} />
-        <Row
-          label="Recarga automática"
-          value={
-            credits
-              ? `${credits.autoTopUp ? 'sí' : 'no'} · mínimo ${formatUsd(MIN_TOP_UP_USD)} · al bajar de ${formatUsd(credits.thresholdUsd)}`
-              : `mínimo ${formatUsd(MIN_TOP_UP_USD)}`
-          }
-        />
       </div>
 
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {CREDIT_PACKS.map((pack) => (
+          <button key={pack} className="btn ghost" onClick={() => void requestPack(pack)}>
+            Recargar {formatUsd(pack)}
+          </button>
+        ))}
+      </div>
       <p className="hint">
-        Calculado con las tarifas públicas de Firestore (${RATE_READS_PER_100K}/100k lecturas, $
-        {RATE_WRITES_PER_100K}/100k escrituras). Las mediciones las hace la app: sirven para
-        transparencia, pero el cobro real tendrá que medirlas el servidor. Los cobros todavía no
-        están habilitados.
+        Los packs no vencen. El pago con tarjeta todavía no está habilitado: el pedido queda
+        pendiente y se acredita cuando se confirme.
+      </p>
+
+      <div className="usage-sep" />
+
+      <p className="usage-section-title">Recarga automática</p>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <label className="row" style={{ gap: 6, fontSize: 12 }}>
+          <input
+            type="checkbox"
+            checked={settings.autoTopUp}
+            onChange={(event) => setSettings({ ...settings, autoTopUp: event.target.checked })}
+          />
+          Activar
+        </label>
+        <label className="row" style={{ gap: 4, fontSize: 12 }}>
+          Al bajar de
+          <input
+            className="field"
+            type="number"
+            min={0}
+            step={0.5}
+            value={settings.thresholdUsd}
+            onChange={(event) => setSettings({ ...settings, thresholdUsd: Number(event.target.value) })}
+            style={{ width: 74 }}
+          />
+        </label>
+        <label className="row" style={{ gap: 4, fontSize: 12 }}>
+          Recargar
+          <input
+            className="field"
+            type="number"
+            min={MIN_TOP_UP_USD}
+            step={0.5}
+            value={settings.topUpUsd}
+            onChange={(event) => setSettings({ ...settings, topUpUsd: Number(event.target.value) })}
+            style={{ width: 74 }}
+          />
+        </label>
+        <button className="btn" disabled={Boolean(settingsError)} onClick={() => void saveSettings()}>
+          Guardar
+        </button>
+      </div>
+      <p className="hint">
+        Mínimo {formatUsd(MIN_TOP_UP_USD)} por recarga. El saldo y el libro mayor los escribe el
+        servidor: acá solo se guarda la configuración.
+      </p>
+      {settingsError && (
+        <p className="hint tone-danger" role="status">
+          {settingsError}
+        </p>
+      )}
+      {feedback && (
+        <p className={`hint ${feedback.tone === 'error' ? 'tone-danger' : 'tone-ok'}`} role="status">
+          {feedback.text}
+        </p>
+      )}
+
+      <p className="hint">
+        Calculado con las tarifas públicas de Firestore Standard (US): {formatUsd(RATE_READS_PER_100K)}/100k
+        lecturas, {formatUsd(RATE_WRITES_PER_100K)}/100k escrituras y{' '}
+        {formatUsd(RATE_DELETES_PER_100K)}/100k borrados. El costo es el bruto del mes; la cuota
+        gratuita diaria del proyecto no se descuenta. El almacenamiento incluye PITR y backup,
+        prorrateados por los bytes guardados. Las mediciones las hace la app: sirven para
+        transparencia, pero el cobro real tendrá que medirlas el servidor. El cobro con tarjeta
+        todavía no está habilitado: los pedidos de recarga quedan pendientes.
       </p>
 
       <div className="row" style={{ justifyContent: 'flex-end' }}>
@@ -164,6 +322,45 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="usage-row">
       <span className="usage-label">{label}</span>
       <span className="usage-value">{value}</span>
+    </div>
+  )
+}
+
+function QuotaBar({
+  label,
+  used,
+  limit,
+  percent,
+  warning,
+}: {
+  label: string
+  used: string
+  limit: string
+  percent: number
+  warning: 'none' | 'soft' | 'hard'
+}) {
+  return (
+    <div className="quota-line">
+      <div className="quota-head">
+        <span className="usage-label">{label}</span>
+        <span className="usage-value">
+          {used} / {limit}
+          {warning === 'hard' ? ' · sin cuota' : warning === 'soft' ? ' · cerca del tope' : ''}
+        </span>
+      </div>
+      <div
+        className="quota-track"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(percent * 100)}
+      >
+        <div
+          className={`quota-fill${warning === 'hard' ? ' is-over' : warning === 'soft' ? ' is-soft' : ''}`}
+          style={{ width: `${Math.round(percent * 100)}%` }}
+        />
+      </div>
     </div>
   )
 }

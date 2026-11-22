@@ -40,10 +40,12 @@ directorio y el panel lo avisa.
 
 ## Roadmap
 
-Las features pedidas y todavía no implementadas (tags, vault de Obsidian, sync local,
-página de uso, auto top-up) están especificadas en [`docs/roadmap.md`](docs/roadmap.md), con
-modelo de datos, cambios de reglas, riesgos y orden sugerido. La revisión del plan comercial
-está en [`docs/comercial-review.md`](docs/comercial-review.md).
+Las features pedidas y todavía no implementadas (vault de Obsidian, sync local, auto top-up,
+medición server-side) están especificadas en [`docs/roadmap.md`](docs/roadmap.md), con modelo
+de datos, cambios de reglas, riesgos y orden sugerido. La revisión del plan comercial está en
+[`docs/comercial-review.md`](docs/comercial-review.md) y el modelo de costos de Firestore y
+precios en [`docs/pricing.md`](docs/pricing.md) (números reproducibles con
+`node scripts/pricing-model.mjs`).
 
 ## Cómo funciona la colaboración
 

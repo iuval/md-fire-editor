@@ -39,6 +39,8 @@ const STALE_AFTER_MS = 25_000
  */
 export class FirestoreAwareness {
   readonly clientID: number
+  /** Firestore writes and deletes this channel has issued, for the usage meter. */
+  readonly stats = { writes: 0, deletes: 0 }
   private readonly noteId: string
   private readonly uid: string
   private readonly user: CollabUser
@@ -194,7 +196,11 @@ export class FirestoreAwareness {
   /** Best effort: the delete is queued even while the page is going away. */
   private remove(): void {
     if (!this.fs) return
-    void deleteDoc(doc(this.fs, 'notes', this.noteId, 'presence', this.uid)).catch(() => undefined)
+    void deleteDoc(doc(this.fs, 'notes', this.noteId, 'presence', this.uid))
+      .then(() => {
+        this.stats.deletes++
+      })
+      .catch(() => undefined)
   }
 
   private scheduleWrite() {
@@ -223,6 +229,7 @@ export class FirestoreAwareness {
       })
       this.lastSent = payload
       this.lastSentAt = Date.now()
+      this.stats.writes++
     } catch {
       // Presence is best-effort; never break editing because of it.
     }

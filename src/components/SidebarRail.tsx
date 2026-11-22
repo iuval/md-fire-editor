@@ -1,4 +1,5 @@
 import { FolderPlus, PanelLeftOpen, Plus, Settings, SquareDashed } from 'lucide-react'
+import { useT } from '../i18n/index.ts'
 
 interface SidebarRailProps {
   /** False while the panel is open: the panel's own margin covers the rail. */
@@ -28,39 +29,40 @@ export function SidebarRail({
   onNewCanvas,
   onAccountClick,
 }: SidebarRailProps) {
+  const t = useT()
   return (
     <div
       className="sidebar-rail"
       role={collapsed ? 'group' : undefined}
-      aria-label={collapsed ? 'Panel de notas' : undefined}
+      aria-label={collapsed ? t('rail.openNotes') : undefined}
     >
       {collapsed && (
         <>
           <button
             className="icon-btn"
             onClick={onExpand}
-            aria-label="Mostrar panel"
-            title="Mostrar panel"
+            aria-label={t('sidebar.showPanel')}
+            title={t('sidebar.showPanel')}
           >
             <PanelLeftOpen size={15} />
           </button>
           <div className="sidebar-rail-actions">
-            <button className="icon-btn" onClick={onNewNote} aria-label="Nueva nota" title="Nueva nota">
+            <button className="icon-btn" onClick={onNewNote} aria-label={t('sidebar.newNote')} title={t('sidebar.newNote')}>
               <Plus size={15} />
             </button>
             <button
               className="icon-btn"
               onClick={onNewFolder}
-              aria-label="Nueva carpeta"
-              title="Nueva carpeta"
+              aria-label={t('sidebar.newFolder')}
+              title={t('sidebar.newFolder')}
             >
               <FolderPlus size={15} />
             </button>
             <button
               className="icon-btn"
               onClick={onNewCanvas}
-              aria-label="Nuevo canvas"
-              title="Nuevo canvas"
+              aria-label={t('sidebar.newCanvas')}
+              title={t('sidebar.newCanvas')}
             >
               <SquareDashed size={15} />
             </button>
@@ -70,8 +72,8 @@ export function SidebarRail({
           <button
             className="icon-btn"
             onClick={onAccountClick}
-            aria-label="Cuenta y ajustes"
-            title="Cuenta y ajustes"
+            aria-label={t('rail.account')}
+            title={t('rail.account')}
           >
             <Settings size={15} />
           </button>

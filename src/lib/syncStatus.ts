@@ -1,3 +1,4 @@
+import { plural, t } from '../i18n/index.ts'
 import type { ProviderStatus } from './collab/provider'
 
 /**
@@ -22,11 +23,11 @@ export function syncTone(status: ProviderStatus): SyncTone {
 }
 
 export function syncText(status: ProviderStatus): string {
-  if (status.error) return 'Error de sincronización'
-  if (status.offline) return 'Sin conexión'
-  if (status.pendingWrites > 0) return 'Guardando'
-  if (!status.connected) return 'Conectando'
-  return 'Sincronizado'
+  if (status.error) return t('sync.error')
+  if (status.offline) return t('sync.offline')
+  if (status.pendingWrites > 0) return t('sync.saving')
+  if (!status.connected) return t('sync.connecting')
+  return t('sync.synced')
 }
 
 /**
@@ -36,9 +37,12 @@ export function syncText(status: ProviderStatus): string {
  */
 export function syncDetail(status: ProviderStatus): string | null {
   if (status.error) return status.error
-  if (status.offline) return 'Tus cambios se guardan acá y se sincronizan al reconectar.'
+  if (status.offline) return t('sync.offlineDetail')
   if (status.pendingWrites > 0) {
-    return `${status.pendingWrites} ${status.pendingWrites === 1 ? 'cambio' : 'cambios'} sin enviar`
+    return plural(status.pendingWrites, {
+      one: t('sync.unsentOne', { count: status.pendingWrites }),
+      other: t('sync.unsentOther', { count: status.pendingWrites }),
+    })
   }
   // "Conectando" already says everything there is to say while it connects.
   return null

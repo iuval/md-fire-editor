@@ -29,13 +29,14 @@ de $4 tiene margen holgado.
 ## 2. Correcciones numéricas
 
 Tarifas reales de Firestore (cloud.google.com/firestore/pricing): lecturas $0.03/100k,
-escrituras $0.09/100k, borrados $0.01/100k.
+escrituras $0.09/100k, borrados $0.01/100k. El modelo reproducible y el desglose completo
+están en [`docs/pricing.md`](pricing.md) (`node scripts/pricing-model.mjs`).
 
 | Ítem | Doc | Real |
 |---|---|---|
 | Escrituras | $0.18/100k | **$0.09/100k** |
 | Lecturas | $0.03/100k | ✅ |
-| Storage | $0.026/GB-mes | eso es Cloud Storage; Firestore ≈ $0.006/GiB-mes (para texto, despreciable) |
+| Storage | $0.026/GB-mes | eso es Cloud Storage; Firestore Standard ≈ **$0.15/GiB-mes** (el texto pesa poco, pero la cifra vieja subestimaba 25×) |
 | Egress $0.12/GB | ✅ | no aplica: hoy no hay blobs |
 | Costo usuario solo | $0.70–1.00/mes | **$0.12** (ocasional) / **$0.51** (heavy) |
 
@@ -69,8 +70,8 @@ LTV con ARPU $12 es ~$240 → CAC máximo ~$80; el documento no fija techo de CA
 facturación electrónica DGI; ToS, privacidad (GDPR si hay UE, Ley 18.331), borrado de cuenta,
 retención.
 
-**Operativo:** no hay backups ni PITR habilitados; no hay política de reembolsos/chargebacks;
-no hay SLA de soporte.
+**Operativo:** backups y PITR están activos en producción (README §Operación), pero no hay
+política de reembolsos/chargebacks ni SLA de soporte.
 
 **Marketing:** no se explota el loop viral existente (compartir por link = adquisición
 gratis) ni el diferenciador único construido: **CLI/MCP para agentes de IA**.

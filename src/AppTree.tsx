@@ -92,6 +92,8 @@ import {
   type Credits,
   type UsageTotals,
 } from './lib/usage'
+import { requestTopUp, updateCreditSettings } from './lib/credits'
+import { useT } from './i18n/index.ts'
 import type { ProviderStatus, SyncStats } from './lib/collab/provider'
 import {
   fetchNoteBodies,
@@ -240,6 +242,7 @@ function initialWorkspace(): WorkspaceState {
 }
 
 function AppTree() {
+  const t = useT()
   const { user, loading: authLoading, error: authError, doGoogleSignIn, doSignOut } = useAuth()
   const {
     notes,
@@ -319,7 +322,7 @@ function AppTree() {
         title: note.title,
         path: `${
           note.folderId ? `${folderPath(note.folderId, foldersById)}/` : ''
-        }${safeFileName(note.title || 'Sin título')}.md`,
+        }${safeFileName(note.title || t('app.untitled'))}.md`,
       })),
     [notes, foldersById]
   )
@@ -455,11 +458,18 @@ function AppTree() {
       const previous = lastStats.current
       lastStats.current = stats
       if (!previous) return
+      const delta = (next: number, before: number) => Math.max(0, next - before)
       void recordUsage(user.uid, {
-        writes: Math.max(0, stats.blocksWritten - previous.blocksWritten),
-        reads: Math.max(0, stats.blocksApplied - previous.blocksApplied),
-        bytesWritten: Math.max(0, stats.bytesWritten - previous.bytesWritten),
-        bytesRead: Math.max(0, stats.bytesApplied - previous.bytesApplied),
+        writes:
+          delta(stats.blocksWritten, previous.blocksWritten) +
+          delta(stats.manifestWrites, previous.manifestWrites) +
+          delta(stats.presenceWrites ?? 0, previous.presenceWrites ?? 0),
+        reads: delta(stats.blocksApplied, previous.blocksApplied),
+        deletes:
+          delta(stats.blocksDeleted, previous.blocksDeleted) +
+          delta(stats.presenceDeletes ?? 0, previous.presenceDeletes ?? 0),
+        bytesWritten: delta(stats.bytesWritten, previous.bytesWritten),
+        bytesRead: delta(stats.bytesApplied, previous.bytesApplied),
       }).catch(() => undefined)
     },
     [user]
@@ -566,7 +576,7 @@ function AppTree() {
           })
           setNoteErrors((prev) => {
             if (note) return prev
-            return id in prev ? prev : { ...prev, [id]: 'La nota no existe o no tenés acceso.' }
+            return id in prev ? prev : { ...prev, [id]: t('app.noAccess') }
           })
         },
         (message) => setNoteErrors((prev) => ({ ...prev, [id]: message }))
@@ -1181,7 +1191,7 @@ function AppTree() {
 
   const handleDeleteNote = useCallback(
     async (note: Note) => {
-      if (!window.confirm(`¿Eliminar "${note.title || 'Sin título'}"?`)) return
+      if (!window.confirm(t('note.deleteConfirm', { title: note.title || t('app.untitled') }))) return
       // Every tab showing it goes away immediately (it can be open in both
       // panes); the delete finishes in the background.
       setWorkspace((ws) => {
@@ -1450,7 +1460,7 @@ function AppTree() {
     presence: presence.length,
   })
 
-  if (authLoading) return <div className="empty">Cargando…</div>
+  if (authLoading) return <div className="empty">{t('app.loading')}</div>
 
   if (!user) {
     const browser = currentBrowser()
@@ -1463,22 +1473,23 @@ function AppTree() {
             <img className="auth-mark" src="/favicon.svg" alt="" width={20} height={20} />
             FireMD
           </span>
-          <h1 className="auth-title">Tus notas en Markdown, en carpetas, compartidas.</h1>
+          <h1 className="auth-title">{t('auth.title')}</h1>
           <p className="auth-sub">
-            Edición en tiempo real sobre tu vault de Obsidian. Lo que escribís sigue siendo un{' '}
-            <code>.md</code>.
+            {t('auth.subtitleBefore')}
+            <code>.md</code>
+            {t('auth.subtitleAfter')}
           </p>
           <button className="btn auth-btn" onClick={() => void doGoogleSignIn()}>
-            Entrar con Google
+            {t('auth.signIn')}
           </button>
 
         {browser.embedded && (
           <div className="share-hint-box" style={{ maxWidth: 380, textAlign: 'left' }}>
-            <strong>Google va a rechazar este navegador.</strong>
+            <strong>{t('auth.embeddedTitle')}</strong>
             <br />
             {embeddedBrowserHint(browser.reason)}
             <br />
-            Abrí esta dirección en Chrome o Safari:
+            {t('auth.embeddedOpenIn')}
             <br />
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5 }}>{appUrl}</span>
           </div>
@@ -1574,7 +1585,7 @@ function AppTree() {
           fallback={
             <div className="workspace">
               <p className="hint" style={{ padding: '16px 24px' }}>
-                Cargando editor…
+                {t('app.loadingEditor')}
               </p>
             </div>
           }
@@ -1833,6 +1844,12 @@ function AppTree() {
           }}
           onRefreshDiagnostics={refreshDiagnostics}
           onMigrateBodies={() => void handleMigrateBodies()}
+          onUpdateCredits={async (settings) => {
+            if (user) await updateCreditSettings(user.uid, settings)
+          }}
+          onRequestTopUp={async (amountUsd) => {
+            if (user) await requestTopUp(user.uid, amountUsd)
+          }}
           onClose={() => setDialog({ kind: 'none' })}
         />
       )}

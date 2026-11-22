@@ -30,6 +30,7 @@ import {
   rowIndent,
 } from '../lib/sidebarLayout'
 import type { TagNode } from '../lib/tags'
+import { useT } from '../i18n/index.ts'
 
 export interface SidebarProps {
   notes: Note[]
@@ -117,6 +118,7 @@ export function Sidebar({
   notice,
   onDismissNotice,
 }: SidebarProps) {
+  const t = useT()
   const [width, setWidth] = useState(initialWidth)
   const [tagsOpen, setTagsOpen] = useState(initialTagsOpen)
   const [statusOpen, setStatusOpen] = useState(false)
@@ -254,7 +256,7 @@ export function Sidebar({
 
   const noteButton = (note: Note, padLeft: number) => {
     const shared = note.memberIds.length > 1 || note.access !== 'restricted'
-    const title = note.title || 'Sin título'
+    const title = note.title || t('app.untitled')
     return (
       <div
         key={note.id}
@@ -281,8 +283,8 @@ export function Sidebar({
         </button>
         <button
           className="icon-btn icon-btn--sm"
-          aria-label={`Acciones de ${title}`}
-          title={`Acciones de ${title}`}
+          aria-label={t('sidebar.noteActions', { title })}
+          title={t('sidebar.noteActions', { title })}
           onClick={(event) => onNoteMenu(note, menuPos(event.currentTarget))}
         >
           <MoreHorizontal size={14} />
@@ -295,50 +297,50 @@ export function Sidebar({
     <aside
       className={`sidebar${isOpen ? ' open' : ''}${!isOpen && !isMobile ? ' collapsed' : ''}`}
       style={{ '--sidebar-w': `${width}px` } as React.CSSProperties}
-      aria-label="Notas y carpetas"
+      aria-label={t('sidebar.label')}
       aria-hidden={isOpen ? undefined : true}
     >
       <div className="sidebar-head">
         <span className="sidebar-title">FireMD</span>
-        <button className="icon-btn" onClick={() => onNewNote()} aria-label="Nueva nota" title="Nueva nota">
+        <button className="icon-btn" onClick={() => onNewNote()} aria-label={t('sidebar.newNote')} title={t('sidebar.newNote')}>
           <Plus size={15} />
         </button>
-        <button className="icon-btn" onClick={onNewFolder} aria-label="Nueva carpeta" title="Nueva carpeta">
+        <button className="icon-btn" onClick={onNewFolder} aria-label={t('sidebar.newFolder')} title={t('sidebar.newFolder')}>
           <FolderPlus size={15} />
         </button>
-        <button className="icon-btn" onClick={onNewCanvas} aria-label="Nuevo canvas" title="Nuevo canvas">
+        <button className="icon-btn" onClick={onNewCanvas} aria-label={t('sidebar.newCanvas')} title={t('sidebar.newCanvas')}>
           <SquareDashed size={15} />
         </button>
         <button
           className="icon-btn"
           onClick={isMobile ? onClose : onCollapse}
-          aria-label={isMobile ? 'Cerrar panel' : 'Ocultar panel'}
-          title={isMobile ? 'Cerrar panel' : 'Ocultar panel'}
+          aria-label={isMobile ? t('sidebar.closePanel') : t('sidebar.hidePanel')}
+          title={isMobile ? t('sidebar.closePanel') : t('sidebar.hidePanel')}
         >
           <PanelLeftClose size={15} />
         </button>
       </div>
 
       {tagTree.length > 0 && (
-        <div className="tag-panel" aria-label="Filtrar por etiqueta">
+        <div className="tag-panel" aria-label={t('sidebar.filterByTag')}>
           <div className="tag-panel-head">
             <button
               className="tag-panel-toggle"
               onClick={toggleTags}
               aria-expanded={tagsOpen}
               aria-controls="tag-tree"
-              title={tagsOpen ? 'Ocultar etiquetas' : 'Mostrar etiquetas'}
+              title={tagsOpen ? t('sidebar.hideTags') : t('sidebar.showTags')}
             >
               <ChevronRight size={11} className={`chev${tagsOpen ? ' open' : ''}`} />
-              <span className="sidebar-section-label">Etiquetas</span>
+              <span className="sidebar-section-label">{t('sidebar.tags')}</span>
               <span className="tag-panel-count">{tagTree.length}</span>
             </button>
             {selectedTags.length > 0 && (
               <button
                 className="icon-btn icon-btn--sm"
                 onClick={() => selectedTags.forEach((tag) => onToggleTag(tag))}
-                aria-label="Quitar filtro de etiquetas"
-                title="Quitar filtro"
+                aria-label={t('sidebar.clearTagFilter')}
+                title={t('sidebar.clearTagFilterShort')}
               >
                 ✕
               </button>
@@ -414,7 +416,7 @@ export function Sidebar({
                     </button>
                     <button
                       className="icon-btn icon-btn--sm"
-                      aria-label={`Acciones de ${folder.name}`}
+                      aria-label={t('sidebar.folderActions', { name: folder.name })}
                       onClick={(e) => onFolderMenu(folder, menuPos(e.currentTarget))}
                     >
                       <MoreHorizontal size={14} />
@@ -469,9 +471,11 @@ export function Sidebar({
           <button
             className={`sync-dot-btn sync--${syncTone(status)}`}
             onClick={() => setStatusOpen((open) => !open)}
-            aria-label={`Estado de sincronización: ${syncText(status)}${
-              syncDetail(status) ? `. ${syncDetail(status)}` : ''
-            }`}
+            aria-label={t('sidebar.syncStatus', {
+              status: syncDetail(status)
+                ? `${syncText(status)}. ${syncDetail(status)}`
+                : syncText(status),
+            })}
             aria-expanded={statusOpen}
             title={syncText(status)}
           >
@@ -514,8 +518,8 @@ export function Sidebar({
         <button
           className="icon-btn icon-btn--sm"
           onClick={onAccountClick}
-          aria-label={userName ? `Cuenta y ajustes de ${userName}` : 'Cuenta y ajustes'}
-          title={userName ? `${userName} · Cuenta y ajustes` : 'Cuenta y ajustes'}
+          aria-label={userName ? t('sidebar.accountOf', { name: userName }) : t('sidebar.account')}
+          title={userName ? t('sidebar.accountOf', { name: userName }) : t('sidebar.account')}
         >
           {/* The same gear the collapsed rail uses: this is the preferences
               entry, not a row's "more" menu. */}
@@ -529,12 +533,12 @@ export function Sidebar({
           className="sidebar-resizer"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Ancho del panel"
+          aria-label={t('sidebar.resize')}
           aria-valuenow={width}
           aria-valuemin={MIN_SIDEBAR_WIDTH}
           aria-valuemax={MAX_SIDEBAR_WIDTH}
           tabIndex={0}
-          title="Arrastrá para cambiar el ancho (doble clic para restablecer)"
+          title={t('sidebar.resizeHint')}
           onPointerDown={startResize}
           onKeyDown={onResizerKey}
           onDoubleClick={() => setWidth(DEFAULT_SIDEBAR_WIDTH)}

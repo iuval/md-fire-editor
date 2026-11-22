@@ -1,5 +1,6 @@
 import { Menu, X } from 'lucide-react'
 import type { AwarenessUser } from '../lib/collab/awareness'
+import { useT } from '../i18n/index.ts'
 
 interface PaneBarProps {
   presence: AwarenessUser[]
@@ -19,6 +20,7 @@ export function PaneBar({
   onClearTags,
   tabs,
 }: PaneBarProps) {
+  const t = useT()
   return (
     <div className="pane-head">
       {/* A phone has no rail, so the drawer's opener lives here. On desktop the
@@ -27,15 +29,15 @@ export function PaneBar({
         <button
           className="icon-btn"
           onClick={onToggleSidebar}
-          aria-label="Abrir notas"
-          title="Abrir notas"
+          aria-label={t('paneBar.openNotes')}
+          title={t('paneBar.openNotes')}
         >
           <Menu size={16} />
         </button>
       )}
 
       {selectedTags.length > 0 && (
-        <div className="pane-filter" aria-label="Filtro por etiqueta activo">
+        <div className="pane-filter" aria-label={t('paneBar.tagFilterActive')}>
           {selectedTags.map((tag) => (
             <span className="tag-chip active" key={tag}>
               #{tag}
@@ -44,7 +46,7 @@ export function PaneBar({
           <button
             className="icon-btn icon-btn--sm"
             onClick={onClearTags}
-            aria-label="Quitar filtro de etiquetas"
+            aria-label={t('paneBar.clearTagFilter')}
             title="Quitar filtro"
           >
             <X size={12} />
@@ -55,7 +57,7 @@ export function PaneBar({
       {tabs ? <div className="pane-head-tabs">{tabs}</div> : <span style={{ flex: 1 }} />}
 
       {presence.length > 0 && (
-        <span className="avatar-stack" aria-label="Editando ahora">
+        <span className="avatar-stack" aria-label={t('paneBar.editingNow')}>
           {presence.slice(0, 3).map((p) => (
             <span key={p.uid} title={p.name} className="avatar" style={{ background: p.color, color: '#fff' }}>
               {p.name.slice(0, 1).toUpperCase()}

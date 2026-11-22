@@ -82,7 +82,7 @@ export function CollaborativeEditor({
   // write every 30 s at most, never per keystroke).
   useEffect(() => {
     if (!onStats) return
-    const tick = () => onStats({ ...session.provider.stats })
+    const tick = () => onStats({ ...session.stats })
     tick()
     const timer = setInterval(tick, 30_000)
     return () => {

@@ -4,7 +4,16 @@
 // agent's own identity, so the rules decide what the agent can touch. REST also
 // avoids pulling the whole web SDK into the CLI.
 
+import { createBudget, envLimit } from './rate-limit.mjs'
+
 const DEFAULT_PROJECT = 'md-sync-app'
+
+function emptyUsage() {
+  return { reads: 0, writes: 0, deletes: 0, bytesRead: 0, bytesWritten: 0, agentOps: 0 }
+}
+
+/** Espejo de FREE_TIER.agentOpsPerMonth en src/lib/quota.ts. */
+export const AGENT_OPS_PER_MONTH = 10_000
 
 function base(projectId) {
   const host = process.env.FIRESTORE_EMULATOR_HOST
@@ -70,9 +79,51 @@ export class RestStore {
     this.token = token
     this.root = base(projectId)
     this.prefix = `projects/${projectId}/databases/(default)/documents`
+    // Cortacircuitos por corrida: un bucle infinito de un agente se corta acá
+    // en vez de quemar el saldo. El MCP resetea el presupuesto por tool call.
+    this.budget = createBudget({ limit: envLimit('FIREMD_REQUEST_BUDGET', 2000) })
+    // Operaciones de esta sesión, para el bucket `usage/{uid}`. Se acumulan acá
+    // y se vuelcan con `flushUsage()`; el volcado no se cuenta a sí mismo.
+    this.usage = emptyUsage()
+    this.metering = true
+  }
+
+  /** El MCP mide una operación por tool call; la CLI, una por comando. */
+  resetBudget() {
+    this.budget.reset()
+  }
+
+  /** Olvida las operaciones acumuladas (tests y sesiones nuevas). */
+  resetUsage() {
+    this.usage = emptyUsage()
+  }
+
+  /** Una tool call o un comando cuentan como una operación de agente. */
+  meterAgentOp() {
+    this.usage.agentOps += 1
+  }
+
+  /** Operaciones de agente del mes en curso, con caché de un minuto. */
+  async agentOpsUsed() {
+    const now = Date.now()
+    if (this.quotaCache && now - this.quotaCache.at < 60_000) return this.quotaCache.ops
+    const uid = this.uid
+    if (!uid || typeof uid !== 'string') return 0
+    const month = new Date().toISOString().slice(0, 7)
+    try {
+      const doc = await this.get(`usage/${uid}/months`, month)
+      const ops = Number(doc?.data?.agentOps ?? 0)
+      this.quotaCache = { at: now, ops }
+      return ops
+    } catch {
+      return 0
+    }
   }
 
   async request(url, options = {}) {
+    // El volcado del medidor no pasa por el presupuesto: es la contabilidad de
+    // lo ya hecho, no una operación nueva del agente.
+    if (this.metering) this.budget.charge()
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -97,7 +148,93 @@ export class RestStore {
       error.code = data?.error?.status
       throw error
     }
+    if (this.metering) {
+      this.countRequest({ method: options.method ?? 'GET', url, body: options.body, text, data })
+    }
     return data
+  }
+
+  /** Suma lo que esta request consumió, con la misma vara que Firestore. */
+  countRequest({ method, url, body, text, data }) {
+    const usage = this.usage
+    const bytes = text ? text.length : 0
+
+    if (method === 'DELETE') {
+      usage.deletes += 1
+      return
+    }
+
+    if (url.includes(':commit')) {
+      let writes = []
+      try {
+        writes = JSON.parse(body)?.writes ?? []
+      } catch {
+        writes = []
+      }
+      usage.writes += writes.length
+      usage.deletes += writes.filter((write) => write?.delete).length
+      usage.bytesWritten += bytes
+      return
+    }
+
+    if (url.includes(':runQuery')) {
+      const rows = Array.isArray(data) ? data.filter((row) => row?.document).length : 0
+      usage.reads += Math.max(1, rows)
+      usage.bytesRead += bytes
+      return
+    }
+
+    const documents = Array.isArray(data?.documents) ? data.documents.length : 0
+    usage.reads += Math.max(1, documents)
+    usage.bytesRead += bytes
+  }
+
+  /**
+   * Vuelca las operaciones acumuladas al bucket mensual del usuario autenticado.
+   * Best-effort: un fallo del contador nunca rompe el comando. Devuelve el
+   * snapshot volcado, o null si no había nada que contar.
+   */
+  async flushUsage() {
+    const uid = this.uid
+    const usage = this.usage
+    const total = usage.reads + usage.writes + usage.deletes + usage.agentOps
+    if (!uid || typeof uid !== 'string' || total === 0) return null
+
+    const month = new Date().toISOString().slice(0, 7)
+    const snapshot = { ...usage }
+    this.usage = emptyUsage()
+
+    const transforms = []
+    for (const [field, value] of Object.entries(snapshot)) {
+      if (value > 0) transforms.push({ fieldPath: field, increment: value })
+    }
+
+    this.metering = false
+    try {
+      await this.commitWrites([
+        {
+          update: {
+            name: `${this.prefix}/usage/${uid}/months/${month}`,
+            fields: toFields({ month }),
+          },
+          updateMask: { fieldPaths: ['month'] },
+          updateTransforms: [
+            ...transforms.map((transform) => ({
+              fieldPath: transform.fieldPath,
+              increment: { integerValue: String(transform.increment) },
+            })),
+            { fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' },
+          ],
+        },
+      ])
+      return snapshot
+    } catch {
+      // Se descarta el snapshot: duplicar es peor que subcontar, y el medidor
+      // nunca debe hacer fallar una operación del agente.
+      return null
+    } finally {
+      this.metering = true
+    }
   }
 
   async get(collection, id) {

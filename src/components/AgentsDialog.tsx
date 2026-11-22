@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Bot, Check, Pencil, X } from 'lucide-react'
 import { Modal } from './Modal'
-import { ROLE_LABELS, type Folder, type Role } from '../lib/notes'
+import { roleLabel, type Folder, type Role } from '../lib/notes'
 import { cleanAgentName, MAX_AGENT_NAME, type Agent } from '../lib/agents'
 
 interface AgentsDialogProps {
@@ -215,8 +215,8 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
             aria-label="Permiso del agente"
             onChange={(e) => setRole(e.target.value as Role)}
           >
-            <option value="viewer">{ROLE_LABELS.viewer}</option>
-            <option value="editor">{ROLE_LABELS.editor}</option>
+            <option value="viewer">{roleLabel('viewer')}</option>
+            <option value="editor">{roleLabel('editor')}</option>
           </select>
         </div>
 

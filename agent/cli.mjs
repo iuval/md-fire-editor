@@ -6,6 +6,8 @@ import { login, loginWithBrowser, logout, whoami, pairingCode, saveAgentSession 
 import { AgentError, openStore, listNotes, listFolders, listTags, readNote, patchNote, appendNote, createNote, deleteNote, searchNotes } from './core.mjs'
 import { defaultAgentName, formatAgents, listAgents, registerAgent, renameAgent } from './agents.mjs'
 import { parseArgs } from './args.mjs'
+import { RateLimitError } from './rate-limit.mjs'
+import { AGENT_OPS_PER_MONTH } from './firestore-rest.mjs'
 import { defaultDir, pull, push } from './vault.mjs'
 
 const HELP = `firemd — notas FireMD desde la terminal (con permisos del agente)
@@ -115,6 +117,18 @@ try {
     default: {
       const db = await openStore()
 
+      // Cuota gratuita de agentes: se frena antes de tocar Firestore si el mes
+      // ya llegó al tope. El mensaje dice cómo seguir.
+      const used = await db.agentOpsUsed()
+      if (used >= AGENT_OPS_PER_MONTH) {
+        fail(
+          `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_MONTH.toLocaleString('es')}/mes). ` +
+            'Cargá saldo en FireMD para seguir usando la CLI.',
+          3
+        )
+      }
+      db.meterAgentOp()
+
       switch (command) {
         case 'ls':
           process.stdout.write(withNewline(await listNotes(db, { folder: args.folder, limit: args.limit })))
@@ -204,6 +218,10 @@ try {
         default:
           fail(`comando desconocido: ${command}\n\n${HELP}`)
       }
+
+      // Un comando es una sesión: se vuelca lo que consumió en el bucket
+      // mensual del usuario. Best-effort: `flushUsage` nunca lanza.
+      await db.flushUsage()
     }
   }
 } catch (error) {
@@ -211,6 +229,7 @@ try {
     const code = { E_NOT_FOUND: 3, E_ETAG: 2, E_AMBIGUOUS: 4, E_USAGE: 64 }[error.code] ?? 1
     fail(error.message, code)
   }
+  if (error instanceof RateLimitError) fail(error.message, 75)
   const message = String(error?.message ?? error)
   if (/no estás logueado|falta FIREMD_API_KEY/.test(message)) fail(message, 3)
   if (error?.status === 403 || /PERMISSION_DENIED|Missing or insufficient permissions/i.test(message)) {

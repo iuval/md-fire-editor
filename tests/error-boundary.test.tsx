@@ -52,8 +52,8 @@ describe('ErrorBoundary', () => {
         <Boom />
       </ErrorBoundary>
     )
-    expect(host.textContent).toContain('Algo se rompió')
-    expect(host.textContent).toContain('Recargar')
+    expect(host.textContent).toContain('Something broke')
+    expect(host.textContent).toContain('Reload')
     expect(host.querySelector('button')?.className).toContain('btn')
     spy.mockRestore()
   })

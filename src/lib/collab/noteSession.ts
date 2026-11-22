@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
 import { FirestoreAwareness, type CollabUser } from './awareness'
-import { FirestoreYjsProvider } from './provider'
+import { FirestoreYjsProvider, type SyncStats } from './provider'
 import { YCanvas } from '../canvas/yCanvas'
 
 /**
@@ -21,6 +21,8 @@ export interface NoteSession {
   readonly doc: Y.Doc
   readonly provider: FirestoreYjsProvider
   readonly awareness: FirestoreAwareness
+  /** Provider counters plus the presence channel's own writes and deletes. */
+  readonly stats: SyncStats
   /**
    * The canvas binding for this document, created on first use. It lives as
    * long as the document does: one per note, shared by every pane showing it
@@ -79,6 +81,13 @@ export function acquireNoteSession(
       doc,
       provider,
       awareness,
+      get stats() {
+        return {
+          ...provider.stats,
+          presenceWrites: awareness.stats.writes,
+          presenceDeletes: awareness.stats.deletes,
+        }
+      },
       get canvas() {
         canvas ??= new YCanvas(doc)
         return canvas

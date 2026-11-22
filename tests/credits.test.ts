@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest'
+import {
+  CREDIT_PACKS,
+  EXTRA_STORAGE_PRICE_PER_GB_MONTH,
+  AGENT_OPS_PRICE_PER_100K,
+  needsTopUp,
+  validateCreditSettings,
+} from '../src/lib/credits'
+
+describe('prepaid credits', () => {
+  it('offers packs that do not expire', () => {
+    expect([...CREDIT_PACKS]).toEqual([5, 15, 50])
+  })
+
+  it('prices agent operations and extra storage at the published rates', () => {
+    expect(AGENT_OPS_PRICE_PER_100K).toBe(0.5)
+    expect(EXTRA_STORAGE_PRICE_PER_GB_MONTH).toBe(0.5)
+  })
+
+  it('rejects invalid settings', () => {
+    expect(
+      validateCreditSettings({ thresholdUsd: -1, topUpUsd: 5, autoTopUp: false })
+    ).toMatch(/negativo/)
+    expect(
+      validateCreditSettings({ thresholdUsd: 1, topUpUsd: 1, autoTopUp: false })
+    ).toMatch(/mínima/)
+    expect(
+      validateCreditSettings({ thresholdUsd: 5, topUpUsd: 5, autoTopUp: true })
+    ).toMatch(/superar el umbral/)
+    expect(
+      validateCreditSettings({ thresholdUsd: 2, topUpUsd: 5, autoTopUp: true })
+    ).toBeNull()
+  })
+
+  it('does not need a top-up without credits or without a cost', () => {
+    expect(needsTopUp(null, 0.5)).toBe(false)
+    expect(
+      needsTopUp({ balanceUsd: 0, thresholdUsd: 1, topUpUsd: 5, autoTopUp: false }, 0)
+    ).toBe(false)
+  })
+
+  it('needs a top-up when the balance is below the estimated cost', () => {
+    const credits = { balanceUsd: 0.2, thresholdUsd: 1, topUpUsd: 5, autoTopUp: false }
+    expect(needsTopUp(credits, 0.5)).toBe(true)
+    expect(needsTopUp({ ...credits, balanceUsd: 2 }, 0.5)).toBe(false)
+  })
+})

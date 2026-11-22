@@ -37,15 +37,15 @@ describe('sync tone', () => {
 
 describe('sync words', () => {
   it('names each state in words a person reads', () => {
-    expect(syncText(status())).toBe('Sincronizado')
-    expect(syncText(status({ pendingWrites: 2 }))).toBe('Guardando')
-    expect(syncText(status({ connected: false }))).toBe('Conectando')
-    expect(syncText(status({ offline: true }))).toBe('Sin conexión')
-    expect(syncText(status({ error: 'No tenés permiso' }))).toBe('Error de sincronización')
+    expect(syncText(status())).toBe('Synced')
+    expect(syncText(status({ pendingWrites: 2 }))).toBe('Saving')
+    expect(syncText(status({ connected: false }))).toBe('Connecting')
+    expect(syncText(status({ offline: true }))).toBe('Offline')
+    expect(syncText(status({ error: 'No tenés permiso' }))).toBe('Sync error')
   })
 
-  it('does not call a broken change "Sin conexión"', () => {
-    expect(syncText(status({ error: 'Se descartó un cambio dañado' }))).not.toBe('Sin conexión')
+  it('does not call a broken change "Offline"', () => {
+    expect(syncText(status({ error: 'Se descartó un cambio dañado' }))).not.toBe('Offline')
   })
 })
 
@@ -55,8 +55,8 @@ describe('sync detail', () => {
   })
 
   it('counts what is still on its way, in singular and plural', () => {
-    expect(syncDetail(status({ pendingWrites: 1 }))).toBe('1 cambio sin enviar')
-    expect(syncDetail(status({ pendingWrites: 4 }))).toBe('4 cambios sin enviar')
+    expect(syncDetail(status({ pendingWrites: 1 }))).toBe('1 change not sent yet')
+    expect(syncDetail(status({ pendingWrites: 4 }))).toBe('4 changes not sent yet')
   })
 
   it('reassures instead of alarming when the connection drops', () => {

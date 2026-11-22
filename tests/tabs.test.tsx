@@ -84,15 +84,15 @@ describe('tab strip', () => {
       onSplitRight: () => calls.push('right'),
       onSplitDown: () => calls.push('down'),
     })
-    ;(el.querySelector('[aria-label="Dividir a la derecha"]') as HTMLElement).click()
-    ;(el.querySelector('[aria-label="Dividir abajo"]') as HTMLElement).click()
+    ;(el.querySelector('[aria-label="Split right"]') as HTMLElement).click()
+    ;(el.querySelector('[aria-label="Split down"]') as HTMLElement).click()
     expect(calls).toEqual(['right', 'down'])
   })
 
   it('offers no split buttons on a phone, which shows one pane', () => {
     const el = strip()
-    expect(el.querySelector('[aria-label="Dividir a la derecha"]')).toBeNull()
-    expect(el.querySelector('[aria-label="Dividir abajo"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Split right"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Split down"]')).toBeNull()
   })
 
   it('greys both splits out, with the reason, once the budget is spent', () => {
@@ -100,7 +100,7 @@ describe('tab strip', () => {
     // after MAX_PANES changes, and would lie about the label the app shows.
     const limit = `Máximo de paneles (${MAX_PANES})`
     const el = strip({ onSplitRight: () => {}, onSplitDown: () => {}, splitLimitLabel: limit })
-    for (const label of ['Dividir a la derecha', 'Dividir abajo']) {
+    for (const label of ['Split right', 'Split down']) {
       const button = el.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement
       expect(button.disabled).toBe(true)
       expect(button.getAttribute('title')).toBe(limit)
@@ -122,7 +122,7 @@ describe('tab strip', () => {
     expect(children).toHaveLength(tabs.length + 1)
     expect(children.at(-2)!.className).toContain('tab')
     expect(children.at(-1)!.className).toContain('tab-new')
-    expect(children.at(-1)!.getAttribute('aria-label')).toBe('Nueva nota')
+    expect(children.at(-1)!.getAttribute('aria-label')).toBe('New note')
   })
 
   it('adds a note from the + next to the tabs', () => {
@@ -137,8 +137,8 @@ describe('tab strip', () => {
     expect(el.querySelector('.tabbar')!.className).toContain('tabbar--inline')
     expect(el.querySelector('.tab-new')).not.toBeNull()
     // Same three actions as a pane strip, just without its own bar.
-    expect(el.querySelector('[aria-label="Dividir a la derecha"]')).not.toBeNull()
-    expect(el.querySelector('[aria-label="Cerrar panel"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Split right"]')).not.toBeNull()
+    expect(el.querySelector('[aria-label="Close pane"]')).toBeNull()
   })
 
   it('closes the whole pane from the X on the right', () => {
@@ -146,7 +146,7 @@ describe('tab strip', () => {
     const el = strip({ onClosePane: () => closed++ })
     const actions = Array.from(el.querySelectorAll('.tabbar-actions button')) as HTMLElement[]
     const close = actions.at(-1)!
-    expect(close.getAttribute('aria-label')).toBe('Cerrar panel')
+    expect(close.getAttribute('aria-label')).toBe('Close pane')
     expect(close.querySelector('svg')).not.toBeNull()
     close.click()
     expect(closed).toBe(1)
@@ -154,7 +154,7 @@ describe('tab strip', () => {
 
   it('offers no pane X when there is nothing to close', () => {
     const el = strip()
-    expect(el.querySelector('[aria-label="Cerrar panel"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Close pane"]')).toBeNull()
   })
 })
 

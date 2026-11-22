@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { t } from '../i18n/index.ts'
 
 /**
  * A crash used to mean a white screen and silence. This catches the render tree
@@ -39,13 +40,10 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="crash">
         <div className="empty">
-          <h1 className="empty-title">Algo se rompió</h1>
-          <p className="hint">
-            Ya quedó registrado. Recargá la página: tus notas están guardadas en el servidor y
-            volvés a tu sesión.
-          </p>
+          <h1 className="empty-title">{t('crash.title')}</h1>
+          <p className="hint">{t('crash.body')}</p>
           <button type="button" className="btn" onClick={() => window.location.reload()}>
-            Recargar
+            {t('crash.reload')}
           </button>
         </div>
       </div>

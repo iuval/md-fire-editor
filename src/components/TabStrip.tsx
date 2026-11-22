@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Columns2, Plus, Rows2, X } from 'lucide-react'
+import { useT } from '../i18n/index.ts'
 import {
   beginTabDrag,
   currentTabDrag,
@@ -61,6 +62,7 @@ function TabRenameInput({
   onCommit: (title: string) => void
   onCancel: () => void
 }) {
+  const t = useT()
   const [value, setValue] = useState(initial)
   const ref = useRef<HTMLInputElement>(null)
   // Enter, Escape and a click elsewhere all end the edit; only the first wins,
@@ -86,7 +88,7 @@ function TabRenameInput({
       ref={ref}
       className="tab-rename"
       value={value}
-      aria-label={`Renombrar ${initial}`}
+      aria-label={t('tabs.renameOf', { title: initial })}
       spellCheck={false}
       // Same cap as the note title itself.
       maxLength={300}
@@ -122,6 +124,7 @@ export function TabStrip({
   onClosePane,
   compact = false,
 }: TabStripProps) {
+  const t = useT()
   const buttons = useRef(new Map<string, HTMLButtonElement | null>())
   const listRef = useRef<HTMLDivElement>(null)
   /** The tab whose title is being typed, and the text it had before. */
@@ -228,7 +231,7 @@ export function TabStrip({
       >
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId
-          const title = tab.title || 'Sin título'
+          const title = tab.title || t('app.untitled')
           const draggable = Boolean(onDropTab) && renaming?.id !== tab.id
           return (
             <div
@@ -276,8 +279,8 @@ export function TabStrip({
               )}
               <button
                 className="tab-close"
-                aria-label={`Cerrar ${title}`}
-                title="Cerrar"
+                aria-label={t('tabs.close', { title })}
+                title={t('tabs.closeShort')}
                 onClick={() => onClose(tab.id)}
               >
                 <X size={12} />
@@ -290,8 +293,8 @@ export function TabStrip({
         <button
           className="icon-btn icon-btn--sm tab-new"
           onClick={onNewNote}
-          aria-label="Nueva nota"
-          title="Nueva nota"
+          aria-label={t('tabs.newNote')}
+          title={t('tabs.newNote')}
         >
           <Plus size={14} />
         </button>
@@ -303,8 +306,8 @@ export function TabStrip({
             className="icon-btn icon-btn--sm"
             onClick={onSplitRight}
             disabled={Boolean(splitLimitLabel)}
-            aria-label="Dividir a la derecha"
-            title={splitLimitLabel ?? 'Dividir a la derecha'}
+            aria-label={t('tabs.splitRight')}
+            title={splitLimitLabel ?? t('tabs.splitRight')}
           >
             <Columns2 size={14} />
           </button>
@@ -314,8 +317,8 @@ export function TabStrip({
             className="icon-btn icon-btn--sm"
             onClick={onSplitDown}
             disabled={Boolean(splitLimitLabel)}
-            aria-label="Dividir abajo"
-            title={splitLimitLabel ?? 'Dividir abajo'}
+            aria-label={t('tabs.splitDown')}
+            title={splitLimitLabel ?? t('tabs.splitDown')}
           >
             <Rows2 size={14} />
           </button>
@@ -324,8 +327,8 @@ export function TabStrip({
           <button
             className="icon-btn icon-btn--sm"
             onClick={onClosePane}
-            aria-label="Cerrar panel"
-            title="Cerrar panel"
+            aria-label={t('tabs.closePane')}
+            title={t('tabs.closePane')}
           >
             <X size={14} />
           </button>

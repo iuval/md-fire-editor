@@ -4,10 +4,10 @@ Cinco pedidos anotados el 21-nov-2026, con el diseño técnico que ya se despren
 actual. **Nada de esto está implementado**; el orden sugerido está al final.
 
 Contexto que condiciona todo: hoy el cliente es la única parte con lógica de negocio
-(no hay Cloud Functions, el proyecto está en Spark). Varias de estas features —cobro por uso,
-auto top-up, medición real— necesitan una parte **confiable** del lado servidor: hasta pasar a
-Blaze + Functions, cualquier medición hecha en el cliente se puede falsear y sirve solo para
-*mostrar*, no para *cobrar*.
+(el proyecto está en Blaze, pero todavía no hay Cloud Functions). Varias de estas features
+—cobro por uso, auto top-up, medición real— necesitan una parte **confiable** del lado
+servidor: sin Functions, cualquier medición hecha en el cliente se puede falsear y sirve solo
+para *mostrar*, no para *cobrar*.
 
 ---
 
@@ -189,23 +189,40 @@ por uid (`login --agent`) sigue disponible para el modelo anónimo.
 
 **Tamaño**: S · **Depende de**: nada para transparencia; cobro real depende de Blaze.
 
-**Implementado**: `usage/{uid}` con contadores incrementales (escrituras/lecturas/bytes),
-alimentado por los `stats` del provider cada 30 s, más `storageBytes` recalculado desde las
-notas. Diálogo "Uso y facturación" con plan, notas, carpetas, almacenamiento, transferencia y
-**costo estimado** con las tarifas públicas. Reglas: solo el dueño escribe, mes `YYYY-MM`,
-enteros no negativos.
+**Implementado**: `usage/{uid}/months/{YYYY-MM}` con contadores incrementales (escrituras,
+lecturas, borrados y bytes), alimentado por los `stats` del provider cada 30 s, más
+`storageBytes` recalculado desde las notas. El bucket mensual evita mezclar meses y el
+diálogo muestra el desglose completo (operaciones, storage, PITR/backup y egress). Reglas:
+solo el dueño escribe, id `YYYY-MM`, enteros no negativos. El documento viejo `usage/{uid}`
+queda escribible un ciclo de deploy para clientes cacheados.
+
+La CLI y el MCP también escriben en el mismo bucket: `agent/firestore-rest.mjs` cuenta
+reads/writes/deletes por request y `flushUsage()` los vuelca con incrementos; la CLI
+vuelca al terminar cada comando y el MCP cada 30 s y al recibir SIGINT/SIGTERM. Un agente
+anónimo mide en su propio bucket (su uid), no en el del dueño de la carpeta: las reglas
+solo dejan escribir el bucket propio. El rate limit y el presupuesto por corrida siguen
+frenando el costo; el medidor ahora además lo mide.
+
+**Cuota y créditos**: `src/lib/quota.ts` define el free tier permanente (250 MB y 10.000
+operaciones de agente/mes) y el diálogo muestra barras de uso con aviso al 80%. La CLI y el
+MCP cortan al llegar al tope de operaciones. `src/lib/credits.ts` define los packs de
+$5/$15/$50, la configuración de auto top-up (el dueño la edita sin tocar el saldo) y las
+solicitudes de recarga en `credits/{uid}/topups`. Falta el backend que debite saldo y
+acredite recargas, y el proveedor de pagos.
 
 ---
 
-## 5. Auto top-up de créditos (mínimo $2) — 🟡 modelo y UI listos, falta el cobro
+## 5. Auto top-up de créditos (mínimo $2) — 🟡 modelo, UI y solicitudes listos, falta el cobro
 
 **Qué**: recarga automática cuando el saldo baja de un umbral, con un mínimo de $2.
 
 **Diseño**
 
-- Modelo: `credits/{uid}` con `{ balanceUsd, thresholdUsd, topUpUsd, paymentMethodRef, enabled }`
+- Modelo: `credits/{uid}` con `{ balanceUsd, thresholdUsd, topUpUsd, autoTopUp }`
   y un libro mayor `credits/{uid}/ledger/{id}` (cargo/recarga, motivo, timestamp) para que el
-  usuario pueda auditar.
+  usuario pueda auditar. El dueño edita la configuración; el saldo y el ledger los escribe
+  solo el servidor. Cada recarga pedida queda en `credits/{uid}/topups` como solicitud
+  pendiente.
 - Flujo: al quedar el saldo bajo el umbral, se dispara un cargo **off-session** al método
   guardado. Eso **exige backend** (webhook + idempotencia + reintentos + factura): no se puede
   hacer desde el cliente sin exponer la clave del proveedor.

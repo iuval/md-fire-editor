@@ -1,3 +1,5 @@
+import { t } from '../i18n/index.ts'
+
 export type Role = 'owner' | 'editor' | 'viewer'
 export type Access = 'restricted' | 'link-view' | 'link-edit'
 
@@ -7,16 +9,16 @@ export interface Acl {
   access: Access
 }
 
-export const ACCESS_LABELS: Record<Access, string> = {
-  restricted: 'Privada',
-  'link-view': 'Enlace de lectura',
-  'link-edit': 'Enlace de escritura',
+export function accessLabel(access: Access): string {
+  if (access === 'link-view') return t('access.linkView')
+  if (access === 'link-edit') return t('access.linkEdit')
+  return t('access.restricted')
 }
 
-export const ROLE_LABELS: Record<Role, string> = {
-  owner: 'Dueño',
-  editor: 'Escritura',
-  viewer: 'Lectura',
+export function roleLabel(role: Role): string {
+  if (role === 'owner') return t('role.owner')
+  if (role === 'editor') return t('role.editor')
+  return t('role.viewer')
 }
 
 const RANK: Record<string, number> = { owner: 3, editor: 2, viewer: 1 }

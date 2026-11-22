@@ -34,8 +34,15 @@ export interface SyncStats {
   bytesWritten: number
   blocksApplied: number
   bytesApplied: number
+  /** Documents removed by compaction; each one is a Firestore delete. */
+  blocksDeleted: number
+  /** Manifest documents written by compaction; each one is a Firestore write. */
+  manifestWrites: number
   rejectedBlocks: number
   compactions: number
+  /** Presence writes/deletes, merged in by NoteSession (the provider does not own presence). */
+  presenceWrites?: number
+  presenceDeletes?: number
 }
 
 export interface ProviderStatus {
@@ -82,6 +89,8 @@ export class FirestoreYjsProvider {
     bytesWritten: 0,
     blocksApplied: 0,
     bytesApplied: 0,
+    blocksDeleted: 0,
+    manifestWrites: 0,
     rejectedBlocks: 0,
     compactions: 0,
   }
@@ -417,15 +426,18 @@ export class FirestoreYjsProvider {
         clientId: this.doc.clientID,
         updatedAt: serverTimestamp(),
       })
+      this.stats.manifestWrites++
 
       // Prune exactly the ids folded into the snapshot: a block written while
       // we were compacting is not in that list, so it can never be dropped.
       for (let i = 0; i < prune.length; i += 400) {
         const batch = writeBatch(this.fs)
-        prune.slice(i, i + 400).forEach((id) => {
+        const chunk = prune.slice(i, i + 400)
+        chunk.forEach((id) => {
           batch.delete(doc(this.fs!, 'notes', this.noteId, 'updates', id))
         })
         await batch.commit()
+        this.stats.blocksDeleted += chunk.length
       }
 
       // Drop the v1 snapshot once its content is folded into the manifest.

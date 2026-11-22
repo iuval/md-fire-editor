@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Copy, Globe, Link2, Lock, Pencil, Trash2, X } from 'lucide-react'
 import {
-  ACCESS_LABELS,
-  ROLE_LABELS,
+  accessLabel,
+  roleLabel,
   aclMembers,
   type Access,
   type Acl,
@@ -159,7 +159,7 @@ export function ShareDialog({
                 active={target.acl.access === 'restricted'}
                 disabled={busy}
                 icon={<Lock size={14} />}
-                title={ACCESS_LABELS.restricted}
+                title={accessLabel('restricted')}
                 description="Solo las personas de la lista."
                 onClick={() => void run(() => onChangeAccess('restricted'))}
               />
@@ -167,7 +167,7 @@ export function ShareDialog({
                 active={target.acl.access === 'link-view'}
                 disabled={busy}
                 icon={<Globe size={14} />}
-                title={ACCESS_LABELS['link-view']}
+                title={accessLabel('link-view')}
                 description="Cualquiera con el enlace puede leer, nadie puede escribir."
                 onClick={() => void run(() => onChangeAccess('link-view'))}
               />
@@ -175,7 +175,7 @@ export function ShareDialog({
                 active={target.acl.access === 'link-edit'}
                 disabled={busy}
                 icon={<Pencil size={14} />}
-                title={ACCESS_LABELS['link-edit']}
+                title={accessLabel('link-edit')}
                 description="Cualquiera con el enlace puede editar en tiempo real."
                 onClick={() => void run(() => onChangeAccess('link-edit'))}
               />
@@ -217,7 +217,7 @@ export function ShareDialog({
                         {uid === currentUid ? ' (vos)' : ''}
                       </span>
                       {isOwner ? (
-                        <span className="hint">{ROLE_LABELS.owner}</span>
+                        <span className="hint">{roleLabel('owner')}</span>
                       ) : (
                         <>
                           <select
@@ -229,8 +229,8 @@ export function ShareDialog({
                               void run(() => onSetRole(uid, e.target.value as Role))
                             }
                           >
-                            <option value="viewer">{ROLE_LABELS.viewer}</option>
-                            <option value="editor">{ROLE_LABELS.editor}</option>
+                            <option value="viewer">{roleLabel('viewer')}</option>
+                            <option value="editor">{roleLabel('editor')}</option>
                           </select>
                           <button
                             className="icon-btn icon-btn--sm"
@@ -266,8 +266,8 @@ export function ShareDialog({
                 aria-label="Permiso para la nueva persona"
                 onChange={(e) => setNewRole(e.target.value as Role)}
               >
-                <option value="viewer">{ROLE_LABELS.viewer}</option>
-                <option value="editor">{ROLE_LABELS.editor}</option>
+                <option value="viewer">{roleLabel('viewer')}</option>
+                <option value="editor">{roleLabel('editor')}</option>
               </select>
               <button className="btn" disabled={busy || !email.trim()} onClick={() => void addByEmail()}>
                 Agregar

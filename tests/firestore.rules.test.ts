@@ -1120,13 +1120,65 @@ describe('usage and credits', () => {
     await assertSucceeds(getDoc(doc(db(OWNER), 'usage', OWNER)))
   })
 
+  const usageMonth = (overrides: Record<string, unknown> = {}) => ({
+    month: '2026-11',
+    writes: 10,
+    reads: 4,
+    deletes: 2,
+    bytesWritten: 2048,
+    bytesRead: 1024,
+    storageBytes: 512,
+    updatedAt: ts(),
+    ...overrides,
+  })
+
+  it('a user can write and read their own monthly bucket', async () => {
+    await assertSucceeds(setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth()))
+    await assertSucceeds(getDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11')))
+  })
+
+  it('a monthly bucket accepts a storage-only write', async () => {
+    await assertSucceeds(
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), {
+        month: '2026-11',
+        storageBytes: 4096,
+        updatedAt: ts(),
+      })
+    )
+  })
+
+  it('a monthly bucket counts agent operations', async () => {
+    await assertSucceeds(
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth({ agentOps: 42 }))
+    )
+    await assertFails(
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth({ agentOps: -1 }))
+    )
+  })
+
+  it('rejects foreign monthly buckets, bad ids and negative counters', async () => {
+    await assertFails(
+      setDoc(doc(db(EDITOR), 'usage', OWNER, 'months', '2026-11'), usageMonth())
+    )
+    await assertFails(
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', 'noviembre'), usageMonth({ month: 'noviembre' }))
+    )
+    await assertFails(
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth({ month: '2026-12' }))
+    )
+    await assertFails(
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth({ deletes: -1 }))
+    )
+    await assertFails(getDocs(collection(db(OWNER), 'usage', OWNER, 'months')))
+  })
+
   it('rejects foreign paths, bad months and negative counters', async () => {
     await assertFails(setDoc(doc(db(EDITOR), 'usage', OWNER), usage()))
     await assertFails(setDoc(doc(db(OWNER), 'usage', OWNER), usage({ month: 'noviembre' })))
     await assertFails(setDoc(doc(db(OWNER), 'usage', OWNER), usage({ writes: -1 })))
   })
 
-  it('credits are read-only for the user and admin-writable', async () => {
+  it('a user cannot grant themselves balance', async () => {
     await assertFails(
       setDoc(doc(db(OWNER), 'credits', OWNER), {
         balanceUsd: 999,
@@ -1136,7 +1188,36 @@ describe('usage and credits', () => {
         updatedAt: ts(),
       })
     )
+  })
 
+  it('a user can edit their top-up settings without touching the balance', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'credits', OWNER), {
+        balanceUsd: 5,
+        thresholdUsd: 1,
+        topUpUsd: 2,
+        autoTopUp: false,
+        updatedAt: ts(),
+      })
+    })
+
+    await assertSucceeds(
+      setDoc(
+        doc(db(OWNER), 'credits', OWNER),
+        { thresholdUsd: 2, topUpUsd: 10, autoTopUp: true, updatedAt: ts() },
+        { merge: true }
+      )
+    )
+    await assertFails(
+      setDoc(
+        doc(db(OWNER), 'credits', OWNER),
+        { balanceUsd: 50, thresholdUsd: 2, topUpUsd: 10, autoTopUp: true, updatedAt: ts() },
+        { merge: true }
+      )
+    )
+  })
+
+  it('the admin can create and edit credits, and the top-up floor holds', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'admins', OWNER), { createdAt: ts() })
     })
@@ -1156,6 +1237,30 @@ describe('usage and credits', () => {
         topUpUsd: 1,
         autoTopUp: true,
         updatedAt: ts(),
+      })
+    )
+  })
+
+  it('a user can request a top-up but not mark it paid', async () => {
+    await assertSucceeds(
+      addDoc(collection(db(OWNER), 'credits', OWNER, 'topups'), {
+        amountUsd: 5,
+        status: 'pending',
+        requestedAt: ts(),
+      })
+    )
+    await assertFails(
+      addDoc(collection(db(OWNER), 'credits', OWNER, 'topups'), {
+        amountUsd: 5,
+        status: 'paid',
+        requestedAt: ts(),
+      })
+    )
+    await assertFails(
+      addDoc(collection(db(EDITOR), 'credits', OWNER, 'topups'), {
+        amountUsd: 5,
+        status: 'pending',
+        requestedAt: ts(),
       })
     )
   })

@@ -85,24 +85,40 @@ describe('boot graph', () => {
 
   it('stays small enough to paint immediately', () => {
     // main.tsx + index.css + App.tsx + theme + storage + desktopLink +
-    // legacyHost + ErrorBoundary. The bound is headroom for a splash component
-    // or a hook, not room for another dependency tree — which is what the next
-    // assertion actually pins down.
-    expect(staticGraph(entry).size).toBeLessThanOrEqual(9)
+    // legacyHost + ErrorBoundary + i18n/index + i18n/en. The bound is headroom
+    // for a splash component or a hook, not room for another dependency tree —
+    // which is what the next assertion actually pins down.
+    expect(staticGraph(entry).size).toBeLessThanOrEqual(10)
   })
 
-  it('is a star: every boot module is a leaf, so no tree can grow behind it', () => {
+  it('never nests a tree behind a boot module (depth <= 2)', () => {
     // The count above is a proxy; this is the invariant it is proxying for. A
-    // boot module may only import packages, never other local modules. App.tsx
-    // qualifies because everything below it is reached through `lazy()`.
-    const nested = [...staticGraph(entry)]
-      .filter(([file]) => file !== entry)
-      .map(([file, specifiers]) => ({
-        file: file.slice(ROOT.length + 1),
-        relative: specifiers.filter((s) => s.startsWith('.')),
-      }))
-      .filter(({ relative }) => relative.length > 0)
+    // boot module may reach one more local module, and that one must be a leaf,
+    // so no dependency tree can hide behind a small count. App.tsx qualifies
+    // because everything below it is reached through `lazy()`.
+    //
+    // One exemption, explicit: the catalogue. `i18n/index.ts -> i18n/en.ts` is a
+    // second local hop, and staying a single file would mean one giant module
+    // plus no way to add a language without editing the runtime.
+    const graph = staticGraph(entry)
+    const localsOf = (file: string) =>
+      (graph.get(file) ?? [])
+        .filter((specifier) => specifier.startsWith('.'))
+        .map((specifier) => resolveRelative(file, specifier))
+        .filter((target): target is string => Boolean(target))
+    const nested = [...graph.keys()]
+      .filter((file) => file !== entry)
+      .flatMap(localsOf)
+      .filter((target) => localsOf(target).length > 0)
+      .map((file) => file.slice(ROOT.length + 1))
+      .filter((file) => !file.startsWith('src/i18n/'))
     expect(nested).toEqual([])
+
+    // ...and the exemption stays as small as it can be.
+    const catalogue = [...graph.keys()]
+      .map((file) => file.slice(ROOT.length + 1))
+      .filter((file) => file.startsWith('src/i18n/'))
+    expect(catalogue.length).toBeLessThanOrEqual(2)
   })
 
   it('never reaches Firebase through a static import', () => {

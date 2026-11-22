@@ -361,6 +361,61 @@ describe('agent writes through the rules', () => {
   })
 })
 
+describe('agent usage metering', () => {
+  const month = () => new Date().toISOString().slice(0, 7)
+
+  it('counts reads and writes into the monthly bucket', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    db.resetUsage()
+
+    await core.listNotes(db)
+    await core.readNote(db, 'noteideas')
+    await core.patchNote(db, 'noteideas', [{ find: 'uno', replace: '1' }])
+
+    const flushed = await db.flushUsage()
+    expect(flushed.reads).toBeGreaterThan(0)
+    expect(flushed.writes).toBeGreaterThan(0)
+
+    const bucket = await db.get('usage', `${editorUid}/months/${month()}`)
+    expect(bucket.data.month).toBe(month())
+    expect(bucket.data.reads).toBeGreaterThanOrEqual(flushed.reads)
+    expect(bucket.data.writes).toBeGreaterThanOrEqual(flushed.writes)
+  })
+
+  it('does not count the metering write itself', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    db.resetUsage()
+
+    await core.listNotes(db)
+    await db.flushUsage()
+
+    // The flush wrote once to Firestore; that write must not be re-counted.
+    expect(db.usage.writes).toBe(0)
+    expect(db.usage.reads).toBe(0)
+  })
+
+  it('flushes nothing when there were no operations', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    db.resetUsage()
+    expect(await db.flushUsage()).toBeNull()
+  })
+
+  it('counts agent operations and reads the monthly total', async () => {
+    asAgent(editorToken)
+    const db = await core.openStore()
+    db.resetUsage()
+    db.meterAgentOp()
+    db.meterAgentOp()
+    const flushed = await db.flushUsage()
+    expect(flushed.agentOps).toBe(2)
+    const bucket = await db.get('usage', `${editorUid}/months/${month()}`)
+    expect(bucket.data.agentOps).toBe(2)
+  })
+})
+
 describe('CLI argument parsing', () => {
   it('keeps --etag values (regression: it used to be swallowed as a boolean)', async () => {
     const { parseArgs } = await import('../agent/args.mjs')

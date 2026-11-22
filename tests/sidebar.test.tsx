@@ -126,10 +126,10 @@ describe('sidebar head', () => {
 
     expect(head.querySelector('.sidebar-title')!.textContent).toBe('FireMD')
     expect([...head.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual([
-      'Nueva nota',
-      'Nueva carpeta',
-      'Nuevo canvas',
-      'Ocultar panel',
+      'New note',
+      'New folder',
+      'New canvas',
+      'Hide panel',
     ])
     // Nothing else lives up there: no overflow menu, no section label.
     expect(head.querySelector('[aria-label="Más acciones"]')).toBeNull()
@@ -143,7 +143,7 @@ describe('sidebar head', () => {
       onNewCanvas: () => calls.push('canvas'),
     })
     const head = el.querySelector('.sidebar-head')!
-    for (const label of ['Nueva nota', 'Nueva carpeta', 'Nuevo canvas']) {
+    for (const label of ['New note', 'New folder', 'New canvas']) {
       act(() => head.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click())
     }
     expect(calls).toEqual(['note', 'folder', 'canvas'])
@@ -156,7 +156,7 @@ describe('sidebar head', () => {
       onClose: () => calls.push('close'),
       onCollapse: () => calls.push('collapse'),
     })
-    const button = el.querySelector<HTMLButtonElement>('.sidebar-head [aria-label="Cerrar panel"]')!
+    const button = el.querySelector<HTMLButtonElement>('.sidebar-head [aria-label="Close panel"]')!
     act(() => button.click())
     expect(calls).toEqual(['close'])
   })
@@ -268,7 +268,7 @@ describe('footer', () => {
     const buttons = [...foot.querySelectorAll('button')]
     expect(buttons).toHaveLength(2)
     const menu = buttons.find((b) => b.className.includes('icon-btn'))!
-    expect(menu.getAttribute('aria-label')).toBe('Cuenta y ajustes de Iuval')
+    expect(menu.getAttribute('aria-label')).toBe('Iuval · Account and settings')
     expect(menu.getAttribute('title')).toContain('Iuval')
   })
 
@@ -529,13 +529,13 @@ describe('horizontal scrolling for long trees', () => {
 describe('row actions', () => {
   it('gives every note the same ⋯ the folders already have', () => {
     const el = render()
-    const labels = [...el.querySelectorAll<HTMLElement>('.file-row [aria-label^="Acciones de "]')].map(
+    const labels = [...el.querySelectorAll<HTMLElement>('.file-row [aria-label^="Actions for "]')].map(
       (b) => b.getAttribute('aria-label')
     )
     // One per note, whichever branch of the tree it hangs from.
     expect([...labels].sort()).toEqual([
-      'Acciones de Diseño de sincronización',
-      'Acciones de Nota raíz',
+      'Actions for Diseño de sincronización',
+      'Actions for Nota raíz',
     ])
   })
 
@@ -544,7 +544,7 @@ describe('row actions', () => {
     const el = render({
       onNoteMenu: (note, pos) => opened.push({ id: note.id, ...pos }),
     })
-    const button = el.querySelector<HTMLElement>('[aria-label="Acciones de Diseño de sincronización"]')!
+    const button = el.querySelector<HTMLElement>('[aria-label="Actions for Diseño de sincronización"]')!
     act(() => button.click())
     expect(opened).toHaveLength(1)
     expect(opened[0].id).toBe('n2')
@@ -554,7 +554,7 @@ describe('row actions', () => {
   it('opens the note menu from a right click on the row too', () => {
     const opened: string[] = []
     const el = render({ onNoteMenu: (note) => opened.push(note.id) })
-    const row = el.querySelector<HTMLElement>('[aria-label="Acciones de Nota raíz"]')!.parentElement!
+    const row = el.querySelector<HTMLElement>('[aria-label="Actions for Nota raíz"]')!.parentElement!
     act(() =>
       row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 20 }))
     )
@@ -564,7 +564,7 @@ describe('row actions', () => {
   it('opens the folder menu from a right click on the folder row', () => {
     const opened: string[] = []
     const el = render({ onFolderMenu: (folder) => opened.push(folder.id) })
-    const row = el.querySelector<HTMLElement>('[aria-label="Acciones de V3"]')!.parentElement!
+    const row = el.querySelector<HTMLElement>('[aria-label="Actions for V3"]')!.parentElement!
     act(() =>
       row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 20 }))
     )

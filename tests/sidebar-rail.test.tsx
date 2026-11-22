@@ -43,17 +43,17 @@ describe('collapsed rail', () => {
   it('shows expand, the three create actions and the account menu', () => {
     const el = renderRail(true)
     expect(el.querySelector('.sidebar-rail')).not.toBeNull()
-    expect(byLabel(el, 'Mostrar panel')).not.toBeNull()
-    expect(byLabel(el, 'Nueva nota')).not.toBeNull()
-    expect(byLabel(el, 'Nueva carpeta')).not.toBeNull()
-    expect(byLabel(el, 'Nuevo canvas')).not.toBeNull()
-    expect(byLabel(el, 'Cuenta y ajustes')).not.toBeNull()
+    expect(byLabel(el, 'Show panel')).not.toBeNull()
+    expect(byLabel(el, 'New note')).not.toBeNull()
+    expect(byLabel(el, 'New folder')).not.toBeNull()
+    expect(byLabel(el, 'New canvas')).not.toBeNull()
+    expect(byLabel(el, 'Account and settings')).not.toBeNull()
   })
 
   it('runs each action', () => {
     const calls: string[] = []
     const el = renderRail(true, calls)
-    for (const label of ['Mostrar panel', 'Nueva nota', 'Nueva carpeta', 'Nuevo canvas', 'Cuenta y ajustes']) {
+    for (const label of ['Show panel', 'New note', 'New folder', 'New canvas', 'Account and settings']) {
       act(() => byLabel(el, label)!.click())
     }
     expect(calls).toEqual(['expand', 'note', 'folder', 'canvas', 'account'])
@@ -61,7 +61,7 @@ describe('collapsed rail', () => {
 
   it('marks the account menu with the same gear as the footer', () => {
     const el = renderRail(true)
-    const account = byLabel(el, 'Cuenta y ajustes')!
+    const account = byLabel(el, 'Account and settings')!
     // A gear (lucide "settings"), not a row's "more" glyph: this is the
     // preferences entry, and the expanded panel's footer shows the same one.
     expect(account.querySelector('svg')?.getAttribute('class')).toContain('settings')

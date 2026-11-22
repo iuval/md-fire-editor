@@ -137,7 +137,7 @@ export function CanvasEditor({
 
   useEffect(() => {
     if (!onStats) return
-    const tick = () => onStats({ ...session.provider.stats })
+    const tick = () => onStats({ ...session.stats })
     tick()
     const timer = setInterval(tick, 30_000)
     return () => {

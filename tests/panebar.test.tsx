@@ -75,7 +75,7 @@ describe('pane bar actions', () => {
 
   it('keeps the drawer opener on a phone', () => {
     const el = mount(<PaneBar presence={[]} isMobile onToggleSidebar={() => {}} />)
-    expect(el.querySelector('[aria-label="Abrir notas"]')).not.toBeNull()
+    expect(el.querySelector('[aria-label="Open notes"]')).not.toBeNull()
   })
 })
 
@@ -92,13 +92,13 @@ describe('sync status', () => {
     const el = mount(<SyncAnnouncer status={{ ...status, pendingWrites: 2 }} />)
     const live = el.querySelector('[role="status"]')!
     expect(live.className).toContain('sr-only')
-    expect(live.textContent).toBe('Guardando')
+    expect(live.textContent).toBe('Saving')
   })
 
   it('keeps announcing once the bar is gone from the layout', () => {
     // Nothing here is visual: this is what a split workspace (no top bar) keeps.
     const el = mount(<SyncAnnouncer status={{ ...status, connected: false }} />)
-    expect(el.textContent).toBe('Conectando')
+    expect(el.textContent).toBe('Connecting')
   })
 })
 

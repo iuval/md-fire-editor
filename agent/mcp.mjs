@@ -6,6 +6,8 @@
 // envelopes.
 
 import { createInterface } from 'node:readline'
+import { createRateLimiter, envLimit } from './rate-limit.mjs'
+import { AGENT_OPS_PER_MONTH } from './firestore-rest.mjs'
 import {
   AgentError,
   openStore,
@@ -142,7 +144,25 @@ async function callTool(db, name, a) {
 }
 
 const db = await openStore()
+// Una tool call es una operación: el límite por minuto frena un agente en bucle
+// antes de que llegue a Firestore. El presupuesto de requests se mide por call.
+const limiter = createRateLimiter({ limit: envLimit('FIREMD_AGENT_RATE_LIMIT', 60) })
 const rl = createInterface({ input: process.stdin })
+
+// El MCP es un proceso largo: vuelca el medidor cada 30 s y al cerrarse. Si el
+// proceso muere sin señal, se pierde la última ventana (best-effort).
+const flushTimer = setInterval(() => {
+  db.flushUsage().catch(() => {})
+}, 30_000)
+flushTimer.unref()
+
+async function shutdown() {
+  clearInterval(flushTimer)
+  await db.flushUsage().catch(() => {})
+  process.exit(0)
+}
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
 
 function send(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -181,6 +201,16 @@ rl.on('line', async (line) => {
 
     if (method === 'tools/call') {
       try {
+        limiter.charge()
+        db.resetBudget()
+        const used = await db.agentOpsUsed()
+        if (used >= AGENT_OPS_PER_MONTH) {
+          throw new AgentError(
+            `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_MONTH.toLocaleString('es')}/mes). Cargá saldo en FireMD para seguir.`,
+            'E_QUOTA'
+          )
+        }
+        db.meterAgentOp()
         const result = await callTool(db, params?.name, params?.arguments ?? {})
         send({ jsonrpc: '2.0', id, result })
       } catch (error) {

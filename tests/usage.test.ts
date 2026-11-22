@@ -1,29 +1,75 @@
 import { describe, expect, it } from 'vitest'
-import { currentMonth, estimateCost, formatBytes, formatUsd, MIN_TOP_UP_USD } from '../src/lib/usage'
+import {
+  costBreakdown,
+  currentMonth,
+  estimateCost,
+  formatBytes,
+  formatUsd,
+  MIN_TOP_UP_USD,
+  nextMonthStart,
+  RATE_DELETES_PER_100K,
+  RATE_READS_PER_100K,
+  RATE_WRITES_PER_100K,
+} from '../src/lib/usage'
+
+const GIB = 1024 ** 3
 
 describe('usage accounting', () => {
   it('formats the month as YYYY-MM in UTC', () => {
-    expect(currentMonth(new Date('2026-11-21T23:30:00Z'))).toBe('2026-11')
-    expect(currentMonth(new Date('2026-01-02T00:10:00Z'))).toBe('2026-01')
+    expect(currentMonth(new Date('2026-11-22T03:00:00Z'))).toBe('2026-11')
+    expect(currentMonth(new Date('2026-01-01T00:00:00Z'))).toBe('2026-01')
   })
 
-  it('estimates cost with the public Firestore rates', () => {
-    expect(estimateCost({ reads: 0, writes: 0 })).toBe(0)
-    expect(estimateCost({ reads: 100_000, writes: 0 })).toBeCloseTo(0.03, 5)
-    expect(estimateCost({ reads: 0, writes: 100_000 })).toBeCloseTo(0.09, 5)
-    // A heavy month measured by the sync harness: 568k writes, 4.4k reads.
-    expect(estimateCost({ reads: 4_400, writes: 568_480 })).toBeCloseTo(0.5127, 3)
+  it('rolls the bucket over at the first UTC instant of the next month', () => {
+    expect(nextMonthStart(new Date('2026-11-22T15:00:00Z')).toISOString()).toBe('2026-12-01T00:00:00.000Z')
+    expect(nextMonthStart(new Date('2026-12-31T23:59:59Z')).toISOString()).toBe('2027-01-01T00:00:00.000Z')
   })
 
-  it('keeps the $2 top-up floor', () => {
+  it('prices each operation at the list rate', () => {
+    const writes = costBreakdown({ writes: 100_000 })
+    expect(writes.writes).toBeCloseTo(RATE_WRITES_PER_100K, 8)
+    const reads = costBreakdown({ reads: 100_000 })
+    expect(reads.reads).toBeCloseTo(RATE_READS_PER_100K, 8)
+    const deletes = costBreakdown({ deletes: 100_000 })
+    expect(deletes.deletes).toBeCloseTo(RATE_DELETES_PER_100K, 8)
+    expect(costBreakdown({}).total).toBe(0)
+  })
+
+  it('prorates storage, PITR, backup and egress by the gibibyte', () => {
+    const cost = costBreakdown({ storageBytes: GIB, bytesRead: GIB })
+    expect(cost.storage).toBeCloseTo(0.15, 8)
+    expect(cost.pitr).toBeCloseTo(0.15, 8)
+    expect(cost.backup).toBeCloseTo(0.03, 8)
+    expect(cost.egress).toBeCloseTo(0.12, 8)
+    expect(cost.total).toBeCloseTo(0.45, 8)
+  })
+
+  it('keeps the old write/read estimate as a subset of the full cost', () => {
+    const totals = { writes: 568_480, reads: 4_400 }
+    expect(estimateCost(totals)).toBeCloseTo(0.513, 3)
+    expect(estimateCost(totals)).toBeCloseTo(costBreakdown(totals).total, 8)
+  })
+
+  it('adds deletes and storage to the same month', () => {
+    const cost = costBreakdown({
+      writes: 100_000,
+      reads: 100_000,
+      deletes: 100_000,
+      storageBytes: 20 * 1024 * 1024,
+    })
+    expect(cost.total).toBeCloseTo(0.09 + 0.03 + 0.01 + (20 / 1024) * 0.33, 6)
+  })
+
+  it('keeps the prepaid top-up floor', () => {
     expect(MIN_TOP_UP_USD).toBe(2)
   })
 
-  it('humanizes bytes and amounts', () => {
+  it('formats bytes and dollars without losing small amounts', () => {
     expect(formatBytes(512)).toBe('512 B')
     expect(formatBytes(2048)).toBe('2.0 KB')
-    expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB')
-    expect(formatUsd(0.5127)).toBe('$0.51')
-    expect(formatUsd(0.02)).toBe('$0.020')
+    expect(formatBytes(1024 ** 2)).toBe('1.0 MB')
+    expect(formatUsd(0)).toBe('$0.00')
+    expect(formatUsd(0.0031)).toBe('$0.0031')
+    expect(formatUsd(0.5116)).toBe('$0.51')
   })
 })
