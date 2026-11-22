@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_PANES,
   activeNoteId,
+  canSplit,
   activeTab,
   closePane,
   closeTab,
@@ -280,5 +282,37 @@ describe('panes: persisted layout', () => {
       second: { kind: 'pane', id: 'p2', tabs: [], activeTabId: null },
     })
     expect(layout?.kind === 'split' && layout.ratio).toBe(0.85)
+  })
+})
+
+describe('panes: how many, and why', () => {
+  it('allows splitting until the pane cap, then stops', () => {
+    let tree = singlePane('p1', 'n1', 't1')
+    let count = 1
+    while (canSplit(tree)) {
+      const ids = { paneId: `p${count + 1}`, tabId: `t${count + 1}`, splitId: `s${count}` }
+      tree = splitPaneWithActiveTab(tree, `p${count}`, 'row', ids)
+      count++
+      // Guard against a runaway loop if the cap is ever removed by accident.
+      if (count > 32) break
+    }
+    expect(count).toBe(MAX_PANES)
+    expect(listPanes(tree)).toHaveLength(MAX_PANES)
+    expect(canSplit(tree)).toBe(false)
+  })
+
+  it('counts a closed pane back into the budget', () => {
+    let tree = singlePane('p1', 'n1', 't1')
+    for (let i = 2; i <= MAX_PANES; i++) {
+      tree = splitPaneWithActiveTab(tree, `p${i - 1}`, 'row', {
+        paneId: `p${i}`,
+        tabId: `t${i}`,
+        splitId: `s${i}`,
+      })
+    }
+    expect(canSplit(tree)).toBe(false)
+    const reduced = closePane(tree, 'p2')
+    expect(listPanes(reduced)).toHaveLength(MAX_PANES - 1)
+    expect(canSplit(reduced)).toBe(true)
   })
 })

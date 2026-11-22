@@ -39,7 +39,14 @@ try {
     void setPersistence(authInstance, browserLocalPersistence)
 
     dbInstance = initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      // The SDK's default LRU threshold is 40 MB of serialised documents, and an
+      // open note keeps its body in there twice (the sidebar query and the note
+      // document). 20 MB is well above what a session reads and bounds the cache
+      // on machines with less memory than the one it was tuned on.
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+        cacheSizeBytes: 20 * 1024 * 1024,
+      }),
       ignoreUndefinedProperties: true,
     })
   }

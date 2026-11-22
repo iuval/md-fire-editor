@@ -6,6 +6,8 @@ export interface MenuItem {
   onSelect: () => void
   danger?: boolean
   separatorBefore?: boolean
+  /** Shown but not actionable (e.g. no pane budget left to split into). */
+  disabled?: boolean
 }
 
 interface MenuProps {
@@ -53,7 +55,10 @@ export function Menu({ items, onClose, anchor = 'top-right', pos }: MenuProps) {
           <button
             className={`menu-item${item.danger ? ' danger' : ''}`}
             role="menuitem"
+            aria-disabled={item.disabled ? true : undefined}
+            disabled={item.disabled}
             onClick={() => {
+              if (item.disabled) return
               onClose()
               item.onSelect()
             }}

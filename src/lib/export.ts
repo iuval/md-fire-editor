@@ -35,12 +35,25 @@ export interface ZipEntry {
   content: string
 }
 
-/** Minimal store-only ZIP. Valid for any unzip tool. */
-export function zipStored(entries: ZipEntry[], now = new Date()): Uint8Array {
+interface ZipChunks {
+  /** `Uint8Array<ArrayBuffer>` so the list is a valid `BlobPart[]`. */
+  chunks: Uint8Array<ArrayBuffer>[]
+  size: number
+}
+
+/**
+ * The bytes of a store-only ZIP, as an ordered list of chunks.
+ *
+ * Writing to one contiguous `Uint8Array` needed a second copy of the whole
+ * vault (a 40 MB export peaked at ~120 MB: notes + encoded entries + the
+ * assembled bytes + the download's own copy). Handing the chunks to a `Blob`
+ * lets the browser stream them to disk instead.
+ */
+function buildZip(entries: ZipEntry[], now: Date): ZipChunks {
   const encoder = new TextEncoder()
   const { time, date } = dosDateTime(now)
-  const locals: Uint8Array[] = []
-  const centrals: Uint8Array[] = []
+  const locals: Uint8Array<ArrayBuffer>[] = []
+  const centrals: Uint8Array<ArrayBuffer>[] = []
   let offset = 0
 
   for (const entry of entries) {
@@ -49,7 +62,7 @@ export function zipStored(entries: ZipEntry[], now = new Date()): Uint8Array {
     const crc = crc32(data)
 
     const local = new Uint8Array(30 + nameBytes.length + data.length)
-    const localView = new DataView(local.buffer)
+    const localView = new DataView(local.buffer as ArrayBuffer)
     localView.setUint32(0, 0x04034b50, true)
     localView.setUint16(4, 20, true) // version needed
     localView.setUint16(6, 0x0800, true) // UTF-8 flag
@@ -66,7 +79,7 @@ export function zipStored(entries: ZipEntry[], now = new Date()): Uint8Array {
     locals.push(local)
 
     const central = new Uint8Array(46 + nameBytes.length)
-    const centralView = new DataView(central.buffer)
+    const centralView = new DataView(central.buffer as ArrayBuffer)
     centralView.setUint32(0, 0x02014b50, true)
     centralView.setUint16(4, 20, true)
     centralView.setUint16(6, 20, true)
@@ -94,14 +107,25 @@ export function zipStored(entries: ZipEntry[], now = new Date()): Uint8Array {
   endView.setUint32(12, centralSize, true)
   endView.setUint32(16, offset, true)
 
-  const total = offset + centralSize + end.length
-  const out = new Uint8Array(total)
+  const chunks = [...locals, ...centrals, end]
+  return { chunks, size: offset + centralSize + end.length }
+}
+
+/** Minimal store-only ZIP. Valid for any unzip tool. */
+export function zipStored(entries: ZipEntry[], now = new Date()): Uint8Array {
+  const { chunks, size } = buildZip(entries, now)
+  const out = new Uint8Array(size)
   let cursor = 0
-  for (const chunk of [...locals, ...centrals, end]) {
+  for (const chunk of chunks) {
     out.set(chunk, cursor)
     cursor += chunk.length
   }
   return out
+}
+
+/** Same bytes as `zipStored`, without the contiguous copy: what a download wants. */
+export function zipStoredBlob(entries: ZipEntry[], now = new Date()): Blob {
+  return new Blob(buildZip(entries, now).chunks, { type: 'application/zip' })
 }
 
 export function safeFileName(name: string, fallback = 'sin-titulo'): string {
@@ -166,10 +190,14 @@ export function suggestExportName(now = new Date()): string {
 }
 
 /** Triggers a browser download. No-op outside a document (tests, SSR). */
-export function download(data: Uint8Array | string, fileName: string, mime: string): void {
+export function download(data: Uint8Array | string | Blob, fileName: string, mime: string): void {
   if (typeof document === 'undefined') return
-  const bytes = data instanceof Uint8Array ? new Uint8Array(data) : new TextEncoder().encode(data)
-  const blob = new Blob([bytes], { type: mime })
+  const blob =
+    data instanceof Blob
+      ? data
+      : new Blob([data instanceof Uint8Array ? new Uint8Array(data) : new TextEncoder().encode(data)], {
+          type: mime,
+        })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

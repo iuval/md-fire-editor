@@ -85,8 +85,13 @@ export class FirestoreYjsProvider {
   private queuedBytes = 0
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private inflight = 0
+  /**
+   * Ids of the blocks already applied, in application order (a `Set` keeps
+   * insertion order, so one structure answers both "have I seen this?" and "what
+   * does the snapshot fold in?"). It used to be a Set plus a parallel array,
+   * holding every id twice.
+   */
   private appliedIds = new Set<string>()
-  private appliedOrder: string[] = []
   private logBytes = 0
   private maxJid = 0
   private nextJid = 1
@@ -242,7 +247,6 @@ export class FirestoreYjsProvider {
       // Our own block arrives through the listener; record it so compaction can
       // prune it and the document is not applied twice.
       this.appliedIds.add(ref.id)
-      this.appliedOrder.push(ref.id)
       this.logBytes += data.length
       this.setStatus({ error: null })
     } catch (err) {
@@ -288,7 +292,6 @@ export class FirestoreYjsProvider {
     if (this.appliedIds.has(block.id)) return
     Y.applyUpdate(this.doc, bytes, REMOTE_ORIGIN)
     this.appliedIds.add(block.id)
-    this.appliedOrder.push(block.id)
     this.logBytes += block.data.length
     this.stats.blocksApplied++
     this.stats.bytesApplied += bytes.byteLength
@@ -318,13 +321,13 @@ export class FirestoreYjsProvider {
     if (!this.fs || this.compacting || this.destroyed) return
     if (!this.hydrated) return
 
-    const tooManyBlocks = this.appliedOrder.length >= COMPACT_MIN_BLOCKS
+    const tooManyBlocks = this.appliedIds.size >= COMPACT_MIN_BLOCKS
     const tooBig = this.logBytes >= COMPACT_MIN_BYTES
     const idleLongEnough = Date.now() - this.lastCompactAt >= COMPACT_IDLE_MS
-    if (!tooManyBlocks && !tooBig && !(idleLongEnough && this.appliedOrder.length > 0)) return
+    if (!tooManyBlocks && !tooBig && !(idleLongEnough && this.appliedIds.size > 0)) return
 
     this.compacting = true
-    const prune = [...this.appliedOrder]
+    const prune = [...this.appliedIds]
     const snapshot = Y.encodeStateAsUpdate(this.doc)
     try {
       await setDoc(doc(this.fs, 'notes', this.noteId, 'collab', 'manifest'), {
@@ -351,7 +354,6 @@ export class FirestoreYjsProvider {
       await deleteDoc(doc(this.fs, 'notes', this.noteId, 'collab', 'state')).catch(() => undefined)
 
       prune.forEach((id) => this.appliedIds.delete(id))
-      this.appliedOrder = []
       this.logBytes = 0
       this.lastCompactAt = Date.now()
       this.stats.compactions++

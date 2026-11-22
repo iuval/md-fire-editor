@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { joinFrontmatter, notePreview, splitFrontmatter, titleFromMarkdown } from '../src/lib/markdown'
+import {
+  joinFrontmatter,
+  notePreview,
+  sameMarkdown,
+  splitFrontmatter,
+  titleFromMarkdown,
+} from '../src/lib/markdown'
 
 const withFrontmatter = '---\ntags: [proyecto]\nestado: en curso\n---\n\n# Nota\n\ncuerpo\n'
 
@@ -65,5 +71,60 @@ describe('sidebar preview', () => {
   it('is empty for an empty or frontmatter-only note', () => {
     expect(notePreview('')).toBe('')
     expect(notePreview('---\na: 1\n---\n')).toBe('')
+  })
+})
+
+describe('sameMarkdown', () => {
+  // Reference: the semantics the editor and the save path already relied on.
+  const normalize = (text: string): string =>
+    text
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+$/gm, '')
+      .replace(/\s+$/, '')
+
+  const docs = [
+    '',
+    ' ',
+    '\n\n',
+    'a',
+    'a\n',
+    'a\n\n\n',
+    'a ',
+    'a\t \n',
+    'a\r\nb',
+    'a\rb',
+    'a\r',
+    '# T\n\ncuerpo',
+    '# T\n\ncuerpo\n',
+    '# T\n\ncuerpo   \n',
+    '# T\r\n\r\ncuerpo  \r\n',
+    'a  b',
+    'a b',
+    'a\n b',
+    '#tag al final',
+    '#tag al final\t',
+    '  sangría al inicio',
+    'sangría al inicio',
+  ]
+
+  it('agrees with full normalisation on every pair', () => {
+    for (const a of docs) {
+      for (const b of docs) {
+        const expected = normalize(a) === normalize(b)
+        const actual = sameMarkdown(a, b)
+        // The message names the pair, so a mismatch is debuggable.
+        expect(`${JSON.stringify(a)} vs ${JSON.stringify(b)} -> ${actual}`).toBe(
+          `${JSON.stringify(a)} vs ${JSON.stringify(b)} -> ${expected}`
+        )
+      }
+    }
+  })
+
+  it('does not allocate a normalised copy to answer', () => {
+    const body = 'x'.repeat(100_000)
+    // Same content, different trailing padding: the answer is true and no
+    // 100 KB copy should be built to say so.
+    const withPadding = `${body}\n\n`
+    expect(sameMarkdown(body, withPadding)).toBe(true)
   })
 })

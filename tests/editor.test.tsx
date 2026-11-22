@@ -9,7 +9,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { Markdown } from 'tiptap-markdown'
 import { CollaborativeEditor } from '../src/components/CollaborativeEditor'
-import { TagHighlight } from '../src/components/extensions/tagHighlight'
+import { TagHighlight, tagHighlightKey } from '../src/components/extensions/tagHighlight'
 import { FirestoreAwareness } from '../src/lib/collab/awareness'
 import type { Note } from '../src/lib/notes'
 
@@ -59,6 +59,22 @@ describe('inline tag rendering', () => {
 
     const pills = Array.from(element.querySelectorAll('.tag-pill')).map((el) => el.textContent)
     expect(pills).toEqual(['#Trabajo', '#clientes/acme'])
+
+    // A selection-only transaction must reuse the pill set: rebuilding it on
+    // every caret move (and on every presence update from a peer) was ~1 ms and
+    // ~430 objects per keystroke on a 100 KB note.
+    const before = tagHighlightKey.getState(editor.state)
+    expect(before?.find().length).toBe(2)
+    editor.commands.setTextSelection(1)
+    expect(tagHighlightKey.getState(editor.state)).toBe(before)
+
+    // Typing a new tag does rebuild it, and picks the new pill up.
+    editor.commands.insertContentAt(editor.state.doc.content.size, ' #nuevo')
+    expect(Array.from(element.querySelectorAll('.tag-pill')).map((el) => el.textContent)).toEqual([
+      '#Trabajo',
+      '#clientes/acme',
+      '#nuevo',
+    ])
 
     editor.destroy()
     ydoc.destroy()

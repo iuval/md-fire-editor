@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildVault, readVault } from '../src/lib/vault'
+import { buildVault, planVault, readVault, streamVaultNotes } from '../src/lib/vault'
 import { dirname } from 'node:path'
 import type { Folder, Note } from '../src/lib/notes'
 
@@ -70,6 +70,26 @@ describe('real-world vault shapes', () => {
     expect(byPath['GUIONES/V3/acto-1.md']).toBe('GUIONES/V3')
     expect(byPath['suelta.md']).toBeNull()
     expect(vault.roots).toEqual(['ObsidianVault', 'ObsidianVault'])
+  })
+
+  it('plans a vault without reading any body, then streams the notes', async () => {
+    const zip = buildZip({
+      'Vault/Diario/a.md': '# A\n',
+      'Vault/foto.png': 'no soy markdown',
+      'Vault/__MACOSX/._a.md': 'junk',
+    })
+
+    // Pass 1: paths, folder and titles only (the ZIP directory), plus what will
+    // be skipped. No note body is decoded here.
+    const plan = planVault(zip)
+    expect(plan.notes.map((n) => n.path)).toEqual(['Diario/a.md'])
+    expect(plan.notes[0].folder).toBe('Diario')
+    expect(plan.skipped.map((s) => s.reason).sort()).toEqual(['attachment', 'junk'])
+
+    // Pass 2: the bodies, one at a time.
+    const streamed: string[] = []
+    for await (const entry of streamVaultNotes(zip, plan)) streamed.push(`${entry.title}:${entry.markdown}`)
+    expect(streamed).toEqual(['A:# A\n'])
   })
 
   it('keeps a single folder level instead of flattening the vault', async () => {
@@ -156,13 +176,13 @@ describe('building a vault', () => {
 
     const dir = mkdtempSync(join(tmpdir(), 'vault-out-'))
     const file = join(dir, 'out.zip')
-    writeFileSync(file, vault.bytes)
+    writeFileSync(file, Buffer.from(await vault.blob.arrayBuffer()))
     const listing = execFileSync('unzip', ['-l', file], { encoding: 'utf8' })
     expect(listing).toContain('Ideas.md')
     expect(listing).toContain('Trabajo/Acta.md')
     expect(listing).toContain('.obsidian/app.json')
 
-    const back = await readVault(vault.bytes)
+    const back = await readVault(new Uint8Array(await vault.blob.arrayBuffer()))
     expect(back.entries.map((e) => e.path).sort()).toEqual(['Ideas.md', 'Trabajo/Acta.md'])
   })
 })

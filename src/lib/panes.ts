@@ -56,6 +56,22 @@ export function listPanes(tree: PaneTree): PaneLeaf[] {
   return [...listPanes(tree.first), ...listPanes(tree.second)]
 }
 
+/**
+ * How many panes the layout may hold.
+ *
+ * Splitting is cheap to draw and expensive to hold: every pane mounts its own
+ * ProseMirror editor for its active tab, and one editor costs ~2,5 MB plus ~50×
+ * the note's markdown (measured: 7,35 MB for a 100 KB note, 16,9 MB for 250 KB).
+ * Four panes is more than any editing flow needs and keeps the worst case
+ * bounded instead of growing with how many times someone hits "dividir".
+ */
+export const MAX_PANES = 4
+
+/** True while another pane still fits in the budget. */
+export function canSplit(tree: PaneTree): boolean {
+  return listPanes(tree).length < MAX_PANES
+}
+
 export function findPane(tree: PaneTree, paneId: string): PaneLeaf | null {
   if (tree.kind === 'pane') return tree.id === paneId ? tree : null
   return findPane(tree.first, paneId) ?? findPane(tree.second, paneId)

@@ -59,8 +59,90 @@ export function normalizeMarkdown(markdown: string): string {
     .replace(/\s+$/, '')
 }
 
+/**
+ * Same question as `normalizeMarkdown(a) === normalizeMarkdown(b)`, without the
+ * two full copies and without allocating a single object.
+ *
+ * It runs on every edit (the editor asks "did anything really change?" before
+ * emitting, and the save path asks again before writing), and normalising a
+ * 100 KB body twice to answer it cost ~0.85 ms plus two copies of the body.
+ * This walks both strings once, skipping exactly what `normalizeMarkdown`
+ * strips: the `\r` of a `\r\n` pair, spaces and tabs before a newline, and
+ * trailing whitespace at the end.
+ */
 export function sameMarkdown(a: string, b: string): boolean {
-  return normalizeMarkdown(a) === normalizeMarkdown(b)
+  if (a === b) return true
+
+  const endA = contentEnd(a)
+  const endB = contentEnd(b)
+  let i = 0
+  let j = 0
+
+  for (;;) {
+    // Fast path: everything normalisation cannot touch is compared in place,
+    // with no function call per character (a 100 KB body is 100k characters).
+    for (;;) {
+      if (i >= endA || j >= endB) return i >= endA && j >= endB
+      const code = a.charCodeAt(i)
+      if (code !== b.charCodeAt(j)) break
+      if (code === SPACE || code === TAB || code === CR || code === LF) break
+      i++
+      j++
+    }
+
+    // Skip padding on both sides, then compare the next significant character.
+    i = nextSignificant(a, i, endA)
+    j = nextSignificant(b, j, endB)
+    if (i >= endA || j >= endB) return i >= endA && j >= endB
+    if (a.charCodeAt(i) !== b.charCodeAt(j)) return false
+    i++
+    j++
+  }
+}
+
+const TAB = 9
+const LF = 10
+const CR = 13
+const SPACE = 32
+const VT = 11
+const FF = 12
+
+const isWhitespace = (code: number): boolean =>
+  code === SPACE || code === TAB || code === LF || code === CR || code === VT || code === FF
+
+/** Index after the last non-whitespace character (`/\s+$/`). */
+function contentEnd(text: string): number {
+  let end = text.length
+  while (end > 0 && isWhitespace(text.charCodeAt(end - 1))) end--
+  return end
+}
+
+/**
+ * Index of the next character that survives normalisation, starting at `from`.
+ *
+ * A lone `\r` is content (normalisation only rewrites the pair), so only the
+ * `\r` of a `\r\n` is skipped.
+ */
+function nextSignificant(text: string, from: number, end: number): number {
+  let i = from
+  while (i < end) {
+    const code = text.charCodeAt(i)
+    if (code === CR && i + 1 < end && text.charCodeAt(i + 1) === LF) {
+      i++
+      continue
+    }
+    if (code === SPACE || code === TAB) {
+      let run = i
+      while (run < end && (text.charCodeAt(run) === SPACE || text.charCodeAt(run) === TAB)) run++
+      // Whitespace before a newline (or at the end of the content) is padding.
+      if (run >= end || text.charCodeAt(run) === LF) {
+        i = run
+        continue
+      }
+    }
+    return i
+  }
+  return end
 }
 
 /**

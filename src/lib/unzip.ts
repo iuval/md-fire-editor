@@ -37,10 +37,22 @@ export interface UnzipOptions {
   maxBytes?: number
 }
 
-export async function unzip(
+export interface ZipEntryInfo {
+  path: string
+  /** Uncompressed size, from the central directory: no inflation needed. */
+  size: number
+}
+
+interface CentralEntry extends ZipEntryInfo {
+  method: number
+  dataStart: number
+  compressedSize: number
+}
+
+function* centralEntries(
   input: Uint8Array,
-  { maxEntries = 2000, maxBytes = 80 * 1024 * 1024 }: UnzipOptions = {}
-): Promise<ZipFileEntry[]> {
+  { maxEntries = 2000, maxBytes = 80 * 1024 * 1024 }: UnzipOptions
+): Generator<CentralEntry> {
   const bytes = new Uint8Array(input)
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const eocd = findEocd(view)
@@ -50,24 +62,6 @@ export async function unzip(
   const centralOffset = view.getUint32(eocd + 16, true)
   if (entries > maxEntries) throw new Error(`el ZIP tiene demasiados archivos (${entries})`)
 
-  const decodeName = (raw: Uint8Array): string => {
-    // Names written by macOS tools are UTF-8 but often lack the UTF-8 flag.
-    try {
-      return new TextDecoder('utf-8', { fatal: true }).decode(raw)
-    } catch {
-      for (const encoding of ['macintosh', 'windows-1252']) {
-        try {
-          return new TextDecoder(encoding, { fatal: true }).decode(raw)
-        } catch {
-          /* try the next one */
-        }
-      }
-      return new TextDecoder().decode(raw)
-    }
-  }
-
-  const out: ZipFileEntry[] = []
-  let total = 0
   let cursor = centralOffset
 
   for (let i = 0; i < entries; i++) {
@@ -87,17 +81,54 @@ export async function unzip(
 
     if (name.endsWith('/')) continue // directory
     if (uncompressedSize > maxBytes) continue
-
     if (view.getUint32(localOffset, true) !== LOCAL_SIGNATURE) continue
+
     const localNameLength = view.getUint16(localOffset + 26, true)
     const localExtraLength = view.getUint16(localOffset + 28, true)
-    const dataStart = localOffset + 30 + localNameLength + localExtraLength
-    const raw = bytes.subarray(dataStart, dataStart + compressedSize)
+    yield {
+      path: name,
+      size: uncompressedSize,
+      method,
+      compressedSize,
+      dataStart: localOffset + 30 + localNameLength + localExtraLength,
+    }
+  }
+}
 
+/**
+ * Names and sizes only — read straight from the central directory.
+ *
+ * A vault import needs every path up front (to strip the wrapper folder a ZIP
+ * made by "Compress" carries) but no content, so this pass costs a few hundred
+ * KB for a whole vault while `unzipEach` streams the bodies one at a time.
+ */
+export function zipEntryInfos(input: Uint8Array, options: UnzipOptions = {}): ZipEntryInfo[] {
+  const out: ZipEntryInfo[] = []
+  for (const entry of centralEntries(input, options)) out.push({ path: entry.path, size: entry.size })
+  return out
+}
+
+/**
+ * Entries one at a time.
+ *
+ * Importing a vault used to inflate every file up front, so a 40 MB vault held
+ * the compressed bytes + every inflated entry + every decoded note at once
+ * (~2-3× the vault). The caller now writes each note and lets the buffer go.
+ */
+export async function* unzipEach(
+  input: Uint8Array,
+  options: UnzipOptions = {}
+): AsyncGenerator<ZipFileEntry> {
+  const { maxBytes = 80 * 1024 * 1024 } = options
+  const bytes = new Uint8Array(input)
+  let total = 0
+
+  for (const entry of centralEntries(input, options)) {
+    const raw = bytes.subarray(entry.dataStart, entry.dataStart + entry.compressedSize)
     let content: Uint8Array
-    if (method === 0) {
+    if (entry.method === 0) {
       content = raw.slice()
-    } else if (method === 8) {
+    } else if (entry.method === 8) {
       content = await inflateRaw(raw)
     } else {
       continue // unsupported compression
@@ -105,8 +136,29 @@ export async function unzip(
 
     total += content.byteLength
     if (total > maxBytes) throw new Error('el ZIP es demasiado grande')
-    out.push({ path: name, bytes: content })
+    yield { path: entry.path, bytes: content }
   }
+}
 
+/** Collects every entry (tests, small files). Prefer `unzipEach` when importing. */
+export async function unzip(input: Uint8Array, options: UnzipOptions = {}): Promise<ZipFileEntry[]> {
+  const out: ZipFileEntry[] = []
+  for await (const entry of unzipEach(input, options)) out.push(entry)
   return out
+}
+
+function decodeName(raw: Uint8Array): string {
+  // Names written by macOS tools are UTF-8 but often lack the UTF-8 flag.
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(raw)
+  } catch {
+    for (const encoding of ['macintosh', 'windows-1252']) {
+      try {
+        return new TextDecoder(encoding, { fatal: true }).decode(raw)
+      } catch {
+        /* try the next one */
+      }
+    }
+    return new TextDecoder().decode(raw)
+  }
 }
