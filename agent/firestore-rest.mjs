@@ -12,8 +12,8 @@ function emptyUsage() {
   return { reads: 0, writes: 0, deletes: 0, bytesRead: 0, bytesWritten: 0, agentOps: 0 }
 }
 
-/** Espejo de FREE_TIER.opsPerMonth en src/lib/quota.ts. */
-export const AGENT_OPS_PER_MONTH = 20_000
+/** Espejo de FREE_TIER.opsPerDay en src/lib/quota.ts. */
+export const AGENT_OPS_PER_DAY = 700
 
 function base(projectId) {
   const host = process.env.FIRESTORE_EMULATOR_HOST
@@ -120,15 +120,15 @@ export class RestStore {
     return value
   }
 
-  /** Operaciones de agente del mes en curso, con caché de un minuto. */
+  /** Operaciones de agente del día en curso, con caché de un minuto. */
   async agentOpsUsed() {
     const now = Date.now()
     if (this.quotaCache && now - this.quotaCache.at < 60_000) return this.quotaCache.ops
     const uid = this.uid
     if (!uid || typeof uid !== 'string') return 0
-    const month = new Date().toISOString().slice(0, 7)
+    const day = new Date().toISOString().slice(0, 10)
     try {
-      const doc = await this.get(`usage/${uid}/months`, month)
+      const doc = await this.get(`usage/${uid}/days`, day)
       const ops = Number(doc?.data?.agentOps ?? 0)
       this.quotaCache = { at: now, ops }
       return ops
@@ -207,7 +207,7 @@ export class RestStore {
   }
 
   /**
-   * Vuelca las operaciones acumuladas al bucket mensual del usuario autenticado.
+   * Vuelca las operaciones acumuladas al bucket diario del usuario autenticado.
    * Best-effort: un fallo del contador nunca rompe el comando. Devuelve el
    * snapshot volcado, o null si no había nada que contar.
    */
@@ -217,7 +217,7 @@ export class RestStore {
     const total = usage.reads + usage.writes + usage.deletes + usage.agentOps
     if (!uid || typeof uid !== 'string' || total === 0) return null
 
-    const month = new Date().toISOString().slice(0, 7)
+    const day = new Date().toISOString().slice(0, 10)
     const snapshot = { ...usage }
     this.usage = emptyUsage()
 
@@ -231,10 +231,10 @@ export class RestStore {
       await this.commitWrites([
         {
           update: {
-            name: `${this.prefix}/usage/${uid}/months/${month}`,
-            fields: toFields({ month }),
+            name: `${this.prefix}/usage/${uid}/days/${day}`,
+            fields: toFields({ day }),
           },
-          updateMask: { fieldPaths: ['month'] },
+          updateMask: { fieldPaths: ['day'] },
           updateTransforms: [
             ...transforms.map((transform) => ({
               fieldPath: transform.fieldPath,

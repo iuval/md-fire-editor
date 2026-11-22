@@ -362,9 +362,9 @@ describe('agent writes through the rules', () => {
 })
 
 describe('agent usage metering', () => {
-  const month = () => new Date().toISOString().slice(0, 7)
+  const day = () => new Date().toISOString().slice(0, 10)
 
-  it('counts reads and writes into the monthly bucket', async () => {
+  it('counts reads and writes into the daily bucket', async () => {
     asAgent(editorToken)
     const db = await core.openStore()
     db.resetUsage()
@@ -377,8 +377,8 @@ describe('agent usage metering', () => {
     expect(flushed.reads).toBeGreaterThan(0)
     expect(flushed.writes).toBeGreaterThan(0)
 
-    const bucket = await db.get('usage', `${editorUid}/months/${month()}`)
-    expect(bucket.data.month).toBe(month())
+    const bucket = await db.get('usage', `${editorUid}/days/${day()}`)
+    expect(bucket.data.day).toBe(day())
     expect(bucket.data.reads).toBeGreaterThanOrEqual(flushed.reads)
     expect(bucket.data.writes).toBeGreaterThanOrEqual(flushed.writes)
   })
@@ -403,7 +403,7 @@ describe('agent usage metering', () => {
     expect(await db.flushUsage()).toBeNull()
   })
 
-  it('counts agent operations and reads the monthly total', async () => {
+  it('counts agent operations and reads the daily total', async () => {
     asAgent(editorToken)
     const db = await core.openStore()
     db.resetUsage()
@@ -411,7 +411,7 @@ describe('agent usage metering', () => {
     db.meterAgentOp()
     const flushed = await db.flushUsage()
     expect(flushed.agentOps).toBe(2)
-    const bucket = await db.get('usage', `${editorUid}/months/${month()}`)
+    const bucket = await db.get('usage', `${editorUid}/days/${day()}`)
     expect(bucket.data.agentOps).toBe(2)
   })
 })

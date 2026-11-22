@@ -120,13 +120,13 @@ tabla queda como registro del diagnóstico original, no como estado actual.
 
 ## 4. Modelo comercial (decidido)
 
-> **Superado por dos decisiones posteriores** (ver
-> [`prepaid-usage-model.md`](prepaid-usage-model.md) D1 y D6): el **tiempo real pasa a ser
-> pago**, así que la «colaboración ilimitada» de §4A deja de ser gratuita; y la gratuidad
-> pasa de **permanente** a **cuota mensual renovable** (100 MB + 20.000 operaciones).
-> El saldo prepago de §4B se mantiene, pero con: débito real por operación medida, fee de
-> $0,50/mes por cuenta con actividad, mínimo de recarga $5 y vencimiento a 24 meses.
-> Lo demás de esta sección sigue siendo el registro de la decisión anterior.
+> **Superado por decisiones posteriores** (ver
+> [`prepaid-usage-model.md`](prepaid-usage-model.md) D1, D3 y D6): el **tiempo real pasa a ser
+> pago**, así que la «colaboración ilimitada» de §4A deja de ser gratuita; la gratuidad pasa
+> de **permanente** a **cuota diaria renovable** (100 MB + 700 operaciones/día); y el cobro es
+> **por día** (uso sobre la cuota + margen), no un fee mensual. El saldo prepago de §4B se
+> mantiene, con mínimo de recarga $5 y vencimiento a 24 meses. Lo demás de esta sección sigue
+> siendo el registro de la decisión anterior.
 
 **Decisión:** cuota gratuita permanente + saldo prepago con top-up. La edición humana no
 se cobra; se cobra el volumen (agentes, storage extra, historial). Ver §6 para lo que ya
@@ -200,16 +200,16 @@ aceptar $2 como mínimo configurable.
 | Presencia contada | `src/lib/collab/awareness.ts:43` | El canal de presencia expone sus propias escrituras y borrados; `NoteSession` los fusiona con las del provider. |
 | Storage recalculado | `src/AppTree.tsx:478-486` | Suma de `markdownBytes` de las notas, debounce 5 s. |
 | Costo completo | `src/lib/usage.ts:228-243` | `costBreakdown()`: escrituras, lecturas, borrados, storage, PITR, backup y egress. `estimateCost()` sigue devolviendo el total. |
-| Diálogo de uso | `src/components/UsageDialog.tsx` | Desglose de costo del mes, operaciones (incluye borrados), storage, créditos y diagnóstico de memoria. |
+| Diálogo de uso | `src/components/UsageDialog.tsx` | Desglose del cargo del día, operaciones (incluye borrados), storage, créditos y diagnóstico de memoria. |
 | Rate limit y presupuesto del agente | `agent/rate-limit.mjs` + `agent/firestore-rest.mjs` + `agent/mcp.mjs` | Ventana fija por minuto (`FIREMD_AGENT_RATE_LIMIT`, default 60) y techo de requests por corrida (`FIREMD_REQUEST_BUDGET`, default 2000); el MCP resetea el presupuesto por tool call. |
-| Metering de agentes | `agent/firestore-rest.mjs` + `agent/cli.mjs` + `agent/mcp.mjs` | El store REST cuenta reads/writes/deletes por request; `flushUsage()` los vuelca con incrementos al bucket `usage/{uid}/months/{YYYY-MM}`. La CLI vuelca al terminar cada comando y el MCP cada 30 s y al recibir SIGINT/SIGTERM. Best-effort: si el volcado falla, se descarta (subcontar antes que duplicar). |
-| Cuota gratuita | `src/lib/quota.ts` + `src/components/UsageDialog.tsx` | `FREE_TIER` con 100 MB y 20.000 operaciones/mes; `quotaLine()` calcula uso, tope y aviso (80% suave, 100% duro); el diálogo muestra barras de storage y operaciones. Las cuentas admin no tienen tope. |
+| Metering de agentes | `agent/firestore-rest.mjs` + `agent/cli.mjs` + `agent/mcp.mjs` | El store REST cuenta reads/writes/deletes por request; `flushUsage()` los vuelca con incrementos al bucket `usage/{uid}/days/{YYYY-MM-DD}`. La CLI vuelca al terminar cada comando y el MCP cada 30 s y al recibir SIGINT/SIGTERM. Best-effort: si el volcado falla, se descarta (subcontar antes que duplicar). |
+| Cuota gratuita | `src/lib/quota.ts` + `src/components/UsageDialog.tsx` | `FREE_TIER` con 100 MB y 700 operaciones/día; `quotaLine()` calcula uso, tope y aviso (80% suave, 100% duro); `dailyCharge()` cobra solo lo que pasa la cuota; el diálogo muestra barras de storage y operaciones. Las cuentas admin no tienen tope. |
 | Saldo prepago | `src/lib/credits.ts` + `src/components/UsageDialog.tsx` | Packs de $5/$15/$50 con vencimiento a 24 meses; `updateCreditSettings()` guarda umbral/monto/auto top-up; `requestTopUp()` crea una solicitud pendiente en `credits/{uid}/topups`. El saldo sigue siendo del servidor. |
 | Créditos (modelo) | `src/lib/usage.ts:182-208` + `firestore.rules:570-631` | `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (≥ $5), `autoTopUp`; el dueño edita solo la configuración (el saldo no cambia); ledger inmutable; solicitudes de recarga en `topups`. |
 | Admin | `src/lib/admin.ts` + `firestore.rules:83-95` | `admins/{uid}` marca la cuenta; el bootstrap por email es `iuvalgoldansky@gmail.com`; los admins no pagan ni tienen tope. |
 | Gating flat | retirado | `sharingUnlocked` y `UpgradeDialog` se eliminaron: compartir y agentes son parte del free tier. El cobro es por uso (cuota + créditos). |
-| Reglas de uso y créditos | `firestore.rules:531-631` | Solo el dueño escribe el bucket mensual (id `YYYY-MM`, enteros ≥ 0, campos con lista blanca, `agentOps` incluido); en `credits`, el dueño edita configuración sin tocar el saldo y pide recargas; saldo y ledger, solo admin. |
-| Tests | `tests/usage.test.ts`; `tests/quota.test.ts`; `tests/credits.test.ts`; `tests/agent-rate-limit.test.ts`; `tests/agent.test.ts`; `tests/firestore.rules.test.ts:1089+` | Tarifas, desglose, rollover de mes, cuota, créditos, rate limiter y presupuesto; metering del agente contra el emulador; reglas del bucket, `credits` y `topups`. |
+| Reglas de uso y créditos | `firestore.rules:531-631` | Solo el dueño escribe el bucket diario (id `YYYY-MM-DD`, enteros ≥ 0, campos con lista blanca, `agentOps` incluido); el documento único `usage/{uid}` quedó retirado; en `credits`, el dueño edita configuración sin tocar el saldo y pide recargas; saldo y ledger, solo admin. |
+| Tests | `tests/usage.test.ts`; `tests/quota.test.ts`; `tests/credits.test.ts`; `tests/agent-rate-limit.test.ts`; `tests/agent.test.ts`; `tests/firestore.rules.test.ts:1089+` | Tarifas, desglose, rollover de día, cuota, cargo diario, créditos, rate limiter y presupuesto; metering del agente contra el emulador; reglas del bucket, `credits` y `topups`. |
 | Backups / PITR | README §Operación | Activos en producción. |
 
 ### Falta (por prioridad)
@@ -249,7 +249,7 @@ se agregó después y el gating flat se retiró. Queda:
 3. ~~**Metering de agentes**~~ (hecho): el store REST cuenta operaciones y la CLI/MCP
    vuelcan al bucket mensual.
 4. ~~**Decidir el modelo comercial**~~ (hecho): free tier + créditos prepagos.
-5. ~~**Cuota free tier**~~ (hecho): 100 MB y 20k operaciones mensuales, con aviso en el
+5. ~~**Cuota free tier**~~ (hecho): 100 MB y 700 operaciones diarias, con aviso en el
    diálogo y corte en la CLI/MCP. Las cuentas admin no tienen tope.
 6. ~~**Saldo prepago**~~ (hecho): packs, configuración de auto top-up y solicitudes.
 7. **Medición server-side** (L): Cloud Function que agregue eventos y escriba el bucket;

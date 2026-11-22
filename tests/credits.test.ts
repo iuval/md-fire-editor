@@ -4,11 +4,10 @@ import {
   EXTRA_STORAGE_PRICE_PER_GB_MONTH,
   AGENT_OPS_PRICE_PER_100K,
   creditExpiryDate,
-  monthlyFeeUsd,
   needsTopUp,
   validateCreditSettings,
 } from '../src/lib/credits'
-import { CREDIT_EXPIRY_MONTHS, MONTHLY_FEE_USD } from '../src/lib/usage'
+import { CREDIT_EXPIRY_MONTHS } from '../src/lib/usage'
 
 describe('prepaid credits', () => {
   it('offers packs that expire after 24 months', () => {
@@ -22,12 +21,6 @@ describe('prepaid credits', () => {
   it('prices agent operations and extra storage at the published rates', () => {
     expect(AGENT_OPS_PRICE_PER_100K).toBe(0.5)
     expect(EXTRA_STORAGE_PRICE_PER_GB_MONTH).toBe(0.6)
-  })
-
-  it('charges the monthly fee only to non-admin accounts', () => {
-    expect(MONTHLY_FEE_USD).toBe(0.5)
-    expect(monthlyFeeUsd()).toBe(0.5)
-    expect(monthlyFeeUsd(true)).toBe(0)
   })
 
   it('rejects invalid settings', () => {

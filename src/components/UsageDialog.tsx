@@ -6,16 +6,16 @@ import {
   RATE_DELETES_PER_100K,
   RATE_READS_PER_100K,
   RATE_WRITES_PER_100K,
+  chargeBreakdown,
   costBreakdown,
   formatBytes,
   formatUsd,
   type Credits,
   type UsageTotals,
 } from '../lib/usage'
-import { FREE_TIER, freeTierStatus, quotaWarning } from '../lib/quota'
+import { FREE_TIER, dailyCharge, freeTierStatus, quotaWarning } from '../lib/quota'
 import {
   CREDIT_PACKS,
-  monthlyFeeUsd,
   validateCreditSettings,
   type CreditSettings,
 } from '../lib/credits'
@@ -64,7 +64,7 @@ export function UsageDialog({
   onClose,
 }: UsageDialogProps) {
   const totals: UsageTotals = usage ?? {
-    month: '',
+    day: '',
     writes: 0,
     reads: 0,
     deletes: 0,
@@ -74,6 +74,9 @@ export function UsageDialog({
     agentOps: 0,
   }
   const cost = costBreakdown(totals)
+  // Se cobra solo lo que pasa la cuota diaria; el uso dentro de la cuota es gratis.
+  const charge = chargeBreakdown(totals)
+  const todayCharge = dailyCharge(totals, isAdmin)
   const quota = freeTierStatus(totals, isAdmin)
   const [settings, setSettings] = useState<CreditSettings>({
     thresholdUsd: credits?.thresholdUsd ?? 1,
@@ -127,13 +130,13 @@ export function UsageDialog({
       </div>
 
       <div className="usage-hero">
-        <span className="usage-hero-value">{formatUsd(cost.total)}</span>
+        <span className="usage-hero-value">{formatUsd(todayCharge)}</span>
         <span className="usage-hero-label">
-          Costo estimado{totals.month ? ` · ${totals.month}` : ''}
+          Cargo de hoy{totals.day ? ` · ${totals.day}` : ''}
         </span>
       </div>
 
-      <p className="usage-section-title">{isAdmin ? 'Cuota (admin)' : 'Cuota mensual'}</p>
+      <p className="usage-section-title">{isAdmin ? 'Cuota (admin)' : 'Cuota diaria'}</p>
       <div className="usage-grid">
         <QuotaBar
           label="Almacenamiento"
@@ -145,7 +148,7 @@ export function UsageDialog({
         <QuotaBar
           label="Operaciones"
           used={quota.ops.used.toLocaleString('es')}
-          limit={quota.ops.unlimited ? 'Sin límite' : FREE_TIER.opsPerMonth.toLocaleString('es')}
+          limit={quota.ops.unlimited ? 'Sin límite' : FREE_TIER.opsPerDay.toLocaleString('es')}
           percent={quota.ops.percent}
           warning={quotaWarning(quota.ops)}
         />
@@ -153,20 +156,23 @@ export function UsageDialog({
       <p className="hint">
         {isAdmin
           ? 'Cuenta admin: sin tope de cuota y sin cargos. Leer tus datos siempre está permitido.'
-          : `La cuota se renueva el 1° de cada mes. Cubre ${formatBytes(FREE_TIER.storageBytes)} de almacenamiento y ${FREE_TIER.opsPerMonth.toLocaleString('es')} operaciones por mes. El tiempo real es pago; el modo gratuito edita en modo liviano.`}
+          : `La cuota se renueva cada día. Cubre ${formatBytes(FREE_TIER.storageBytes)} de almacenamiento y ${FREE_TIER.opsPerDay.toLocaleString('es')} acciones por día. El tiempo real es pago; el modo gratuito edita en modo liviano.`}
       </p>
 
       <div className="usage-sep" />
 
-      <p className="usage-section-title">Desglose del mes</p>
+      <p className="usage-section-title">Detalle del cargo de hoy</p>
       <div className="usage-grid">
-        <Row label="Escrituras" value={formatUsd(cost.writes)} />
-        <Row label="Lecturas" value={formatUsd(cost.reads)} />
-        <Row label="Borrados" value={formatUsd(cost.deletes)} />
-        <Row label="Almacenamiento" value={formatUsd(cost.storage)} />
-        <Row label="PITR + backup" value={formatUsd(cost.pitr + cost.backup)} />
-        <Row label="Transferencia" value={formatUsd(cost.egress)} />
+        <Row label="Escrituras" value={formatUsd(charge.writes)} />
+        <Row label="Lecturas" value={formatUsd(charge.reads)} />
+        <Row label="Borrados" value={formatUsd(charge.deletes)} />
+        <Row label="Almacenamiento" value={formatUsd(charge.storage)} />
+        <Row label="Transferencia" value={formatUsd(charge.egress)} />
+        <Row label="Margen de la app" value={formatUsd(Math.max(0, charge.total - cost.total))} />
       </div>
+      <p className="hint">
+        Se cobra el uso que pasa la cuota diaria. El uso dentro de la cuota no se cobra.
+      </p>
 
       <div className="usage-sep" />
 
@@ -229,8 +235,8 @@ export function UsageDialog({
 
       <p className="usage-section-title">Saldo prepago</p>
       <div className="usage-grid">
-        <Row label="Modelo" value={isAdmin ? 'Admin (sin cargos)' : 'Uso prepago + fee'} />
-        <Row label="Fee mensual" value={formatUsd(monthlyFeeUsd(isAdmin))} />
+        <Row label="Modelo" value={isAdmin ? 'Admin (sin cargos)' : 'Uso prepago diario'} />
+        <Row label="Cargo de hoy" value={formatUsd(todayCharge)} />
         <Row label="Saldo" value={credits ? formatUsd(credits.balanceUsd) : 'sin cargar'} />
       </div>
 
@@ -242,9 +248,10 @@ export function UsageDialog({
         ))}
       </div>
       <p className="hint">
-        El saldo vence a los 24 meses. El fee mensual se descuenta del saldo y solo se cobra
-        en cuentas con actividad; las cuentas admin no pagan. El pago con tarjeta todavía no
-        está habilitado: el pedido queda pendiente y se acredita cuando se confirme.
+        El saldo vence a los 24 meses. El cargo se descuenta del saldo cada día y solo se
+        cobra por el uso que pasa la cuota diaria; las cuentas admin no pagan. El pago con
+        tarjeta todavía no está habilitado: el pedido queda pendiente y se acredita cuando se
+        confirme.
       </p>
 
       <div className="usage-sep" />
@@ -305,9 +312,9 @@ export function UsageDialog({
       <p className="hint">
         Calculado con las tarifas públicas de Firestore Standard (US): {formatUsd(RATE_READS_PER_100K)}/100k
         lecturas, {formatUsd(RATE_WRITES_PER_100K)}/100k escrituras y{' '}
-        {formatUsd(RATE_DELETES_PER_100K)}/100k borrados. El costo es el bruto del mes; la cuota
-        gratuita diaria del proyecto no se descuenta. El almacenamiento incluye PITR y backup,
-        prorrateados por los bytes guardados. Las mediciones las hace la app: sirven para
+        {formatUsd(RATE_DELETES_PER_100K)}/100k borrados. El cargo es el del día: uso por encima
+        de la cuota diaria, con el margen de la app incluido. El almacenamiento incluye PITR y
+        backup, prorrateados por los bytes guardados. Las mediciones las hace la app: sirven para
         transparencia, pero el cobro real tendrá que medirlas el servidor. El cobro con tarjeta
         todavía no está habilitado: los pedidos de recarga quedan pendientes.
       </p>

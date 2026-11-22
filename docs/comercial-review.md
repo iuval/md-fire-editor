@@ -54,8 +54,9 @@ ingresos. Hace falta límite duro de uso o mover el canal caliente a RTDB.
 
 > **Resuelto en el diseño**: [`prepaid-usage-model.md`](prepaid-usage-model.md) reemplaza los
 > precios flat de esta tabla por un tarifario único por uso medido, con cuota gratuita
-> mensual (100 MB + 20.000 ops) y un proxy como único escritor. La columna «Precio» de arriba
-> ($4/$12/$15) queda como registro de la propuesta anterior.
+> **diaria** (100 MB + 700 ops) y un proxy como único escritor. El cobro es por día: uso
+> sobre la cuota + margen. La columna «Precio» de arriba ($4/$12/$15) queda como registro de
+> la propuesta anterior.
 
 Dos errores conceptuales:
 

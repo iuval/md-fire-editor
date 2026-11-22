@@ -47,8 +47,9 @@ de datos, cambios de reglas, riesgos y orden sugerido. La revisión del plan com
 precios en [`docs/pricing.md`](docs/pricing.md) (números reproducibles con
 `node scripts/pricing-model.mjs`).
 
-El modelo comercial vigente —uso prepago, cuota gratuita mensual que se renueva, el proxy que mide y debita,
-y qué pasa cuando se termina la cuota— está en
+El modelo comercial vigente —uso prepago, cuota gratuita diaria que se renueva, el cargo por día
+sobre el uso que pasa la cuota, el proxy que mide y debita, y qué pasa cuando se termina la
+cuota— está en
 [`docs/prepaid-usage-model.md`](docs/prepaid-usage-model.md). Ese documento reemplaza el
 modelo de precios de `pricing.md` §4 y §7.
 

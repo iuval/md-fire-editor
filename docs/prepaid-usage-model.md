@@ -1,10 +1,10 @@
 # Uso prepago + cuota gratuita — diseño y plan
 
 **Estado**: decisiones confirmadas; implementación en curso. D1, D6, D8 y D12 están
-confirmadas; E7 y el bootstrap admin están hechos; E0 está parcial. Reemplaza el modelo
-comercial de [`pricing.md`](pricing.md) §4 y el orden de [`pricing.md`](pricing.md) §7.
-**Fecha**: 22-nov-2026. **Actualizado**: 22-nov-2026 (decisiones de producto y arranque de
-implementación).
+confirmadas; **el cobro es diario** (23-nov-2026); E7 y el bootstrap admin están hechos; E0
+está parcial. Reemplaza el modelo comercial de [`pricing.md`](pricing.md) §4 y el orden de
+[`pricing.md`](pricing.md) §7.
+**Fecha**: 22-nov-2026. **Actualizado**: 23-nov-2026 (cobro diario, no fee mensual).
 **Fuente de los números de costo**: [`pricing.md`](pricing.md) §1-§2 y
 `node scripts/pricing-model.mjs`. Los números de este documento son derivados de esos.
 
@@ -22,10 +22,10 @@ producto; las demás son consecuencias que se derivan de ellas y que el diseño 
 |---|---|---|
 | **D1** | El tiempo real es **pago**. | El modo gratuito no tiene presencia ni bloques a 350 ms. |
 | **D2** | Se construye **lo que sea necesario** para que el prepago sea real (proxy propio). | El cliente deja de escribir datos de usuario directo en Firestore. |
-| **D3** | Cada cuenta paga **su uso real** (storage + acciones) **más un fee**. | El storage deja de ser un regalo sin techo y pasa a ser exacto y atribuible. |
+| **D3** | Cada cuenta paga **su uso real por encima de la cuota diaria**, más el margen de la app. Se cobra **por día**, no con un fee mensual. | El storage deja de ser un regalo sin techo y pasa a ser exacto y atribuible. |
 | **D4** | El **sync de escritorio es realtime, bidireccional y prepago**. | El motor de escritorio pasa de poll cada 15 s a suscriptor metered del mismo canal. |
 | **D5** | **No hay planes fijos**: un tarifario único por uso + fee. Nada de tiers ni de "incluye X". | Se retira `entitlements.plan` como eje de gating. |
-| **D6** | La gratuidad es una **cuota mensual renovable** (`free quota`), no un "free tier permanente" ni un crédito de bienvenida. Dos muros: **espacio** y **operaciones**. | El corte es **temporal** (se renueva el 1°) o se resuelve cargando saldo. |
+| **D6** | La gratuidad es una **cuota diaria renovable** (`free quota`), no un "free tier permanente" ni un crédito de bienvenida. Dos muros: **espacio** y **operaciones**. | El corte es **temporal** (se renueva a las 00:00 UTC) o se resuelve cargando saldo. |
 | **D7** | Un **invitado** que escribe en un documento compartido consume la cuota/saldo del **dueño**; leer un link compartido es gratis. | Se preserva el loop viral (canal de adquisición #1) y el costo queda atribuido. |
 | **D8** | Se retira `entitlements` / `hasPaidPlan()` / `UpgradeDialog`. **Compartir vuelve a ser gratis.** | Menos estados, menos UI, menos soporte. |
 | **D9** | **Nunca** se cortan las lecturas de los datos propios, ni se borra nada por falta de pago. | El export y la lectura sobreviven a cualquier corte. Requisito legal y de confianza. |
@@ -90,24 +90,27 @@ El último renglón es la corrección de unidad: un `find` sobre 500 notas cuest
 un `cat` cuesta 1. Cobrar por "tool call" subvaluaba `find`/`vault pull` en dos órdenes de
 magnitud y hacía falso el margen de 82-94 %.
 
-### 2.2 El fee
+### 2.2 El cargo diario
 
-Un solo cargo fijo, descontado del saldo: **$0,50/mes por cuenta con actividad**. Sin
-suscripción, sin tiers, sin "incluye". Cuenta sin actividad en el mes → no se cobra.
+No hay fee mensual. Se cobra **por día**: el uso que pasa la cuota diaria se debita del saldo
+a la tarifa publicada (§2.1), que ya incluye el margen de la app. Día sin uso sobre la cuota →
+cargo $0. Día con uso sobre la cuota → cargo = uso extra + margen. Es un prepago puro: no hay
+suscripción, no hay tiers, no hay "incluye".
 
-- **Mínimo de recarga: $5** (no $2: con un MoR al ~5 % + $0,50, $2 deja $1,40, un 30 % de
-  fee). Packs $5 / $15 / $50.
+- **Mínimo de recarga: $5** (con un MoR al ~5 %, $2 deja $1,40 y el procesamiento se come el
+  margen). Packs $5 / $15 / $50.
 - **El saldo vence a los 24 meses.** "No vence" es un pasivo contable infinito y una promesa
   que no conviene hacer.
 - El procesamiento del MoR queda cubierto por el margen unitario con packs de $5.
 
 ### 2.3 La cuota gratuita (D6)
 
-**100 MB de storage + 20.000 operaciones por mes calendario UTC.** Se renueva sola el 1°.
+**100 MB de storage + 700 operaciones por día calendario UTC** (≈ 20.000/mes). Se renueva sola
+a las 00:00 UTC. El storage es un stock, no un flujo: los 100 MB no se renuevan, se mantienen.
 
 | Concepto | Al tope | Costo tuyo/mes |
 |---|---|---|
-| 20.000 ops (todas escrituras) | $0,09/100k | **$0,018** |
+| 700 ops/día (todas escrituras, 30 días) | $0,09/100k | **$0,0189** |
 | Storage 100 MB con PITR + backup | $0,33/GiB-mes | **$0,032** |
 | **Total por cuenta gratis al tope** | | **≈ $0,05** |
 
@@ -116,9 +119,9 @@ suscripción, sin tiers, sin "incluye". Cuenta sin actividad en el mes → no se
   → hace falta política de dormancia (§6.4).
 - Comparación con el statu quo: 1.000 DAU sin medidor ≈ **$513/mes** y sin techo.
 
-**Por qué 20.000 y no 2.000.** El usuario de notas chicas hace sesiones de ~5 min
-(~860 escrituras): 20.000 son ~20-25 sesiones cortas al mes, holgado para probar y para
-vivir. El que escribe 30 min/día lo toca al tercer día. Ese es el disparador.
+**Por qué 700/día y no 70.** El usuario de notas chicas hace sesiones de ~5 min (~860
+escrituras en total, ~170/día): 700/día son ~4 sesiones cortas al día, holgado para probar y
+para vivir. El que escribe 30 min/día lo toca en una sesión. Ese es el disparador.
 
 **Por qué el muro de storage está en 100 MB y no antes.** Con texto no se llega nunca
 (~50.000 notas); su función es cortar el abuso (un vault de adjuntos, un script), no
@@ -213,11 +216,11 @@ remitente.
 
 | Documento | Escribe | Contenido |
 |---|---|---|
-| `allowance/{uid}/months/{YYYY-MM}` | solo proxy | `opsUsed`, `storageBytes`, `renewedAt` |
+| `allowance/{uid}/days/{YYYY-MM-DD}` | solo proxy | `opsUsed`, `storageBytes`, `renewedAt` |
 | `credits/{uid}` | solo servidor | `balanceUsd`, `thresholdUsd`, `topUpUsd`, `autoTopUp` |
 | `credits/{uid}/ledger/{id}` | solo servidor | entrada inmutable: cargo/recarga, motivo, `opId` |
 | `credits/{uid}/topups/{id}` | el usuario (solicitud) | `amountUsd`, `status: pending` |
-| `usage/{uid}/months/{YYYY-MM}` | **nadie** (se retira) | absorbido por `allowance` |
+| `usage/{uid}/days/{YYYY-MM-DD}` | **nadie** (se retira) | absorbido por `allowance` |
 
 `credits` ya cumple la mitad (`firestore.rules:587-608`: el dueño edita la config, no el
 saldo). Lo que falta es el débito.
@@ -245,7 +248,7 @@ vuelo y se corta en la siguiente.
 | Estado | Disparador | Qué puede hacer el usuario | UI |
 |---|---|---|---|
 | `free` | dentro de la cuota | todo, en modo liviano | barra discreta en el diálogo de uso |
-| `free-exhausted` | ops al tope, mes en curso | lectura cloud + escritura local | «Llegaste al tope del mes. Se renueva el 1/12 **o** cargá $5.» |
+| `free-exhausted` | ops al tope, día en curso | lectura cloud + escritura local | «Llegaste al tope de hoy. Se renueva a las 00:00 UTC **o** cargá $5.» |
 | `low` | saldo < forecast diario | todo | aviso + auto top-up |
 | `pay-exhausted` | saldo 0 | lectura cloud + escritura local | «Sin saldo» + export + cargar |
 | `storage-over` | storage > 100 MB | lectura + export; se rechaza la escritura que cruza | nombra la nota más pesada, no borra |
@@ -332,14 +335,16 @@ nota, con su `id` y su `etag`, no un borrador suelto) ni la cola CRDT.
 | **E3** | `allowance` + débito + ledger + reserva por mensaje + auto top-up | E2 | M |
 | **E4** | Agentes CLI/MCP por el proxy; rate limit server-side | E3 | S/M |
 | **E5** | Storage exacto y compactación server-side | E2 | M |
-| **E6** | Checkout MoR (packs $5/$15/$50, fee $0,50, vigencia 24 meses, factura) | E3 | L |
+| **E6** | Checkout MoR (packs $5/$15/$50, cargo diario, vigencia 24 meses, factura) | E3 | L |
 | **E7** | Retirar `entitlements`/`hasPaidPlan`/`UpgradeDialog`; reescribir el copy de "gratis para siempre" | E3, E6 | S |
 
-**Estado observado en el árbol de trabajo (22-nov-2026).** E7 está hecha: `entitlements` y
+**Estado observado en el árbol de trabajo (23-nov-2026).** E7 está hecha: `entitlements` y
 `UpgradeDialog` se eliminaron y compartir ya no pide plan. También está el modo invitado
 (`src/lib/guestMode.ts`, `GuestWorkspace`, `guestDraft.ts` con borrador en `localStorage` y
-migración al entrar). Queda de E0: no hay cola CRDT persistida, no hay `storage.persist()`.
-E1-E6 no empezaron: no hay proxy, no hay `allowance`, no hay débito de créditos.
+migración al entrar). La contabilidad ya es diaria: `usage/{uid}/days/{YYYY-MM-DD}`, cuota
+diaria, `dailyCharge()` y admin sin tope. Queda de E0: no hay cola CRDT persistida, no hay
+`storage.persist()`. E1-E6 no empezaron: no hay proxy, no hay `allowance`, no hay débito de
+créditos.
 
 E0 se puede hacer **hoy** y no depende de ninguna decisión pendiente: arregla pérdida de
 datos real (la cola en memoria) y es la base de D10. E1 arranca con el proxy en Cloud Run
@@ -355,7 +360,7 @@ Un solo escenario end-to-end, en este orden. Es el criterio de aceptación de E1
 |---|---|---|
 | 1 | Usuario nuevo escribe 30 mensajes | `allowance.opsUsed` sube por el proxy; `credits` no se toca |
 | 2 | Llega al tope a mitad de tipeo | la nota pasa a «borrador local», **el texto sigue visible**, y tras reload sigue ahí |
-| 3 | Cambia el mes | el borrador se sincroniza sin duplicar; `opsUsed` arranca en 0 |
+| 3 | Cambia el día | el borrador se sincroniza sin duplicar; `opsUsed` arranca en 0 |
 | 4 | Carga $5 a mitad de mes | el texto se sube; el conflicto se resuelve por el `etag` del manifest, no por «el último gana» |
 | 5 | Segundo usuario abre el link y escribe | se debita la cuota/saldo **del dueño**; el invitado no ve muro |
 | 6 | Cliente directo intenta escribir una nota | falla: `allow write: if false`. Solo el proxy escribe |
@@ -373,8 +378,8 @@ Sin el 6, la cuota es una sugerencia. Sin el 2 y el 3, se pierden datos.
   *menor* que los 417 ms medidos hoy, porque desaparece el round trip del listener.
 - **El copy cambia de promesa**: «gratis para siempre» → «cuota gratuita + local para
   siempre». Mejor producto, peor marketing: hay que reescribir `UpgradeDialog.tsx` y el README.
-- **El fee de $0,50 es un piso** para quien usa poco: hay que decidir si aplica a cuentas con
-  actividad o a todas las que tengan saldo.
+- **El cargo diario no tiene piso fijo**: quien usa poco dentro de la cuota no paga nada, y
+  el ingreso depende de que el uso pago se active. Es más justo y más difícil de proyectar.
 - **Dependencia del MoR** para el auto top-up (mandato de tarjeta): un MoR no siempre ofrece
   saldos arbitrarios; puede forzar packs o suscripción.
 
@@ -400,7 +405,7 @@ Sin el 6, la cuota es una sugerencia. Sin el 2 y el 3, se pierden datos.
 |---|---|---|---|
 | 1 | ¿Cloud Run (rápido) o Workers/DO (más barato por mensaje)? | técnico, reversible | **Cloud Run** (D12). |
 | 2 | ¿100 MB o menos para el muro de storage? | producto | Adoptado 100 MB (D6). |
-| 3 | ¿El fee de $0,50 aplica a toda cuenta con saldo o solo a la que tuvo actividad? | producto/financiero | Propuesto: **solo con actividad**; pendiente de confirmar. |
+| 3 | ~~¿El fee de $0,50 aplica a toda cuenta con saldo o solo a la que tuvo actividad?~~ | producto/financiero | **Resuelto**: no hay fee mensual; se cobra por día el uso sobre la cuota. |
 | 4 | ¿12 meses de dormancia es razonable antes de borrar? | legal/producto | Pendiente. |
 | 5 | ¿Qué pasa con las cuentas que hoy tienen `entitlements.plan = 'paid'`? | producto | **No hay**: la app no está en producción (D13). |
 | 6 | ¿El invitado de un link de **escritura** cuenta para el tope de 5 aunque no tenga cuenta? | producto | Pendiente. |
@@ -416,7 +421,7 @@ Este documento **reemplaza**:
 - `pricing.md` §7 pasos 4-6 (orden: cuota antes que medición server-side) → el proxy es la
   medición, y va antes de cualquier cobro.
 - `roadmap.md` §4 «Cuota y créditos» (free tier permanente 250 MB / 10k agentes) → cuota
-  mensual 100 MB / 20k ops, unificada.
+  diaria 100 MB / 700 ops, unificada.
 - `comercial-review.md` §2 tabla de márgenes con precio flat $4/$12 → tarifario por uso.
 
 Lo que **sigue vigente** de `pricing.md`: §1 tarifas, §2 medición del costo por usuario, §3

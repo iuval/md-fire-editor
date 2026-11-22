@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   FREE_TIER,
   agentOpsAllowed,
+  dailyCharge,
   freeTierStatus,
   quotaLine,
   quotaWarning,
@@ -9,17 +10,15 @@ import {
 } from '../src/lib/quota'
 
 describe('free tier quota', () => {
-  it('keeps the published monthly limits', () => {
+  it('keeps the published daily limits', () => {
     expect(FREE_TIER.storageBytes).toBe(100 * 1024 * 1024)
-    expect(FREE_TIER.opsPerMonth).toBe(20_000)
-    expect(FREE_TIER.agentOpsPerMonth).toBe(FREE_TIER.opsPerMonth)
+    expect(FREE_TIER.opsPerDay).toBe(700)
   })
 
   it('computes a quota line', () => {
     const line = quotaLine(50, 100)
     expect(line.used).toBe(50)
     expect(line.percent).toBeCloseTo(0.5)
-    expect(line.remaining).toBe(50)
     expect(line.over).toBe(false)
   })
 
@@ -37,16 +36,16 @@ describe('free tier quota', () => {
     expect(quotaWarning(quotaLine(101, 100))).toBe('hard')
   })
 
-  it('reads the monthly quota status', () => {
+  it('reads the daily quota status', () => {
     const status = freeTierStatus({
       storageBytes: FREE_TIER.storageBytes / 2,
-      agentOps: FREE_TIER.opsPerMonth,
+      agentOps: FREE_TIER.opsPerDay,
     })
     expect(status.storage.percent).toBeCloseTo(0.5)
     expect(status.ops.percent).toBe(1)
     expect(status.agentOps).toBe(status.ops)
-    expect(agentOpsAllowed({ agentOps: FREE_TIER.opsPerMonth })).toBe(true)
-    expect(agentOpsAllowed({ agentOps: FREE_TIER.opsPerMonth + 1 })).toBe(false)
+    expect(agentOpsAllowed({ agentOps: FREE_TIER.opsPerDay })).toBe(true)
+    expect(agentOpsAllowed({ agentOps: FREE_TIER.opsPerDay + 1 })).toBe(false)
   })
 
   it('treats missing usage as zero', () => {
@@ -63,5 +62,14 @@ describe('free tier quota', () => {
     expect(quotaWarning(status.storage)).toBe('none')
     expect(agentOpsAllowed({ agentOps: 10 ** 9 }, true)).toBe(true)
     expect(unlimitedQuota(5).unlimited).toBe(true)
+  })
+
+  it('charges only the usage over the daily quota', () => {
+    const within = { writes: 700, deletes: 0, reads: 10_000, storageBytes: 0, bytesRead: 0 }
+    expect(dailyCharge(within)).toBe(0)
+    const over = { writes: 100_700, deletes: 0, reads: 10_000, storageBytes: 0, bytesRead: 0 }
+    // 100k writes over the quota at the published rate, reads are free.
+    expect(dailyCharge(over)).toBeCloseTo(0.5, 8)
+    expect(dailyCharge(over, true)).toBe(0)
   })
 })

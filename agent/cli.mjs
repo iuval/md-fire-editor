@@ -7,7 +7,7 @@ import { AgentError, openStore, listNotes, listFolders, listTags, readNote, patc
 import { defaultAgentName, formatAgents, listAgents, registerAgent, renameAgent } from './agents.mjs'
 import { parseArgs } from './args.mjs'
 import { RateLimitError } from './rate-limit.mjs'
-import { AGENT_OPS_PER_MONTH } from './firestore-rest.mjs'
+import { AGENT_OPS_PER_DAY } from './firestore-rest.mjs'
 import { defaultDir, pull, push } from './vault.mjs'
 
 const HELP = `firemd — notas FireMD desde la terminal (con permisos del agente)
@@ -117,13 +117,13 @@ try {
     default: {
       const db = await openStore()
 
-      // Cuota gratuita de agentes: se frena antes de tocar Firestore si el mes
+      // Cuota gratuita de agentes: se frena antes de tocar Firestore si el día
       // ya llegó al tope. Los admins no tienen tope. El mensaje dice cómo seguir.
       if (!(await db.isAdmin())) {
         const used = await db.agentOpsUsed()
-        if (used >= AGENT_OPS_PER_MONTH) {
+        if (used >= AGENT_OPS_PER_DAY) {
           fail(
-            `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_MONTH.toLocaleString('es')}/mes). ` +
+            `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_DAY.toLocaleString('es')}/día). ` +
               'Cargá saldo en FireMD para seguir usando la CLI.',
             3
           )

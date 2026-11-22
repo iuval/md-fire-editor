@@ -17,7 +17,7 @@ let root: Root | null = null
 let host: HTMLDivElement | null = null
 
 const usage: UsageTotals = {
-  month: '2026-11',
+  day: '2026-11-22',
   writes: 4100,
   reads: 5300,
   deletes: 3600,
@@ -83,13 +83,13 @@ afterEach(() => {
 })
 
 describe('diálogo de uso', () => {
-  it('muestra la cuota mensual y el uso del mes', () => {
+  it('muestra la cuota diaria y el uso del día', () => {
     const { host } = mount()
-    expect(host.textContent).toContain('Cuota mensual')
+    expect(host.textContent).toContain('Cuota diaria')
     expect(host.textContent).toContain('Operaciones')
-    expect(host.textContent).toContain('120')
     expect(host.textContent).toContain('20.0 MB')
-    expect(host.textContent).toContain(`${FREE_TIER.opsPerMonth.toLocaleString('es')}`)
+    expect(host.textContent).toContain(`${FREE_TIER.opsPerDay.toLocaleString('es')}`)
+    expect(host.textContent).toContain('2026-11-22')
   })
 
   it('muestra la cuenta admin sin tope ni fee', () => {

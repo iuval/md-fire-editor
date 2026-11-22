@@ -7,7 +7,7 @@
 
 import { createInterface } from 'node:readline'
 import { createRateLimiter, envLimit } from './rate-limit.mjs'
-import { AGENT_OPS_PER_MONTH } from './firestore-rest.mjs'
+import { AGENT_OPS_PER_DAY } from './firestore-rest.mjs'
 import {
   AgentError,
   openStore,
@@ -205,9 +205,9 @@ rl.on('line', async (line) => {
         db.resetBudget()
         if (!(await db.isAdmin())) {
           const used = await db.agentOpsUsed()
-          if (used >= AGENT_OPS_PER_MONTH) {
+          if (used >= AGENT_OPS_PER_DAY) {
             throw new AgentError(
-              `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_MONTH.toLocaleString('es')}/mes). Cargá saldo en FireMD para seguir.`,
+              `Cuota gratuita de agentes agotada (${AGENT_OPS_PER_DAY.toLocaleString('es')}/día). Cargá saldo en FireMD para seguir.`,
               'E_QUOTA'
             )
           }

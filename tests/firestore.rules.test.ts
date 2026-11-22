@@ -1065,24 +1065,8 @@ describe('catch-all', () => {
 })
 
 describe('usage and credits', () => {
-  const usage = (overrides: Record<string, unknown> = {}) => ({
-    month: '2026-11',
-    writes: 10,
-    reads: 4,
-    bytesWritten: 2048,
-    bytesRead: 1024,
-    storageBytes: 512,
-    updatedAt: ts(),
-    ...overrides,
-  })
-
-  it('a user can write and read their own usage counters', async () => {
-    await assertSucceeds(setDoc(doc(db(OWNER), 'usage', OWNER), usage()))
-    await assertSucceeds(getDoc(doc(db(OWNER), 'usage', OWNER)))
-  })
-
-  const usageMonth = (overrides: Record<string, unknown> = {}) => ({
-    month: '2026-11',
+  const usageDay = (overrides: Record<string, unknown> = {}) => ({
+    day: '2026-11-22',
     writes: 10,
     reads: 4,
     deletes: 2,
@@ -1093,50 +1077,49 @@ describe('usage and credits', () => {
     ...overrides,
   })
 
-  it('a user can write and read their own monthly bucket', async () => {
-    await assertSucceeds(setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth()))
-    await assertSucceeds(getDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11')))
+  it('a user can write and read their own daily bucket', async () => {
+    await assertSucceeds(setDoc(doc(db(OWNER), 'usage', OWNER, 'days', '2026-11-22'), usageDay()))
+    await assertSucceeds(getDoc(doc(db(OWNER), 'usage', OWNER, 'days', '2026-11-22')))
   })
 
-  it('a monthly bucket accepts a storage-only write', async () => {
+  it('a daily bucket accepts a storage-only write', async () => {
     await assertSucceeds(
-      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), {
-        month: '2026-11',
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'days', '2026-11-22'), {
+        day: '2026-11-22',
         storageBytes: 4096,
         updatedAt: ts(),
       })
     )
   })
 
-  it('a monthly bucket counts agent operations', async () => {
+  it('a daily bucket counts agent operations', async () => {
     await assertSucceeds(
-      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth({ agentOps: 42 }))
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'days', '2026-11-22'), usageDay({ agentOps: 42 }))
     )
     await assertFails(
-      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth({ agentOps: -1 }))
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'days', '2026-11-22'), usageDay({ agentOps: -1 }))
     )
   })
 
-  it('rejects foreign monthly buckets, bad ids and negative counters', async () => {
+  it('rejects foreign daily buckets, bad ids and negative counters', async () => {
     await assertFails(
-      setDoc(doc(db(EDITOR), 'usage', OWNER, 'months', '2026-11'), usageMonth())
+      setDoc(doc(db(EDITOR), 'usage', OWNER, 'days', '2026-11-22'), usageDay())
     )
     await assertFails(
-      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', 'noviembre'), usageMonth({ month: 'noviembre' }))
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'days', 'noviembre'), usageDay({ day: 'noviembre' }))
     )
     await assertFails(
-      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth({ month: '2026-12' }))
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'days', '2026-11-22'), usageDay({ day: '2026-11-23' }))
     )
     await assertFails(
-      setDoc(doc(db(OWNER), 'usage', OWNER, 'months', '2026-11'), usageMonth({ deletes: -1 }))
+      setDoc(doc(db(OWNER), 'usage', OWNER, 'days', '2026-11-22'), usageDay({ deletes: -1 }))
     )
-    await assertFails(getDocs(collection(db(OWNER), 'usage', OWNER, 'months')))
+    await assertFails(getDocs(collection(db(OWNER), 'usage', OWNER, 'days')))
   })
 
-  it('rejects foreign paths, bad months and negative counters', async () => {
-    await assertFails(setDoc(doc(db(EDITOR), 'usage', OWNER), usage()))
-    await assertFails(setDoc(doc(db(OWNER), 'usage', OWNER), usage({ month: 'noviembre' })))
-    await assertFails(setDoc(doc(db(OWNER), 'usage', OWNER), usage({ writes: -1 })))
+  it('the legacy single document is retired', async () => {
+    await assertFails(setDoc(doc(db(OWNER), 'usage', OWNER), usageDay()))
+    await assertFails(setDoc(doc(db(EDITOR), 'usage', OWNER), usageDay()))
   })
 
   it('a user cannot grant themselves balance', async () => {

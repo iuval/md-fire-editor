@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  chargeBreakdown,
   costBreakdown,
-  currentMonth,
+  currentDay,
   estimateCost,
   formatBytes,
   formatUsd,
   MIN_TOP_UP_USD,
-  nextMonthStart,
+  nextDayStart,
   RATE_DELETES_PER_100K,
   RATE_READS_PER_100K,
   RATE_WRITES_PER_100K,
@@ -15,14 +16,14 @@ import {
 const GIB = 1024 ** 3
 
 describe('usage accounting', () => {
-  it('formats the month as YYYY-MM in UTC', () => {
-    expect(currentMonth(new Date('2026-11-22T03:00:00Z'))).toBe('2026-11')
-    expect(currentMonth(new Date('2026-01-01T00:00:00Z'))).toBe('2026-01')
+  it('formats the day as YYYY-MM-DD in UTC', () => {
+    expect(currentDay(new Date('2026-11-22T03:00:00Z'))).toBe('2026-11-22')
+    expect(currentDay(new Date('2026-01-01T00:00:00Z'))).toBe('2026-01-01')
   })
 
-  it('rolls the bucket over at the first UTC instant of the next month', () => {
-    expect(nextMonthStart(new Date('2026-11-22T15:00:00Z')).toISOString()).toBe('2026-12-01T00:00:00.000Z')
-    expect(nextMonthStart(new Date('2026-12-31T23:59:59Z')).toISOString()).toBe('2027-01-01T00:00:00.000Z')
+  it('rolls the bucket over at the first UTC instant of the next day', () => {
+    expect(nextDayStart(new Date('2026-11-22T15:00:00Z')).toISOString()).toBe('2026-11-23T00:00:00.000Z')
+    expect(nextDayStart(new Date('2026-12-31T23:59:59Z')).toISOString()).toBe('2027-01-01T00:00:00.000Z')
   })
 
   it('prices each operation at the list rate', () => {
@@ -50,7 +51,7 @@ describe('usage accounting', () => {
     expect(estimateCost(totals)).toBeCloseTo(costBreakdown(totals).total, 8)
   })
 
-  it('adds deletes and storage to the same month', () => {
+  it('adds deletes and storage to the same day', () => {
     const cost = costBreakdown({
       writes: 100_000,
       reads: 100_000,

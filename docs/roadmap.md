@@ -203,8 +203,8 @@ anónimo mide en su propio bucket (su uid), no en el del dueño de la carpeta: l
 solo dejan escribir el bucket propio. El rate limit y el presupuesto por corrida siguen
 frenando el costo; el medidor ahora además lo mide.
 
-**Cuota y créditos**: `src/lib/quota.ts` define la cuota mensual renovable (100 MB y 20.000
-operaciones/mes) y el diálogo muestra barras de uso con aviso al 80%. La CLI y el MCP cortan
+**Cuota y créditos**: `src/lib/quota.ts` define la cuota diaria renovable (100 MB y 700
+operaciones/día) y el diálogo muestra barras de uso con aviso al 80%. La CLI y el MCP cortan
 al llegar al tope de operaciones; las cuentas admin no tienen tope. `src/lib/credits.ts`
 define los packs de $5/$15/$50 con vencimiento a 24 meses, la configuración de auto top-up
 (el dueño la edita sin tocar el saldo) y las solicitudes de recarga en
@@ -212,9 +212,10 @@ define los packs de $5/$15/$50 con vencimiento a 24 meses, la configuración de 
 de pagos.
 
 > **Superado** por [`prepaid-usage-model.md`](prepaid-usage-model.md) D6: la gratuidad pasa a
-> ser una **cuota mensual renovable de 100 MB + 20.000 operaciones** (mismo contador para
-> humanos y agentes), y el tiempo real pasa a ser pago (D1). `quota.ts` deja de ser decorativo
-> recién cuando el proxy es el único escritor (§3.2 de ese documento).
+> ser una **cuota diaria renovable de 100 MB + 700 operaciones** (mismo contador para humanos
+> y agentes), y el tiempo real pasa a ser pago (D1). El cobro es **por día**: uso sobre la
+> cuota + margen. `quota.ts` deja de ser decorativo recién cuando el proxy es el único
+> escritor (§3.2 de ese documento).
 
 ---
 
