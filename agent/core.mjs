@@ -76,13 +76,16 @@ export function extractTags(markdown) {
     if (end !== -1) {
       const block = String(markdown).slice(3, end)
       const inline = block.match(/^tags?:\s*\[(.*?)\]\s*$/m)
+      // `list` se declara afuera del else: la comprobación de abajo lo lee
+      // siempre, y con `const` dentro del bloque tiraba ReferenceError.
+      let list = null
       if (inline) {
         inline[1].split(',').forEach((tag) => {
           const normalized = normalizeTag(tag)
           if (normalized) found.add(normalized)
         })
       } else {
-        const list = block.match(/^tags?:[ \t]*\n((?:[ \t]*-[ \t]*.+\n?)+)/m)
+        list = block.match(/^tags?:[ \t]*\n((?:[ \t]*-[ \t]*.+\n?)+)/m)
         if (list) {
           list[1].split('\n').forEach((line) => {
             const normalized = normalizeTag(line.replace(/^[ \t]*-[ \t]*/, ''))
