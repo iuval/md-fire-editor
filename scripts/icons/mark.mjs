@@ -1,0 +1,50 @@
+// Geometry source of truth for the FireMD mark, in a 512x512 box.
+// Derived from the reference logo: the flame is ONE continuous stroke that
+// traces the left flicker, hairpins at its notch, climbs the main tongue,
+// hairpins again in the right notch and falls down the right flicker.
+
+export const STROKE = 18
+
+export const FLAME = `M 132 480
+  C 116 462, 104 444, 95 425
+  C 83 404, 74 382, 69 362
+  C 66 340, 63 320, 63 300
+  C 64 278, 71 246, 86 220
+  C 98 202, 114 178, 134 152
+  C 139 172, 142 194, 145 214
+  C 148 228, 156 240, 168 246
+  C 173 235, 175 221, 175 206
+  C 174 190, 176 172, 182 158
+  C 189 141, 199 128, 209 116
+  C 220 104, 231 88, 238 72
+  C 242 60, 244 44, 246 22
+  C 258 26, 268 32, 276 44
+  C 290 62, 308 72, 320 88
+  C 326 104, 334 118, 340 138
+  C 344 154, 346 170, 347 186
+  C 348 196, 352 204, 356 200
+  C 366 190, 377 172, 384 154
+  L 392 142
+  C 407 154, 420 172, 431 190
+  C 437 210, 444 232, 446 256
+  C 447 274, 447 290, 447 302`
+
+export const FLICK = `M 253 196
+  C 249 212, 244 226, 236 240
+  C 227 256, 211 270, 195 281
+  C 180 291, 165 305, 156 322
+  C 149 338, 148 356, 150 374
+  C 152 394, 156 412, 161 430
+  C 165 444, 169 456, 173 466`
+
+export const CARD = `M 144 480
+  L 340 480
+  L 470 306
+  L 260 306
+  Z`
+
+export const RULES = [
+  `M 272 351 L 400 351`,
+  `M 254 385 L 370 385`,
+  `M 238 419 L 335 419`,
+]

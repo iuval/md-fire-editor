@@ -59,16 +59,27 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         start_url: '/',
+        // `any` keeps the rounded-square artwork; `maskable` is full bleed with
+        // the mark inside the 80% safe circle, so Android's round/squircle
+        // masks never clip the flame. Both come from scripts/icons/build.mjs.
         icons: [
           {
             src: '/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any',
           },
           {
             src: '/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
@@ -77,6 +88,9 @@ export default defineConfig({
         // reference asset hashes that no longer exist after a deploy. It is
         // fetched network-first and only falls back to cache when offline.
         globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
+        // The social card is 200 kB that no offline screen ever shows; only
+        // crawlers ask for it, and they are never offline.
+        globIgnores: ['og-image.png'],
         navigateFallback: null,
         cleanupOutdatedCaches: true,
         runtimeCaching: [

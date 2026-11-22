@@ -361,6 +361,30 @@ título editable en línea. Sin botones grandes ni tarjetas: el estado de sync e
 de color (verde/ámbar/rojo) y el único acento es el violeta de la nota activa. El panel
 lateral se colapsa y se recuerda en `localStorage`; en mobile entra como drawer.
 
+## Marca
+
+El ícono es una llama de contorno continuo con una nota encima: un solo trazo para la
+llama, el "flick" interior y la tarjeta con las líneas de renglones. Vive en
+`scripts/icons/mark.mjs` como geometría (viewBox 512) y de ahí salen todos los assets:
+
+```bash
+npm run icons   # regenera public/*.svg, *.png, favicon.ico y og-image.png (macOS)
+```
+
+| archivo | para qué |
+| --- | --- |
+| `public/mark.svg` | la marca sola, sin fondo, para docs y README |
+| `public/favicon.svg` | pestaña: cuadrado redondeado oscuro, trazo más grueso y dos renglones para que se lea a 16 px |
+| `public/favicon.ico` | 16/32/48, esquinas rectas (sin transparencia) para navegadores viejos |
+| `public/icon.svg` · `icon-192.png` · `icon-512.png` | PWA `any`: esquinas transparentes, 3 renglones |
+| `public/icon-maskable-512.png` | PWA `maskable`: sangra al borde y la marca entra en el círculo seguro del 80% |
+| `public/apple-touch-icon.png` | 180 px opaco; iOS aplica su propia máscara |
+| `public/og-image.png` | 1200×630 para `og:image` / `twitter:image` |
+
+Los colores salen de la paleta de `src/index.css`: `#8b7cf8` (`--color-accent-dark`) sobre
+`#1e1e1e` (`--color-bg-dark`). El build es de escritorio (usa `qlmanage` y `magick`), por eso
+los archivos quedan versionados: ni el build de la app ni los tests lo necesitan.
+
 ## Licencia
 
 MIT
