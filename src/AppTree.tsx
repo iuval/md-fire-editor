@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
 import { SyncAnnouncer } from './components/SyncAnnouncer'
@@ -22,6 +22,7 @@ import { InputDialog } from './components/InputDialog'
 import { AgentsDialog } from './components/AgentsDialog'
 import { UpgradeDialog } from './components/UpgradeDialog'
 import { UsageDialog } from './components/UsageDialog'
+import { ThemeDialog } from './components/ThemeDialog'
 import { useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, safeFileName } from './lib/export'
@@ -148,6 +149,7 @@ type Dialog =
   | { kind: 'usage' }
   | { kind: 'sort'; folderId: string | null }
   | { kind: 'rename-tag' }
+  | { kind: 'theme' }
 
 function noteFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get('note')
@@ -1482,6 +1484,11 @@ function AppTree() {
               separatorBefore: true,
               onSelect: () => setDialog({ kind: 'sort', folderId: null }),
             },
+            {
+              label: 'Apariencia…',
+              icon: <Palette size={14} />,
+              onSelect: () => setDialog({ kind: 'theme' }),
+            },
           ]}
         />
       )}
@@ -1494,6 +1501,8 @@ function AppTree() {
           onClose={() => setFolderMenu(null)}
         />
       )}
+
+      {dialog.kind === 'theme' && <ThemeDialog onClose={() => setDialog({ kind: 'none' })} />}
 
       {dialog.kind === 'account-menu' && (
         <>
@@ -1524,6 +1533,12 @@ function AppTree() {
                 label: paid ? 'Agentes de IA…' : 'Agentes de IA (plan pago)…',
                 icon: <Bot size={14} />,
                 onSelect: () => setDialog(paid ? { kind: 'agents' } : { kind: 'upgrade' }),
+                separatorBefore: true,
+              },
+              {
+                label: 'Apariencia…',
+                icon: <Palette size={14} />,
+                onSelect: () => setDialog({ kind: 'theme' }),
                 separatorBefore: true,
               },
               {
