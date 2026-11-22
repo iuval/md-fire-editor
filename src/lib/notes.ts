@@ -480,9 +480,11 @@ export async function moveNoteTo(note: Note, target: Folder | null): Promise<voi
 export async function deleteNote(noteId: string): Promise<void> {
   if (!db) return
   const database = db
-  // The body is a subdocument, so nothing cascades: delete it explicitly.
-  await deleteDoc(doc(database, 'notes', noteId, 'body', 'main')).catch(() => undefined)
+  // The note goes first: it is what grants access to the body. If the second
+  // delete fails, what is left is an unreachable orphan, not a resurrected note
+  // with an empty body — which is what deleting the body first would produce.
   await deleteDoc(doc(database, 'notes', noteId))
+  await deleteDoc(doc(database, 'notes', noteId, 'body', 'main')).catch(() => undefined)
 }
 
 // ---------- folders ----------

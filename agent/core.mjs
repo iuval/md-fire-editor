@@ -468,9 +468,11 @@ export async function createNote(db, { title = 'Sin título', folder, body = '' 
 
 export async function deleteNote(db, ref) {
   const doc = await resolveNote(db, ref)
-  // The body is a subdocument: nothing cascades.
-  await db.remove(`notes/${doc.id}/body`, 'main').catch(() => undefined)
+  // The note goes first: it is what grants access to the body. An orphan body
+  // (if the second call fails) is unreachable; a note with no body would look
+  // like an empty note.
   await db.remove('notes', doc.id)
+  await db.remove(`notes/${doc.id}/body`, 'main').catch(() => undefined)
   return { id: doc.id }
 }
 
