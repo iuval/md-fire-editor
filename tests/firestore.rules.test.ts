@@ -16,8 +16,10 @@ import {
   getDocs,
   query,
   setDoc,
+  serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore'
 
 const PROJECT_ID = 'demo-mdfire'
@@ -156,6 +158,85 @@ describe('notes: create', () => {
 
   it('rejects unknown fields', async () => {
     await assertFails(setDoc(doc(db(OWNER), 'notes', 'n1'), noteDoc({ isAdmin: true })))
+  })
+
+  // The client creates a note and its empty body in ONE commit (`createNote`),
+  // which is what makes opening a new tab cost a single round trip.
+  describe('note and body in one commit', () => {
+    const bodyDoc = (overrides: Record<string, unknown> = {}) => ({
+      markdown: '',
+      bytes: 0,
+      version: 1,
+      updatedAt: ts(),
+      ...overrides,
+    })
+
+    it('accepts a root note plus its body', async () => {
+      // Exactly what `createNote` writes: one server timestamp for both dates,
+      // empty body on the note, text in `body/main`.
+      const now = serverTimestamp()
+      const firestore = db(OWNER)
+      const batch = writeBatch(firestore)
+      batch.set(doc(firestore, 'notes', 'n1'), {
+        ownerId: OWNER,
+        folderId: null,
+        aclSource: 'own',
+        memberIds: [OWNER],
+        roles: { [OWNER]: 'owner' },
+        access: 'restricted',
+        title: 'Sin título',
+        markdownBytes: 0,
+        tags: [],
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+      batch.set(doc(firestore, 'notes', 'n1', 'body', 'main'), bodyDoc())
+      await assertSucceeds(batch.commit())
+      const stored = await getDoc(doc(firestore, 'notes', 'n1', 'body', 'main'))
+      expect(stored.data()?.markdown).toBe('')
+    })
+
+    it('accepts a folder note plus its body', async () => {
+      await seedFolder('f1')
+      const data = noteDoc({
+        folderId: 'f1',
+        aclSource: 'folder',
+        markdownBytes: 0,
+      })
+      delete (data as { markdown?: string }).markdown
+      const firestore = db(OWNER)
+      const batch = writeBatch(firestore)
+      batch.set(doc(firestore, 'notes', 'n1'), data)
+      batch.set(doc(firestore, 'notes', 'n1', 'body', 'main'), bodyDoc())
+      await assertSucceeds(batch.commit())
+    })
+
+    it('rejects a body for a note the commit does not create', async () => {
+      const firestore = db(OWNER)
+      const batch = writeBatch(firestore)
+      batch.set(doc(firestore, 'notes', 'n1', 'body', 'main'), bodyDoc())
+      await assertFails(batch.commit())
+    })
+
+    it('rejects a body batched with a foreign note', async () => {
+      const firestore = db(EDITOR)
+      const batch = writeBatch(firestore)
+      batch.set(doc(firestore, 'notes', 'n1'), noteDoc({ markdownBytes: 0 }))
+      batch.set(doc(firestore, 'notes', 'n1', 'body', 'main'), bodyDoc())
+      await assertFails(batch.commit())
+    })
+
+    it('rejects a body batched with a viewer-visible note', async () => {
+      await seedNote('n1', {
+        memberIds: [OWNER, VIEWER],
+        roles: { [OWNER]: 'owner', [VIEWER]: 'viewer' },
+      })
+      const firestore = db(VIEWER)
+      const batch = writeBatch(firestore)
+      batch.set(doc(firestore, 'notes', 'n1', 'body', 'main'), bodyDoc())
+      await assertFails(batch.commit())
+    })
   })
 
   describe('note body', () => {

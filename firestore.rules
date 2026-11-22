@@ -310,11 +310,20 @@ service cloud.firestore {
       return aclOf(get(/databases/$(database)/documents/notes/$(noteId)).data);
     }
 
+    // The note as this commit leaves it. A batched write is evaluated against the
+    // state *before* it, so `get()` cannot see the note a `createNote` batch is
+    // writing in the same commit: the body would be denied with a null-data
+    // error. `getAfter()` sees it, and is identical to `get()` for a body write
+    // on a note that already exists.
+    function noteAclAfter(noteId) {
+      return aclOf(getAfter(/databases/$(database)/documents/notes/$(noteId)).data);
+    }
+
     // The note body: one document, same ACL as the note it belongs to.
     match /notes/{noteId}/body/{docId} {
       allow read: if canRead(noteAcl(noteId));
 
-      allow create, update: if canWrite(noteAcl(noteId))
+      allow create, update: if canWrite(noteAclAfter(noteId))
         && docId == 'main'
         && validBody(request.resource.data);
 
