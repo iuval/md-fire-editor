@@ -1,16 +1,11 @@
-import { MoreHorizontal, PanelLeftOpen, Menu, X } from 'lucide-react'
+import { PanelLeftOpen, Menu, X } from 'lucide-react'
 import type { AwarenessUser } from '../lib/collab/awareness'
-import type { ProviderStatus } from '../lib/collab/provider'
-import { syncText } from '../lib/syncStatus'
 
 interface PaneBarProps {
-  status: ProviderStatus
   presence: AwarenessUser[]
   sidebarCollapsed: boolean
   isMobile: boolean
   onToggleSidebar: () => void
-  onMenu: () => void
-  menuOpen: boolean
   selectedTags?: string[]
   onClearTags?: () => void
   /** The focused pane's tab strip, when it lives in this bar. */
@@ -18,13 +13,10 @@ interface PaneBarProps {
 }
 
 export function PaneBar({
-  status,
   presence,
   sidebarCollapsed,
   isMobile,
   onToggleSidebar,
-  onMenu,
-  menuOpen,
   selectedTags = [],
   onClearTags,
   tabs,
@@ -72,23 +64,6 @@ export function PaneBar({
         </span>
       )}
 
-      {/* The dot now lives next to the avatar in the sidebar, but the live
-          region stays here: it must keep announcing while the sidebar is
-          collapsed or the phone drawer is closed. */}
-      <span className="sr-only" role="status">
-        {syncText(status)}
-      </span>
-
-      <button
-        className="icon-btn"
-        onClick={onMenu}
-        aria-label="Más acciones"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        title="Más acciones"
-      >
-        <MoreHorizontal size={16} />
-      </button>
     </div>
   )
 }

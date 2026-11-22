@@ -8,6 +8,11 @@
   --color-bg-dark: #1e1e1e;
   --color-bg-2-dark: #262626;
   --color-bg-3-dark: #2a2a2a;
+  /* The sheet you write on. The selected tab is painted with it and reaches
+     the bottom of the strip, so tab and document read as one surface; dark
+     mode sits a step *below* the bars instead of between them. */
+  --color-page: #ffffff;
+  --color-page-dark: #181818;
   --color-text: #22222a;
   --color-text-dark: #dadada;
   /* Muted is the text you read second (meta lines, hints). It is measured
@@ -123,9 +128,10 @@ button {
   transition: background 0.12s ease;
 }
 
+/* Hover feedback is a neutral, heavier line: no accent highlight anywhere. */
 .sidebar-resizer:hover::after,
 .sidebar-resizer:focus-visible::after {
-  background: light-dark(var(--color-accent), var(--color-accent-dark));
+  background: light-dark(var(--color-muted), var(--color-muted-dark));
 }
 
 .sidebar-head {
@@ -176,6 +182,18 @@ button {
   height: 28px;
 }
 
+/* A spent pane budget leaves the split buttons in place, greyed: they explain
+   themselves on hover instead of vanishing and shifting the strip. */
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover {
+  background: none;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
 .file-list {
   flex: 1;
   overflow: auto;
@@ -189,9 +207,24 @@ button {
   min-width: 100%;
 }
 
+/* The row owns the hover tint and the ⋯ that opens the note's own menu, so a
+   file is managed where it lives instead of from a bar button. */
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-control);
+  padding-right: 2px;
+}
+
+.file-row:hover {
+  background: light-dark(rgba(0, 0, 0, 0.045), rgba(255, 255, 255, 0.055));
+}
+
 .file-item {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   border: none;
   background: none;
@@ -203,8 +236,9 @@ button {
   color: light-dark(var(--color-text), var(--color-text-dark));
 }
 
+/* The row already paints the hover; tinting the button too doubled it. */
 .file-item:hover {
-  background: light-dark(rgba(0, 0, 0, 0.045), rgba(255, 255, 255, 0.055));
+  background: none;
 }
 
 /* Selection is the tint alone. The 2px accent bar on the left read as a stray
@@ -245,6 +279,57 @@ button {
   border-top: 1px solid light-dark(var(--color-border), var(--color-border-dark));
 }
 
+/* Avatar, sync dot and notice bell share one row; the popovers above them
+   anchor here. */
+.sidebar-identity {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* A notice is a bell in the footer, not a bar over the document: the message
+   waits in the tooltip and opens as a bubble on tap. */
+.notice-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 24px is the WCAG 2.5.8 minimum, and the bell sits in a 32px strip. */
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.notice-btn:hover {
+  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
+}
+
+.notice-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: -6px;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: max-content;
+  max-width: calc(var(--sidebar-w, 240px) - 30px);
+  padding: 8px 6px 8px 10px;
+  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  border-radius: var(--radius-control);
+  background: light-dark(var(--color-bg), var(--color-bg-dark));
+  font-size: 12px;
+  line-height: 1.4;
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
 .avatar {
   width: 20px;
   height: 20px;
@@ -268,7 +353,7 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: light-dark(var(--color-bg), var(--color-bg-dark));
+  background: light-dark(var(--color-page), var(--color-page-dark));
 }
 
 .pane-head {
@@ -280,17 +365,22 @@ button {
   background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
   flex-shrink: 0;
   padding: 0 6px;
-  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  /* An inset line instead of a border: the selected tab paints over it, so the
+     tab flows into the page with no seam. */
+  box-shadow: inset 0 -1px 0 light-dark(var(--color-border), var(--color-border-dark));
   color: light-dark(var(--color-muted), var(--color-muted-dark));
   font-size: 12.5px;
 }
 
-/* The tab strip lives here when the workspace has one pane; the bar keeps its
-   own controls on the right so there is never a second row of chrome. */
+/* The tab strip lives here when the workspace has one pane and takes every
+   pixel the bar has left: no separate row of chrome. */
 .pane-head-tabs {
   display: flex;
   align-items: center;
   flex: 1;
+  /* Full bar height, so the strip inside it is definite and the selected tab
+     can stretch down onto the page. */
+  align-self: stretch;
   min-width: 0;
   overflow: hidden;
 }
@@ -388,17 +478,6 @@ button {
   flex-shrink: 0;
 }
 
-.banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  padding: 6px 10px 6px 16px;
-  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
-  font-size: 12.5px;
-  color: light-dark(var(--color-muted), var(--color-muted-dark));
-}
-
 /* ---------- tabs and splits ---------- */
 
 .workspace {
@@ -475,7 +554,7 @@ button {
 .split-divider:hover::after,
 .split-divider:focus-visible::after,
 .split--dragging > .split-divider::after {
-  background: light-dark(var(--color-accent), var(--color-accent-dark));
+  background: light-dark(var(--color-muted), var(--color-muted-dark));
 }
 
 .split--dragging {
@@ -489,15 +568,7 @@ button {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: light-dark(var(--color-bg), var(--color-bg-dark));
-}
-
-/* With four panes open, every pane has an "active tab". The focused pane's tab
-   carries an accent underline so it is clear where the next file will land. */
-.workspace-pane.focused .tab.active {
-  box-shadow:
-    inset 0 0 0 1px light-dark(var(--color-border), var(--color-border-dark)),
-    inset 0 -2px 0 light-dark(var(--color-accent), var(--color-accent-dark));
+  background: light-dark(var(--color-page), var(--color-page-dark));
 }
 
 .tabbar {
@@ -507,7 +578,8 @@ button {
   height: 30px;
   flex-shrink: 0;
   padding: 0 6px;
-  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  /* Inset, so the selected tab can cover it (see `.tab.active`). */
+  box-shadow: inset 0 -1px 0 light-dark(var(--color-border), var(--color-border-dark));
   background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
 }
 
@@ -518,7 +590,8 @@ button {
   width: 100%;
   min-width: 0;
   padding: 0;
-  border-bottom: 0;
+  /* The bar above already draws the line. */
+  box-shadow: none;
   background: none;
 }
 
@@ -535,6 +608,9 @@ button {
   align-items: center;
   gap: 2px;
   flex: 1;
+  /* The bar centres its items, but the tab list has to span the full height so
+     the selected tab can stretch down to the divider and cover it. */
+  align-self: stretch;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -568,10 +644,36 @@ button {
   background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
 }
 
+/* The selected tab *is* the page: same colour, square-ish bottom, stretched to
+   the bottom of the strip so it covers the divider and the document starts
+   right where the tab ends. Its title goes semibold, which is the whole
+   "this is where you are" cue — no lines involved. */
 .tab.active {
-  background: light-dark(var(--color-bg), var(--color-bg-dark));
+  align-self: stretch;
+  height: auto;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
+  background: light-dark(var(--color-page), var(--color-page-dark));
   color: light-dark(var(--color-text), var(--color-text-dark));
-  box-shadow: inset 0 0 0 1px light-dark(var(--color-border), var(--color-border-dark));
+}
+
+.tab.active .tab-text {
+  font-weight: 600;
+}
+
+/* Only the focused pane's tab merges into its page. The other panes keep their
+   selected tab on the bar, plain and muted, so with four panes open it is still
+   obvious which one the next file will open in. */
+.workspace-pane:not(.focused) .tab.active {
+  background: none;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.workspace-pane:not(.focused) .tab.active .tab-text {
+  font-weight: 400;
+}
+
+.workspace-pane:not(.focused) .tab.active:hover {
+  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
 }
 
 .tab-label {

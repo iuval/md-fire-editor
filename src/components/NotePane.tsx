@@ -202,8 +202,10 @@ interface NotePaneProps {
   onImport: () => void
   /** No notes at all yet: the empty pane carries the onboarding actions. */
   emptyWorkspace: boolean
-  onMenu: (pos: { x: number; y: number }) => void
-  menuOpen: boolean
+  /** Splits are plain buttons in the strip; absent on a phone. */
+  onSplitRight?: () => void
+  onSplitDown?: () => void
+  splitLimitLabel?: string
   onTagClick: (tag: string) => void
   onRenameTag: () => void
   onPresence: (users: AwarenessUser[]) => void
@@ -234,8 +236,9 @@ export function NotePane({
   creating = false,
   onImport,
   emptyWorkspace,
-  onMenu,
-  menuOpen,
+  onSplitRight,
+  onSplitDown,
+  splitLimitLabel,
   onTagClick,
   onRenameTag,
   onPresence,
@@ -258,8 +261,9 @@ export function NotePane({
           onActivate={onActivateTab}
           onClose={onCloseTab}
           onNewNote={onNewNote}
-          onMenu={onMenu}
-          menuOpen={menuOpen}
+          onSplitRight={onSplitRight}
+          onSplitDown={onSplitDown}
+          splitLimitLabel={splitLimitLabel}
           onClosePane={onClosePane}
         />
       )}

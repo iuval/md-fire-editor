@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Folder, Link2, MoreHorizontal, PanelLeftClose, Plus, User } from 'lucide-react'
+import {
+  Bell,
+  ChevronRight,
+  Folder,
+  Link2,
+  MoreHorizontal,
+  PanelLeftClose,
+  Plus,
+  User,
+  X,
+} from 'lucide-react'
 import type { ProviderStatus } from '../lib/collab/provider'
 import type { Folder as FolderType, Note } from '../lib/notes'
 import { buildFolderTree, type FolderNode } from '../lib/folders'
@@ -24,6 +34,8 @@ export interface SidebarProps {
   onSelect: (id: string) => void
   onNewNote: (folder?: FolderType) => void
   onHeaderMenu: (pos: { x: number; y: number }) => void
+  /** Per-note actions (share, order, export, move, delete) live on the row. */
+  onNoteMenu: (note: Note, pos: { x: number; y: number }) => void
   rootSort: SortMode
   /** Manual moves applied locally while the write is in flight. */
   orderOverrides?: Record<string, string[]>
@@ -43,6 +55,10 @@ export interface SidebarProps {
   userName?: string
   photoURL?: string | null
   onAccountClick: () => void
+  /** Transient feedback (export, import, failed writes). Painted as a bell in
+   *  the footer, never as a bar over the document. */
+  notice?: string | null
+  onDismissNotice?: () => void
 }
 
 const TAGS_KEY = 'mdfire-tags-open'
@@ -73,6 +89,7 @@ export function Sidebar({
   onSelect,
   onNewNote,
   onHeaderMenu,
+  onNoteMenu,
   rootSort,
   orderOverrides,
   onFolderMenu,
@@ -91,21 +108,32 @@ export function Sidebar({
   userName,
   photoURL,
   onAccountClick,
+  notice,
+  onDismissNotice,
 }: SidebarProps) {
   const [width, setWidth] = useState(initialWidth)
   const [tagsOpen, setTagsOpen] = useState(initialTagsOpen)
   const [statusOpen, setStatusOpen] = useState(false)
+  // Keyed by the message, so a new notice never inherits the previous one's
+  // open bubble.
+  const [openNotice, setOpenNotice] = useState<string | null>(null)
   const identityRef = useRef<HTMLDivElement>(null)
 
-  // The status word is a popover on the dot: tap to read it, tap outside or
-  // press Escape to put it away.
+  // The status word and the notice are popovers in the footer: tap to read,
+  // tap outside or press Escape to put them away.
   useEffect(() => {
-    if (!statusOpen) return
+    if (!statusOpen && openNotice === null) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setStatusOpen(false)
+      if (e.key === 'Escape') {
+        setStatusOpen(false)
+        setOpenNotice(null)
+      }
     }
     const onPointer = (e: PointerEvent) => {
-      if (!identityRef.current?.contains(e.target as Node)) setStatusOpen(false)
+      if (!identityRef.current?.contains(e.target as Node)) {
+        setStatusOpen(false)
+        setOpenNotice(null)
+      }
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onPointer)
@@ -113,7 +141,7 @@ export function Sidebar({
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('pointerdown', onPointer)
     }
-  }, [statusOpen])
+  }, [statusOpen, openNotice])
 
   useEffect(() => {
     try {
@@ -212,21 +240,45 @@ export function Sidebar({
     return ordered
   }
 
+  /** Pointer position for a row menu, anchored under the button that opened it. */
+  const menuPos = (target: HTMLElement) => {
+    const rect = target.getBoundingClientRect()
+    return { x: rect.left - 150, y: rect.bottom + 4 }
+  }
+
   const noteButton = (note: Note, padLeft: number) => {
     const shared = note.memberIds.length > 1 || note.access !== 'restricted'
+    const title = note.title || 'Sin título'
     return (
-      <button
+      <div
         key={note.id}
-        className={`file-item${note.id === activeId ? ' active' : ''}`}
-        onClick={() => onSelect(note.id)}
-        aria-current={note.id === activeId ? 'true' : undefined}
-        style={{ paddingLeft: padLeft }}
+        className="file-row"
+        // Same menu as the ⋯: right-clicking the row is the shortcut.
+        onContextMenu={(event) => {
+          event.preventDefault()
+          onNoteMenu(note, { x: event.clientX, y: event.clientY })
+        }}
       >
-        <span className="file-name">
-          {shared && <Link2 size={10} style={{ marginRight: 4, opacity: 0.55, verticalAlign: 'middle' }} />}
-          {note.title || 'Sin título'}
-        </span>
-      </button>
+        <button
+          className={`file-item${note.id === activeId ? ' active' : ''}`}
+          onClick={() => onSelect(note.id)}
+          aria-current={note.id === activeId ? 'true' : undefined}
+          style={{ paddingLeft: padLeft }}
+        >
+          <span className="file-name">
+            {shared && <Link2 size={10} style={{ marginRight: 4, opacity: 0.55, verticalAlign: 'middle' }} />}
+            {title}
+          </span>
+        </button>
+        <button
+          className="icon-btn icon-btn--sm"
+          aria-label={`Acciones de ${title}`}
+          title={`Acciones de ${title}`}
+          onClick={(event) => onNoteMenu(note, menuPos(event.currentTarget))}
+        >
+          <MoreHorizontal size={14} />
+        </button>
+      </div>
     )
   }
 
@@ -326,7 +378,13 @@ export function Sidebar({
 
               return (
                 <div key={folder.id}>
-                  <div className="folder-row">
+                  <div
+                    className="folder-row"
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      onFolderMenu(folder, { x: event.clientX, y: event.clientY })
+                    }}
+                  >
                     <button
                       className="folder-toggle"
                       onClick={() => onToggleFolder(folder.id)}
@@ -353,10 +411,7 @@ export function Sidebar({
                     <button
                       className="icon-btn icon-btn--sm"
                       aria-label={`Acciones de ${folder.name}`}
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        onFolderMenu(folder, { x: rect.left - 150, y: rect.bottom + 4 })
-                      }}
+                      onClick={(e) => onFolderMenu(folder, menuPos(e.currentTarget))}
                     >
                       <MoreHorizontal size={14} />
                     </button>
@@ -417,6 +472,33 @@ export function Sidebar({
             <span className="sync-dot" aria-hidden="true" />
           </button>
           {statusOpen && <span className="sync-bubble">{syncText(status)}</span>}
+          {notice && (
+            <button
+              className="notice-btn"
+              onClick={() => setOpenNotice(openNotice === notice ? null : notice)}
+              aria-label={`Aviso: ${notice}`}
+              aria-expanded={openNotice === notice}
+              title={notice}
+            >
+              <Bell size={13} aria-hidden="true" />
+            </button>
+          )}
+          {notice && openNotice === notice && (
+            <div className="notice-bubble">
+              <span style={{ flex: 1 }}>{notice}</span>
+              <button
+                className="icon-btn icon-btn--sm"
+                onClick={() => {
+                  setOpenNotice(null)
+                  onDismissNotice?.()
+                }}
+                aria-label="Descartar aviso"
+                title="Descartar aviso"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
         </div>
         <button
           className="icon-btn icon-btn--sm"

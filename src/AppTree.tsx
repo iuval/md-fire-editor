@@ -1,7 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Columns2, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Plus, Rows2, Trash2, Upload, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { PaneBar } from './components/PaneBar'
+import { SyncAnnouncer } from './components/SyncAnnouncer'
+import { paneBarNeeded } from './lib/paneBar'
 import { TabStrip } from './components/TabStrip'
 import { Menu, type MenuItem } from './components/Menu'
 import { Workspace } from './components/Workspace'
@@ -48,7 +50,6 @@ import {
   activeNoteIds,
   activeTab,
   closeNote,
-  closeOtherTabs,
   closePane,
   canSplit,
   closeTab,
@@ -292,9 +293,6 @@ function AppTree() {
   /** The row's own menu: the tree is where a file's actions live. */
   const [noteMenu, setNoteMenu] = useState<{ note: Note; x: number; y: number } | null>(null)
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null)
-  const [tabMenu, setTabMenu] = useState<
-    { paneId: string; tabId: string | null; x: number; y: number } | null
-  >(null)
   const [expanded, setExpanded] = useState<Set<string>>(initialExpanded)
   const [presence, setPresence] = useState<AwarenessUser[]>([])
   const [status, setStatus] = useState({
@@ -783,13 +781,6 @@ function AppTree() {
     })
   }, [])
 
-  const closeSiblingTabs = useCallback((paneId: string, tabId: string) => {
-    setWorkspace((ws) => {
-      const layout = closeOtherTabs(ws.layout, paneId, tabId)
-      return layout === ws.layout ? ws : { ...ws, layout }
-    })
-  }, [])
-
   /**
    * Splits a pane and focuses the new half, which opens with a copy of the page
    * you were reading: the next file click replaces it there.
@@ -1185,50 +1176,6 @@ function AppTree() {
       })()
     : []
 
-  /** The tab menu: every "open this page beside/below me" lives here. */
-  const tabMenuItems: MenuItem[] = tabMenu
-    ? [
-        {
-          label: 'Nueva nota acá',
-          icon: <Plus size={14} />,
-          onSelect: () => void handleNewNote(undefined, tabMenu.paneId),
-        },
-        // A phone shows one pane at a time, so offering a split it cannot show
-        // would only lose the user's file behind the tree.
-        ...(isMobile
-          ? []
-          : [
-              {
-                label: splitAllowed ? 'Dividir a la derecha' : SPLIT_LIMIT_LABEL,
-                icon: <Columns2 size={14} />,
-                separatorBefore: true,
-                disabled: !splitAllowed,
-                onSelect: () => splitPaneAt(tabMenu.paneId, 'row'),
-              },
-              {
-                label: splitAllowed ? 'Dividir abajo' : SPLIT_LIMIT_LABEL,
-                icon: <Rows2 size={14} />,
-                disabled: !splitAllowed,
-                onSelect: () => splitPaneAt(tabMenu.paneId, 'column'),
-              },
-            ]),
-        ...(tabMenu.tabId
-          ? [
-              {
-                label: 'Cerrar pestaña',
-                icon: <X size={14} />,
-                separatorBefore: true,
-                onSelect: () => closePaneTab(tabMenu.paneId, tabMenu.tabId!),
-              },
-              {
-                label: 'Cerrar las demás',
-                onSelect: () => closeSiblingTabs(tabMenu.paneId, tabMenu.tabId!),
-              },
-            ]
-          : []),
-      ]
-    : []
-
   const folderMenuItems: MenuItem[] = folderMenu
     ? [
         {
@@ -1306,6 +1253,17 @@ function AppTree() {
   const titles = useMemo(() => new Map(notes.map((note) => [note.id, note.title])), [notes])
 
   /**
+   * The pane's whole action set: split right, split down, close. Three buttons
+   * and no menu — a new note already has its `+`, so nothing is duplicated here.
+   * A phone shows one pane at a time, so it gets no split buttons at all.
+   */
+  const splitActions = (paneId: string) => ({
+    onSplitRight: isMobile ? undefined : () => splitPaneAt(paneId, 'row'),
+    onSplitDown: isMobile ? undefined : () => splitPaneAt(paneId, 'column'),
+    splitLimitLabel: splitAllowed ? undefined : SPLIT_LIMIT_LABEL,
+  })
+
+  /**
    * With a single pane there is no reason for a second bar: its tabs move into
    * the top bar (see `panes`/`inlinePane` above).
    */
@@ -1317,17 +1275,19 @@ function AppTree() {
       onActivate={(tabId) => activateTab(inlinePane.id, tabId)}
       onClose={(tabId) => closePaneTab(inlinePane.id, tabId)}
       onNewNote={() => void handleNewNote(undefined, inlinePane.id)}
-      // Right-clicking a tab opens the pane's menu: split, close, new note here.
-      onMenu={(pos) =>
-        setTabMenu({
-          paneId: inlinePane.id,
-          tabId: activeTab(inlinePane)?.id ?? null,
-          ...pos,
-        })
-      }
-      menuOpen={tabMenu?.paneId === inlinePane.id}
+      {...splitActions(inlinePane.id)}
     />
   ) : undefined
+
+  // No tabs to host, no toggle to show, no filter, nobody else editing: the
+  // panes start at the top of the window (see `paneBarNeeded`).
+  const barNeeded = paneBarNeeded({
+    hasTabs: Boolean(inlineTabs),
+    isMobile,
+    sidebarCollapsed: !isMobile && collapsed,
+    selectedTags: selectedTags.length,
+    presence: presence.length,
+  })
 
   if (authLoading) return <div className="empty">Cargando…</div>
 
@@ -1406,27 +1366,34 @@ function AppTree() {
         userName={userName}
         photoURL={user.photoURL}
         onAccountClick={() => setDialog({ kind: 'account-menu' })}
+        notice={notice}
+        onDismissNotice={() => setNotice(null)}
       />
 
       <main className="pane">
-        <PaneBar
-          status={status}
-          presence={presence}
-          sidebarCollapsed={!isMobile && collapsed}
-          isMobile={isMobile}
-          onToggleSidebar={toggleSidebar}
-          selectedTags={selectedTags}
-          onClearTags={() => setSelectedTags([])}
-          tabs={inlineTabs}
-        />
+        {/* Always mounted, never painted: the words the dot in the sidebar
+            footer stands for, announced wherever the layout is. */}
+        <SyncAnnouncer status={status} />
+        {/* Same split as the sync dot: the bell in the sidebar footer is the
+            painted half, this is what a screen reader hears when the panel is
+            collapsed or closed behind the phone drawer. */}
+        <span className="sr-only" role="status">
+          {notice ?? ''}
+        </span>
 
-        {notice && (
-          <div className="banner">
-            <span style={{ flex: 1 }}>{notice}</span>
-            <button className="icon-btn" onClick={() => setNotice(null)} aria-label="Cerrar aviso">
-              ✕
-            </button>
-          </div>
+        {/* The bar exists only when it carries something. With more than one
+            pane the tabs live in each pane's own strip, so an empty row above
+            them would only cost height. */}
+        {barNeeded && (
+          <PaneBar
+            presence={presence}
+            sidebarCollapsed={!isMobile && collapsed}
+            isMobile={isMobile}
+            onToggleSidebar={toggleSidebar}
+            selectedTags={selectedTags}
+            onClearTags={() => setSelectedTags([])}
+            tabs={inlineTabs}
+          />
         )}
 
         <Suspense
@@ -1472,10 +1439,7 @@ function AppTree() {
                 hideTabs={pane.id === inlinePane?.id}
                 onImport={() => importRef.current?.click()}
                 emptyWorkspace={notes.length === 0}
-                onMenu={(pos) =>
-                  setTabMenu({ paneId: pane.id, tabId: currentTab?.id ?? null, ...pos })
-                }
-                menuOpen={tabMenu?.paneId === pane.id}
+                {...splitActions(pane.id)}
                 onTagClick={(tag) =>
                   setSelectedTags((current) =>
                     current.includes(tag.toLowerCase()) ? current : [...current, tag.toLowerCase()]
@@ -1498,15 +1462,6 @@ function AppTree() {
           anchor="pointer"
           pos={{ x: noteMenu.x, y: noteMenu.y }}
           onClose={() => setNoteMenu(null)}
-        />
-      )}
-
-      {tabMenu && (
-        <Menu
-          anchor="pointer"
-          pos={{ x: tabMenu.x, y: tabMenu.y }}
-          items={tabMenuItems}
-          onClose={() => setTabMenu(null)}
         />
       )}
 

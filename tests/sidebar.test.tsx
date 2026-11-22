@@ -296,6 +296,59 @@ describe('sync dot in the footer', () => {
   })
 })
 
+describe('notice in the footer', () => {
+  it('leaves the footer bare when there is nothing to report', () => {
+    const el = render()
+    expect(el.querySelector('.notice-btn')).toBeNull()
+    expect(el.querySelector('.sidebar-foot')!.textContent?.trim()).toBe('')
+  })
+
+  it('holds the message in the icon tooltip instead of printing it', () => {
+    const message = 'No se pudo crear la nota. Revisá la conexión.'
+    const el = render({ notice: message })
+    const button = el.querySelector('.notice-btn') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    expect(button.getAttribute('title')).toBe(message)
+    expect(button.getAttribute('aria-label')).toContain(message)
+    expect(el.querySelector('.sidebar-foot')!.textContent?.trim()).toBe('')
+  })
+
+  it('reveals the message on tap and hands the dismissal up', () => {
+    let dismissed = 0
+    const el = render({
+      notice: 'Exportadas 3 notas en notas.zip.',
+      onDismissNotice: () => {
+        dismissed += 1
+      },
+    })
+    const button = el.querySelector('.notice-btn') as HTMLButtonElement
+
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(el.querySelector('.notice-bubble')).toBeNull()
+
+    act(() => button.click())
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(el.querySelector('.notice-bubble')!.textContent).toContain('Exportadas 3 notas')
+
+    const close = el.querySelector('.notice-bubble button') as HTMLButtonElement
+    act(() => close.click())
+    expect(dismissed).toBe(1)
+    expect(el.querySelector('.notice-bubble')).toBeNull()
+  })
+
+  it('closes the revealed notice on Escape', () => {
+    const el = render({ notice: 'No se pudo guardar el orden. Revisá la conexión.' })
+    const button = el.querySelector('.notice-btn') as HTMLButtonElement
+    act(() => button.click())
+    expect(el.querySelector('.notice-bubble')).not.toBeNull()
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(el.querySelector('.notice-bubble')).toBeNull()
+  })
+})
+
 describe('tree rows', () => {
   it('shows only the title, no date/preview subtitle', () => {
     const el = render()
@@ -415,5 +468,51 @@ describe('horizontal scrolling for long trees', () => {
     localStorage.setItem('mdfire-tags-open', '1')
     const el = render()
     expect(el.querySelector('.tag-tree > .tag-tree-rows')).not.toBeNull()
+  })
+})
+
+describe('row actions', () => {
+  it('gives every note the same ⋯ the folders already have', () => {
+    const el = render()
+    const labels = [...el.querySelectorAll<HTMLElement>('.file-row [aria-label^="Acciones de "]')].map(
+      (b) => b.getAttribute('aria-label')
+    )
+    // One per note, whichever branch of the tree it hangs from.
+    expect([...labels].sort()).toEqual([
+      'Acciones de Diseño de sincronización',
+      'Acciones de Nota raíz',
+    ])
+  })
+
+  it('opens the note menu with the note that owns the row', () => {
+    const opened: { id: string; x: number; y: number }[] = []
+    const el = render({
+      onNoteMenu: (note, pos) => opened.push({ id: note.id, ...pos }),
+    })
+    const button = el.querySelector<HTMLElement>('[aria-label="Acciones de Diseño de sincronización"]')!
+    act(() => button.click())
+    expect(opened).toHaveLength(1)
+    expect(opened[0].id).toBe('n2')
+    expect(Number.isFinite(opened[0].x)).toBe(true)
+  })
+
+  it('opens the note menu from a right click on the row too', () => {
+    const opened: string[] = []
+    const el = render({ onNoteMenu: (note) => opened.push(note.id) })
+    const row = el.querySelector<HTMLElement>('[aria-label="Acciones de Nota raíz"]')!.parentElement!
+    act(() =>
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 20 }))
+    )
+    expect(opened).toEqual(['n1'])
+  })
+
+  it('opens the folder menu from a right click on the folder row', () => {
+    const opened: string[] = []
+    const el = render({ onFolderMenu: (folder) => opened.push(folder.id) })
+    const row = el.querySelector<HTMLElement>('[aria-label="Acciones de V3"]')!.parentElement!
+    act(() =>
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 20 }))
+    )
+    expect(opened).toEqual(['v3'])
   })
 })

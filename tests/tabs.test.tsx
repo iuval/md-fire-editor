@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TabStrip } from '../src/components/TabStrip'
+import { MAX_PANES } from '../src/lib/panes'
 import { Workspace } from '../src/components/Workspace'
 import { singlePane, splitPane, type PaneLeaf } from '../src/lib/panes'
 
@@ -37,8 +38,6 @@ function strip(handlers: Partial<Parameters<typeof TabStrip>[0]> = {}) {
       onActivate={() => {}}
       onClose={() => {}}
       onNewNote={() => {}}
-      onMenu={() => {}}
-      menuOpen={false}
       {...handlers}
     />
   )
@@ -65,24 +64,44 @@ describe('tab strip', () => {
     expect(closed).toEqual(['t1'])
   })
 
-  it('opens the pane menu with a right click on a tab', () => {
-    const calls: { x: number; y: number }[] = []
-    const el = strip({ onMenu: (pos) => calls.push(pos) })
+  it('has no ⋯ menu on the pane: no popup, no context menu', () => {
+    const el = strip({ onSplitRight: () => {}, onSplitDown: () => {}, onClosePane: () => {} })
+    expect(el.querySelector('[aria-label="Opciones del panel"]')).toBeNull()
+    expect(el.querySelector('[aria-haspopup="menu"]')).toBeNull()
+    // A right click on a tab used to open that menu; now it does nothing.
     const tab = el.querySelector('.tab')!
-    act(() =>
-      tab.dispatchEvent(
-        new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 60 })
-      )
-    )
-    expect(calls).toEqual([{ x: 40, y: 60 }])
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    act(() => tab.dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(false)
   })
 
-  it('opens the pane menu from the actions button', () => {
-    const calls: { x: number; y: number }[] = []
-    const el = strip({ onMenu: (pos) => calls.push(pos) })
-    const button = el.querySelector('[aria-label="Opciones del panel"]') as HTMLElement
-    button.click()
-    expect(calls).toHaveLength(1)
+  it('splits right and down from two plain buttons', () => {
+    const calls: string[] = []
+    const el = strip({
+      onSplitRight: () => calls.push('right'),
+      onSplitDown: () => calls.push('down'),
+    })
+    ;(el.querySelector('[aria-label="Dividir a la derecha"]') as HTMLElement).click()
+    ;(el.querySelector('[aria-label="Dividir abajo"]') as HTMLElement).click()
+    expect(calls).toEqual(['right', 'down'])
+  })
+
+  it('offers no split buttons on a phone, which shows one pane', () => {
+    const el = strip()
+    expect(el.querySelector('[aria-label="Dividir a la derecha"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Dividir abajo"]')).toBeNull()
+  })
+
+  it('greys both splits out, with the reason, once the budget is spent', () => {
+    // Built from the budget itself: a hardcoded number here would keep passing
+    // after MAX_PANES changes, and would lie about the label the app shows.
+    const limit = `Máximo de paneles (${MAX_PANES})`
+    const el = strip({ onSplitRight: () => {}, onSplitDown: () => {}, splitLimitLabel: limit })
+    for (const label of ['Dividir a la derecha', 'Dividir abajo']) {
+      const button = el.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('title')).toBe(limit)
+    }
   })
 
   it('moves focus between tabs with the arrow keys, wrapping at the ends', () => {
@@ -110,12 +129,13 @@ describe('tab strip', () => {
     expect(added).toBe(1)
   })
 
-  it('drops the panel actions when it lives in the top bar', () => {
-    const el = strip({ compact: true })
+  it('paints no chrome of its own when it lives in the top bar', () => {
+    const el = strip({ compact: true, onSplitRight: () => {}, onSplitDown: () => {} })
     expect(el.querySelector('.tabbar')!.className).toContain('tabbar--inline')
-    // The top bar already owns the menu, so the strip keeps only tabs and +.
-    expect(el.querySelector('.tabbar-actions')).toBeNull()
     expect(el.querySelector('.tab-new')).not.toBeNull()
+    // Same three actions as a pane strip, just without its own bar.
+    expect(el.querySelector('[aria-label="Dividir a la derecha"]')).not.toBeNull()
+    expect(el.querySelector('[aria-label="Cerrar panel"]')).toBeNull()
   })
 
   it('closes the whole pane from the X on the right', () => {

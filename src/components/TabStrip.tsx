@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Ellipsis, Plus, X } from 'lucide-react'
+import { Columns2, Plus, Rows2, X } from 'lucide-react'
 
 export interface TabStripItem {
   id: string
@@ -12,14 +12,19 @@ interface TabStripProps {
   onActivate: (tabId: string) => void
   onClose: (tabId: string) => void
   onNewNote: () => void
-  /** Pointer position for the tab/pane menu (split actions live there). */
-  onMenu: (pos: { x: number; y: number }) => void
-  menuOpen: boolean
+  /**
+   * Splits, as plain buttons: the pane actions are three icons, never a menu.
+   * Absent on a phone, which shows one pane at a time.
+   */
+  onSplitRight?: () => void
+  onSplitDown?: () => void
+  /** Set when the pane budget is spent: both splits disable and explain why. */
+  splitLimitLabel?: string
   /** Absent when this is the only pane: there is nothing to close. */
   onClosePane?: () => void
   /**
-   * Rendered inside the top bar instead of its own strip: no bar chrome and no
-   * actions, because the top bar already owns the menu.
+   * Rendered inside the top bar instead of its own strip: the bar already
+   * paints the chrome, so the strip drops its own background and border.
    */
   compact?: boolean
 }
@@ -27,8 +32,9 @@ interface TabStripProps {
 /**
  * One tab per open file, in the pane's own header.
  *
- * Right-clicking a tab opens the same menu as the chevron, so "split right /
- * split down" is one gesture away from the tab you are reading.
+ * The tail of the strip is the pane's own three actions — split right, split
+ * down, close — because everything else (new note, file actions) already has a
+ * button elsewhere and a second one would only be a duplicate.
  */
 export function TabStrip({
   tabs,
@@ -36,8 +42,9 @@ export function TabStrip({
   onActivate,
   onClose,
   onNewNote,
-  onMenu,
-  menuOpen,
+  onSplitRight,
+  onSplitDown,
+  splitLimitLabel,
   onClosePane,
   compact = false,
 }: TabStripProps) {
@@ -92,10 +99,6 @@ export function TabStrip({
             <div
               key={tab.id}
               className={`tab${active ? ' active' : ''}`}
-              onContextMenu={(event) => {
-                event.preventDefault()
-                onMenu({ x: event.clientX, y: event.clientY })
-              }}
             >
               <button
                 ref={(el) => {
@@ -133,33 +136,40 @@ export function TabStrip({
         </button>
       </div>
 
-      {!compact && (
-        <div className="tabbar-actions">
+      <div className="tabbar-actions">
+        {onSplitRight && (
           <button
             className="icon-btn icon-btn--sm"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect()
-              onMenu({ x: rect.right, y: rect.bottom })
-            }}
-            aria-label="Opciones del panel"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            title="Opciones del panel"
+            onClick={onSplitRight}
+            disabled={Boolean(splitLimitLabel)}
+            aria-label="Dividir a la derecha"
+            title={splitLimitLabel ?? 'Dividir a la derecha'}
           >
-            <Ellipsis size={14} />
+            <Columns2 size={14} />
           </button>
-          {onClosePane && (
-            <button
-              className="icon-btn icon-btn--sm"
-              onClick={onClosePane}
-              aria-label="Cerrar panel"
-              title="Cerrar panel"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
-      )}
+        )}
+        {onSplitDown && (
+          <button
+            className="icon-btn icon-btn--sm"
+            onClick={onSplitDown}
+            disabled={Boolean(splitLimitLabel)}
+            aria-label="Dividir abajo"
+            title={splitLimitLabel ?? 'Dividir abajo'}
+          >
+            <Rows2 size={14} />
+          </button>
+        )}
+        {onClosePane && (
+          <button
+            className="icon-btn icon-btn--sm"
+            onClick={onClosePane}
+            aria-label="Cerrar panel"
+            title="Cerrar panel"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
     </div>
   )
 }

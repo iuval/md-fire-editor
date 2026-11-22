@@ -79,7 +79,6 @@ interface ShellProps {
   selectedTags?: string[]
   loading?: boolean
   children?: React.ReactNode
-  title?: string
   /** Replaces the single document with the tab/split workspace. */
   paneContent?: React.ReactNode
   /** Tabs rendered inside the top bar (single-pane layout). */
@@ -95,7 +94,6 @@ function Shell({
   selectedTags = [],
   loading = false,
   children,
-  title,
   paneContent,
   barTabs,
 }: ShellProps) {
@@ -136,14 +134,10 @@ function Shell({
 
       <main className="pane">
         <PaneBar
-          title={title ?? note?.title ?? ''}
-          status={status}
           presence={presenceUsers}
           sidebarCollapsed={!mobile && collapsed}
           isMobile={mobile}
           onToggleSidebar={() => setCollapsed((v) => !v)}
-          onMenu={() => {}}
-          menuOpen={false}
           tabs={barTabs}
         />
 
@@ -249,8 +243,8 @@ function TabsProbe({ single = false }: { single?: boolean }) {
             hideTabs={single}
             onImport={() => {}}
             emptyWorkspace={false}
-            onMenu={() => {}}
-            menuOpen={false}
+            onSplitRight={mobile ? undefined : () => {}}
+            onSplitDown={mobile ? undefined : () => {}}
             onTagClick={() => {}}
             onRenameTag={() => {}}
             onPresence={() => {}}
@@ -421,8 +415,8 @@ function App() {
               onActivate={() => {}}
               onClose={() => {}}
               onNewNote={() => {}}
-              onMenu={() => {}}
-              menuOpen={false}
+              onSplitRight={() => {}}
+              onSplitDown={() => {}}
             />
           }
         />
@@ -699,13 +693,10 @@ function CollapsedShell() {
       />
       <main className="pane">
         <PaneBar
-          status={connectedStatus}
           presence={[]}
           sidebarCollapsed
           isMobile={false}
           onToggleSidebar={() => {}}
-          onMenu={() => {}}
-          menuOpen={false}
         />
         <div className="scroll">
           <div className="doc">

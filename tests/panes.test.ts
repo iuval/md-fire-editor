@@ -4,6 +4,7 @@ import {
   activeNoteId,
   canSplit,
   activeTab,
+  closeNote,
   closePane,
   closeTab,
   findNote,
@@ -314,5 +315,38 @@ describe('panes: how many, and why', () => {
     const reduced = closePane(tree, 'p2')
     expect(listPanes(reduced)).toHaveLength(MAX_PANES - 1)
     expect(canSplit(reduced)).toBe(true)
+  })
+})
+
+describe('panes: deleting a note', () => {
+  it('closes every tab that shows it, in every pane', () => {
+    // The same note can be open twice: a split copies the active tab.
+    const tree = splitPaneWithActiveTab(singlePane('p1', 'n1', 't1'), 'p1', 'row', {
+      paneId: 'p2',
+      tabId: 't2',
+      splitId: 's1',
+    })
+    expect(openNoteIds(tree)).toEqual(['n1'])
+
+    const closed = closeNote(tree, 'n1')
+    expect(openNoteIds(closed)).toEqual([])
+    expect(listPanes(closed)).toHaveLength(1)
+  })
+
+  it('leaves the other tabs and their active one alone', () => {
+    let tree = singlePane('p1', 'n1', 't1')
+    tree = openTab(tree, 'p1', 'n2', 't2')
+    tree = openTab(tree, 'p1', 'n3', 't3')
+    tree = setActiveTab(tree, 'p1', 't3')
+
+    const closed = closeNote(tree, 'n2')
+    const pane = listPanes(closed)[0]
+    expect(pane.tabs.map((tab) => tab.noteId)).toEqual(['n1', 'n3'])
+    expect(pane.activeTabId).toBe('t3')
+  })
+
+  it('is a no-op when the note is not open', () => {
+    const tree = singlePane('p1', 'n1', 't1')
+    expect(closeNote(tree, 'n9')).toBe(tree)
   })
 })

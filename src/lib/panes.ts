@@ -62,10 +62,11 @@ export function listPanes(tree: PaneTree): PaneLeaf[] {
  * Splitting is cheap to draw and expensive to hold: every pane mounts its own
  * ProseMirror editor for its active tab, and one editor costs ~2,5 MB plus ~50×
  * the note's markdown (measured: 7,35 MB for a 100 KB note, 16,9 MB for 250 KB).
- * Four panes is more than any editing flow needs and keeps the worst case
- * bounded instead of growing with how many times someone hits "dividir".
+ * The number is a budget, not a target: ten panes of small notes are ~30 MB, but
+ * ten panes holding the 250 KB maximum would be ~170 MB, and past six or seven
+ * they are only useful on a wide screen.
  */
-export const MAX_PANES = 4
+export const MAX_PANES = 10
 
 /** True while another pane still fits in the budget. */
 export function canSplit(tree: PaneTree): boolean {
@@ -247,6 +248,19 @@ export function closePane(tree: PaneTree, paneId: string): PaneTree {
     return tree.id === paneId ? { ...tree, tabs: [], activeTabId: null } : tree
   }
   return removePane(tree, paneId) ?? tree
+}
+
+/**
+ * Closes every tab that shows `noteId`, in every pane. A deleted note must not
+ * leave a tab pointing at a document that no longer exists.
+ */
+export function closeNote(tree: PaneTree, noteId: string): PaneTree {
+  let next = tree
+  for (;;) {
+    const where = findNote(next, noteId)
+    if (!where) return next
+    next = closeTab(next, where.paneId, where.tabId)
+  }
 }
 
 export function closeOtherTabs(tree: PaneTree, paneId: string, keepTabId: string): PaneTree {
