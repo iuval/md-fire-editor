@@ -1,0 +1,67 @@
+name: Tests
+
+# The suites that need no secrets: the unit tests, and the two that run against
+# the Firebase emulators (rules and real-time collaboration). Nothing here talks
+# to a real project, so a fork's pull request runs the same thing a maintainer
+# does — and nobody has to remember whether their machine has a JDK.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:unit
+
+  emulators:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # firebase-tools refuses to start the Firestore emulator below Java 21, and
+      # the runner image's default JDK is not guaranteed to be new enough.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - run: npm ci
+
+      - run: npm install -g firebase-tools@15
+
+      - name: Reglas de Firestore
+        run: npm run test:rules
+
+      - name: Colaboración en tiempo real
+        run: npm run test:collab
+
+      # The emulator log is the only evidence when a rules test fails in CI.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-debug-log
+          path: firestore-debug.log
+          retention-days: 7
