@@ -340,11 +340,26 @@ nota, con su `id` y su `etag`, no un borrador suelto) ni la cola CRDT.
 
 **Estado observado en el árbol de trabajo (23-nov-2026).** E7 está hecha: `entitlements` y
 `UpgradeDialog` se eliminaron y compartir ya no pide plan. También está el modo invitado
-(`src/lib/guestMode.ts`, `GuestWorkspace`, `guestDraft.ts` con borrador en `localStorage` y
-migración al entrar). La contabilidad ya es diaria: `usage/{uid}/days/{YYYY-MM-DD}`, cuota
+(`src/lib/guestMode.ts`, `localStore.ts` con el workspace completo en `localStorage` y
+migración al entrar; el visitante corre el mismo `AppTree`, sin editor propio). La contabilidad ya es diaria: `usage/{uid}/days/{YYYY-MM-DD}`, cuota
 diaria, `dailyCharge()` y admin sin tope. Queda de E0: no hay cola CRDT persistida, no hay
-`storage.persist()`. E1-E6 no empezaron: no hay proxy, no hay `allowance`, no hay débito de
-créditos.
+`storage.persist()`.
+
+**Actualización 24-nov-2026.** E1, E3 y E6 están implementados en `server/` y el cliente
+escribe por el proxy cuando `VITE_PROXY_URL` está configurado (ver [`proxy.md`](proxy.md)):
+
+- **E1 (parcial)**: `POST /v1/notes/{id}/blocks` y `/body`, con `opId`, ACL, cobro y escritura
+  en una sola transacción. Presencia y compactación siguen del lado del cliente.
+- **E2**: las rules ya aceptan el corte, apagado por defecto (`config/proxy.enforced`). Solo
+  cubre bloques y `body` update; prenderlo exige mover antes la compactación al proxy.
+- **E3**: `allowance/{uid}/days/{d}` + débito del saldo + libro inmutable + reserva por
+  operación + auto top-up. El cliente lee la cuota del servidor y muestra el cargo con esos
+  números.
+- **E6**: checkout de Lemon Squeezy y webhook firmado que acredita saldo (packs $5/$15/$50,
+  vencimiento 24 meses). Falta cargar las claves del MoR.
+
+Lo que sigue afuera del medidor: presencia, compactación, agentes CLI/MCP (E4) y el sync de
+escritorio (D4).
 
 E0 se puede hacer **hoy** y no depende de ninguna decisión pendiente: arregla pérdida de
 datos real (la cola en memoria) y es la base de D10. E1 arranca con el proxy en Cloud Run

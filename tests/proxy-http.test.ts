@@ -1,0 +1,197 @@
+// Router del proxy sobre un servidor HTTP real y un puerto efímero: auth,
+// idempotencia, rechazos 402, CORS y checkout. Sin emulador ni red externa.
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createProxyHandler } from '../server/src/http.mjs'
+import { createMemoryStore } from '../server/src/memory.mjs'
+
+const now = new Date('2026-11-23T10:00:00.000Z')
+const DAY = '2026-11-23'
+
+const block = {
+  v: 1,
+  jid: 7,
+  hash: '0123456789ab',
+  bytes: 12,
+  data: 'AAECAwQFBgcICQoL',
+  clientId: 42,
+}
+
+function noteDoc(overrides: Record<string, unknown> = {}) {
+  return {
+    ownerId: 'owner',
+    folderId: null,
+    aclSource: 'own',
+    memberIds: ['owner'],
+    roles: { owner: 'owner' },
+    access: 'restricted',
+    title: 'Nota',
+    ...overrides,
+  }
+}
+
+let server: http.Server
+let base = ''
+let store: ReturnType<typeof createMemoryStore>
+let checkout: { createSession: ReturnType<typeof vi.fn>; parseWebhook: ReturnType<typeof vi.fn> }
+
+async function start(seed: Record<string, unknown> = {}, options: Record<string, unknown> = {}) {
+  store = createMemoryStore({ 'notes/n1': noteDoc(), ...seed })
+  checkout = {
+    createSession: vi.fn(async ({ uid, packUsd }: { uid: string; packUsd: number }) => ({
+      url: `https://checkout.test/${packUsd}?uid=${uid}`,
+      id: 'cs_1',
+    })),
+    parseWebhook: vi.fn(async (raw: string) => JSON.parse(raw)),
+  }
+  const handler = createProxyHandler({
+    store,
+    verifyIdToken: async (token: string) => (token === 'good' ? { uid: 'owner', email: 'o@x' } : null),
+    checkout,
+    now: () => now,
+    allowedOrigins: ['https://app.test'],
+    logger: { error: () => undefined },
+    ...options,
+  })
+  server = http.createServer(handler)
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address() as AddressInfo
+  base = `http://127.0.0.1:${address.port}`
+}
+
+afterEach(async () => {
+  if (!server) return
+  const address = server.address()
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  expect(address).not.toBeNull()
+})
+
+const post = (path: string, body: unknown, token = 'good', headers: Record<string, string> = {}) =>
+  fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  })
+
+describe('proxy HTTP', () => {
+  beforeEach(async () => {
+    await start()
+  })
+
+  it('responde el health check', async () => {
+    const response = await fetch(`${base}/healthz`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
+  })
+
+  it('rechaza sin token y con token inválido', async () => {
+    expect((await post('/v1/notes/n1/blocks', { opId: 'op_aaaaaaaaaaaa', block }, '')).status).toBe(401)
+    expect((await post('/v1/notes/n1/blocks', { opId: 'op_aaaaaaaaaaaa', block }, 'bad')).status).toBe(401)
+  })
+
+  it('aplica un bloque y devuelve el recibo', async () => {
+    const response = await post('/v1/notes/n1/blocks', { opId: 'op_aaaaaaaaaaaa', block })
+    const receipt = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(receipt).toMatchObject({
+      ok: true,
+      id: 'op_aaaaaaaaaaaa',
+      idempotent: false,
+      chargeUsd: 0,
+      state: 'free',
+    })
+    expect(receipt.allowance).toMatchObject({ day: DAY, opsUsed: 1, quota: 700 })
+    expect(store.docs.has('notes/n1/updates/op_aaaaaaaaaaaa')).toBe(true)
+  })
+
+  it('responde 402 con el estado cuando no hay saldo ni cuota', async () => {
+    await start({ [`allowance/owner/days/${DAY}`]: { day: DAY, opsUsed: 700 } })
+    const response = await post('/v1/notes/n1/blocks', { opId: 'op_bbbbbbbbbbbb', block })
+    const body = await response.json()
+
+    expect(response.status).toBe(402)
+    expect(body).toMatchObject({ ok: false, error: 'no-funds', state: 'free-exhausted' })
+    expect(body.allowance).toMatchObject({ day: DAY, opsUsed: 700 })
+  })
+
+  it('un payload inválido no escribe ni cobra', async () => {
+    const response = await post('/v1/notes/n1/blocks', {
+      opId: 'op_cccccccccccc',
+      block: { ...block, hash: 'nope' },
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: 'invalid-hash' })
+    expect(store.docs.has('notes/n1/updates/op_cccccccccccc')).toBe(false)
+  })
+
+  it('guarda el body por la misma puerta', async () => {
+    const response = await post('/v1/notes/n1/body', {
+      opId: 'op_bodyaaaaaaaa',
+      body: { markdown: '# hola', title: 'Nueva', version: 3 },
+    })
+    const receipt = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(receipt.allowance.opsUsed).toBe(3)
+    expect(store.docs.get('notes/n1/body/main')).toMatchObject({ markdown: '# hola' })
+    expect(store.docs.get('notes/n1')).toMatchObject({ title: 'Nueva' })
+  })
+
+  it('expone el estado de la cuenta', async () => {
+    const response = await fetch(`${base}/v1/account`, { headers: { Authorization: 'Bearer good' } })
+    const account = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(account).toMatchObject({ day: DAY, opsUsed: 0, quota: 700, state: 'free', admin: false })
+  })
+
+  it('crea la sesión de checkout solo con un pack válido', async () => {
+    const ok = await post('/v1/billing/checkout', { packUsd: 15 })
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toMatchObject({ url: 'https://checkout.test/15?uid=owner', packUsd: 15 })
+    expect(checkout.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'owner', packUsd: 15 })
+    )
+
+    expect((await post('/v1/billing/checkout', { packUsd: 7 })).status).toBe(400)
+  })
+
+  it('acredita el saldo desde el webhook del MoR', async () => {
+    const response = await post(
+      '/v1/billing/webhook',
+      { uid: 'owner', amountUsd: 5, eventId: 'evt_1', provider: 'lemonsqueezy' },
+      ''
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({ ok: true, idempotent: false, balanceUsd: 5 })
+    expect(store.docs.get('credits/owner')).toMatchObject({ balanceUsd: 5 })
+  })
+
+  it('agrega CORS solo para el origen permitido', async () => {
+    const allowed = await fetch(`${base}/healthz`, { headers: { Origin: 'https://app.test' } })
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://app.test')
+
+    const blocked = await fetch(`${base}/healthz`, { headers: { Origin: 'https://evil.test' } })
+    expect(blocked.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it('404 en rutas desconocidas', async () => {
+    const response = await post('/v1/nope', {}, 'good')
+    expect(response.status).toBe(404)
+  })
+})
+
+describe('proxy sin checkout configurado', () => {
+  it('devuelve 503 y no inventa una sesión', async () => {
+    await start({}, { checkout: null })
+    expect((await post('/v1/billing/checkout', { packUsd: 5 })).status).toBe(503)
+  })
+})

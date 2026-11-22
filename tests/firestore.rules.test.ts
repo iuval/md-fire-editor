@@ -1272,3 +1272,92 @@ describe('folder ordering', () => {
     await assertFails(getDoc(doc(db(EDITOR), 'settings', OWNER)))
   })
 })
+
+// E2/E3: la cuota la escribe solo el proxy y, con el interruptor prendido, el
+// cliente deja de poder escribir el canal caliente.
+describe('allowance y corte del proxy', () => {
+  const DAY = '2026-11-23'
+
+  const block = (overrides: Record<string, unknown> = {}) => ({
+    v: 1,
+    jid: 1,
+    hash: '0123456789ab',
+    bytes: 3,
+    data: 'AQID',
+    clientId: 1,
+    createdAt: ts(),
+    ...overrides,
+  })
+
+  const bodyDoc = (overrides: Record<string, unknown> = {}) => ({
+    markdown: '# hola',
+    bytes: 7,
+    version: 1,
+    updatedAt: ts(),
+    ...overrides,
+  })
+
+  async function seedConfig(enforced: boolean) {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'config', 'proxy'), { enforced })
+    })
+  }
+
+  it('el dueño lee la cuota de su día; un extraño no', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'allowance', OWNER, 'days', DAY), {
+        day: DAY,
+        opsUsed: 3,
+        quota: 700,
+      })
+    })
+    await assertSucceeds(getDoc(doc(db(OWNER), 'allowance', OWNER, 'days', DAY)))
+    await assertFails(getDoc(doc(db(STRANGER), 'allowance', OWNER, 'days', DAY)))
+  })
+
+  it('nadie escribe la cuota desde el cliente', async () => {
+    await assertFails(
+      setDoc(doc(db(OWNER), 'allowance', OWNER, 'days', DAY), { day: DAY, opsUsed: 0 })
+    )
+    await assertFails(setDoc(doc(db(OWNER), 'allowance', OWNER), { storageBytes: 0 }))
+  })
+
+  it('sin config/proxy la escritura directa sigue permitida (desarrollo)', async () => {
+    await seedNote('n1', everyRole)
+    await assertSucceeds(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block()))
+    await assertSucceeds(setDoc(doc(db(EDITOR), 'notes', 'n1', 'body', 'main'), bodyDoc()))
+    await assertSucceeds(
+      setDoc(doc(db(EDITOR), 'notes', 'n1', 'body', 'main'), bodyDoc({ markdown: '# 2' }), { merge: true })
+    )
+  })
+
+  it('con config/proxy.enforced el cliente no escribe bloques ni body', async () => {
+    await seedNote('n1', everyRole)
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'notes', 'n1', 'body', 'main'), bodyDoc())
+    })
+    await seedConfig(true)
+
+    await assertFails(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block()))
+    await assertFails(
+      setDoc(doc(db(EDITOR), 'notes', 'n1', 'body', 'main'), bodyDoc({ markdown: '# 3' }), { merge: true })
+    )
+    // Las lecturas nunca se cortan (D9).
+    await assertSucceeds(getDocs(collection(db(VIEWER), 'notes', 'n1', 'updates')))
+    await assertSucceeds(getDoc(doc(db(VIEWER), 'notes', 'n1', 'body', 'main')))
+  })
+
+  it('el interruptor es reversible', async () => {
+    await seedNote('n1', everyRole)
+    await seedConfig(true)
+    await assertFails(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block()))
+    await seedConfig(false)
+    await assertSucceeds(addDoc(collection(db(EDITOR), 'notes', 'n1', 'updates'), block()))
+  })
+
+  it('config/proxy no es legible ni escribible desde el cliente', async () => {
+    await seedConfig(false)
+    await assertFails(getDoc(doc(db(OWNER), 'config', 'proxy')))
+    await assertFails(setDoc(doc(db(OWNER), 'config', 'proxy'), { enforced: false }))
+  })
+})

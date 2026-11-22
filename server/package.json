@@ -1,0 +1,15 @@
+{
+  "name": "firemd-proxy",
+  "private": true,
+  "type": "module",
+  "description": "Proxy de escritura y medidor prepago de FireMD (Cloud Run)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0"
+  }
+}

@@ -51,7 +51,9 @@ El modelo comercial vigente —uso prepago, cuota gratuita diaria que se renueva
 sobre el uso que pasa la cuota, el proxy que mide y debita, y qué pasa cuando se termina la
 cuota— está en
 [`docs/prepaid-usage-model.md`](docs/prepaid-usage-model.md). Ese documento reemplaza el
-modelo de precios de `pricing.md` §4 y §7.
+modelo de precios de `pricing.md` §4 y §7. El proxy que lo implementa (API, datos que escribe,
+despliegue en Cloud Run y cómo prender el corte de escritura directa) está en
+[`docs/proxy.md`](docs/proxy.md).
 
 ## Cómo funciona la colaboración
 

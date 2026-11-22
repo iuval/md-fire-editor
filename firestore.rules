@@ -90,6 +90,15 @@ service cloud.firestore {
           || request.auth.token.email == 'iuvalgoldansky@gmail.com');
     }
 
+    // El proxy prepago (Cloud Run) es el único escritor del canal caliente: es
+    // el punto donde se mide y se debita (docs/prepaid-usage-model.md §3.2).
+    // El interruptor vive en `config/proxy` y lo escribe solo el servidor:
+    // ausente = escritura directa permitida (desarrollo y antes del corte E2).
+    function proxyEnforced() {
+      let cfg = get(/databases/$(database)/documents/config/proxy);
+      return cfg != null && cfg.data.enforced == true;
+    }
+
     // ---------- shared validation ----------
 
     function validAcl(d) {
@@ -314,7 +323,14 @@ service cloud.firestore {
     match /notes/{noteId}/body/{docId} {
       allow read: if canRead(noteAcl(noteId));
 
-      allow create, update: if canWrite(noteAclAfter(noteId))
+      // `create` sigue permitido porque una nota nueva escribe cuerpo y nota en
+      // la misma transacción; con el proxy activo, el `update` pasa por él.
+      allow create: if canWrite(noteAclAfter(noteId))
+        && docId == 'main'
+        && validBody(request.resource.data);
+
+      allow update: if !proxyEnforced()
+        && canWrite(noteAclAfter(noteId))
         && docId == 'main'
         && validBody(request.resource.data);
 
@@ -327,7 +343,8 @@ service cloud.firestore {
     match /notes/{noteId}/updates/{updateId} {
       allow read: if canRead(noteAcl(noteId));
 
-      allow create: if canWrite(noteAcl(noteId))
+      allow create: if !proxyEnforced()
+        && canWrite(noteAcl(noteId))
         && request.resource.data.keys().hasOnly([
             'v', 'jid', 'hash', 'bytes', 'data', 'clientId', 'createdAt'
           ])
@@ -345,7 +362,7 @@ service cloud.firestore {
         && isTimestamp(request.resource.data.createdAt);
 
       // Compaction prunes exactly the blocks it folded into the snapshot.
-      allow delete: if canWrite(noteAcl(noteId));
+      allow delete: if !proxyEnforced() && canWrite(noteAcl(noteId));
 
       allow update: if false;
     }
@@ -504,6 +521,21 @@ service cloud.firestore {
         && isTimestamp(request.resource.data.updatedAt);
     }
 
+    // ---------- allowance ----------
+    // Cuota medida y debitada por el proxy. El cliente la lee para mostrar el
+    // día en curso; escribirla sería volver al contador honor-system.
+    match /allowance/{userId} {
+      allow get: if signedIn() && (uid() == userId || isAdmin());
+      allow list: if false;
+      allow write: if false;
+
+      match /days/{day} {
+        allow get: if signedIn() && (uid() == userId || isAdmin());
+        allow list: if false;
+        allow write: if false;
+      }
+    }
+
     // ---------- usage ----------
     // Client-measured counters: good for transparency, never for billing.
     // Each month is its own bucket, so a rollover cannot mislabel last month's
@@ -546,6 +578,13 @@ service cloud.firestore {
             || (request.resource.data.agentOps is int && request.resource.data.agentOps >= 0))
           && isTimestamp(request.resource.data.updatedAt);
       }
+    }
+
+    // ---------- config ----------
+    // Interruptores del servidor (`config/proxy.enforced`). Nadie los lee ni
+    // los escribe desde el cliente: el proxy usa el Admin SDK, que salta rules.
+    match /config/{docId} {
+      allow read, write: if false;
     }
 
     // ---------- credits ----------

@@ -14,6 +14,7 @@ import {
   type UsageTotals,
 } from '../lib/usage'
 import { FREE_TIER, dailyCharge, freeTierStatus, quotaWarning } from '../lib/quota'
+import type { ServerAllowance } from '../lib/allowance'
 import {
   CREDIT_PACKS,
   validateCreditSettings,
@@ -34,6 +35,8 @@ export interface Diagnostics {
 interface UsageDialogProps {
   usage: UsageTotals | null
   credits: Credits | null
+  /** Cuota contada por el proxy: es la que se cobra, no la del cliente. */
+  serverAllowance?: ServerAllowance | null
   /** Cuenta admin: sin tope y sin fee. */
   isAdmin?: boolean
   notes: number
@@ -53,6 +56,7 @@ interface UsageDialogProps {
 export function UsageDialog({
   usage,
   credits,
+  serverAllowance = null,
   isAdmin = false,
   notes,
   folders,
@@ -76,7 +80,17 @@ export function UsageDialog({
   const cost = costBreakdown(totals)
   // Se cobra solo lo que pasa la cuota diaria; el uso dentro de la cuota es gratis.
   const charge = chargeBreakdown(totals)
-  const todayCharge = dailyCharge(totals, isAdmin)
+  // Cuando el proxy ya contó el día, su cuenta es la que se cobra: el contador
+  // del cliente queda como referencia y para dispositivos sin proxy.
+  const chargedTotals: UsageTotals = serverAllowance
+    ? {
+        ...totals,
+        writes: serverAllowance.writes,
+        deletes: serverAllowance.deletes,
+        agentOps: Math.max(0, serverAllowance.opsUsed - serverAllowance.writes - serverAllowance.deletes),
+      }
+    : totals
+  const todayCharge = dailyCharge(chargedTotals, isAdmin)
   const quota = freeTierStatus(totals, isAdmin)
   const [settings, setSettings] = useState<CreditSettings>({
     thresholdUsd: credits?.thresholdUsd ?? 1,
@@ -171,7 +185,9 @@ export function UsageDialog({
         <Row label="Margen de la app" value={formatUsd(Math.max(0, charge.total - cost.total))} />
       </div>
       <p className="hint">
-        Se cobra el uso que pasa la cuota diaria. El uso dentro de la cuota no se cobra.
+        {serverAllowance
+          ? `El servidor contó ${serverAllowance.opsUsed.toLocaleString('es')} operaciones de ${serverAllowance.quota.toLocaleString('es')} de hoy; el cargo de arriba es el que se debita del saldo.`
+          : 'Se cobra el uso que pasa la cuota diaria. El uso dentro de la cuota no se cobra.'}
       </p>
 
       <div className="usage-sep" />
@@ -180,6 +196,12 @@ export function UsageDialog({
       <div className="usage-grid">
         <Row label="Notas" value={String(notes)} />
         <Row label="Carpetas" value={String(folders)} />
+        {serverAllowance && (
+          <Row
+            label="Medido por el servidor"
+            value={`${serverAllowance.opsUsed.toLocaleString('es')} / ${serverAllowance.quota.toLocaleString('es')}`}
+          />
+        )}
         <Row label="Escrituras de sync" value={totals.writes.toLocaleString('es')} />
         <Row label="Lecturas de sync" value={totals.reads.toLocaleString('es')} />
         <Row label="Borrados (compactación)" value={totals.deletes.toLocaleString('es')} />
