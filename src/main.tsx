@@ -4,6 +4,7 @@ import { startTheme } from './lib/theme.ts'
 import { readDesktopLinkParams } from './lib/desktopLink.ts'
 import { migrateLegacyKeys } from './lib/storage.ts'
 import { canonicalRedirect } from './lib/legacyHost.ts'
+import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import App from './App.tsx'
 
 // `firemd.app` is the only canonical origin. The alias hosts (`www`, the legacy
@@ -23,14 +24,21 @@ function boot() {
   // it here means no flash of the default palette on reload.
   startTheme()
 
+  // A rejected promise or a script error outside the render tree: React cannot
+  // see those, and the reporter drags in the Firebase SDK, so it is lazy.
+  void import('./lib/errors.ts').then(({ installGlobalErrorHandlers }) =>
+    installGlobalErrorHandlers()
+  )
+
   const root = createRoot(document.getElementById('root')!)
+  const tree = (node: React.ReactNode) => root.render(<ErrorBoundary>{node}</ErrorBoundary>)
 
   // `?desktop=<puerto>&state=<nonce>` is the desktop app asking for a session
   // handoff. It renders its own page instead of the editor, and loads lazily so
   // the boot chunk stays Firebase-free.
   if (readDesktopLinkParams(window.location.search)) {
-    void import('./DesktopLink.tsx').then(({ default: DesktopLink }) => root.render(<DesktopLink />))
+    void import('./DesktopLink.tsx').then(({ default: DesktopLink }) => tree(<DesktopLink />))
   } else {
-    root.render(<App />)
+    tree(<App />)
   }
 }

@@ -1049,6 +1049,23 @@ describe('analytics events', () => {
     await assertFails(addDoc(collection(db(EDITOR), 'analytics', OWNER, 'events'), event()))
   })
 
+  it('accepts the crash report the error boundary writes', async () => {
+    await assertSucceeds(
+      addDoc(
+        collection(db(OWNER), 'analytics', OWNER, 'events'),
+        event({ name: 'app_error', props: { kind: 'render', name: 'TypeError', message: 'x' } })
+      )
+    )
+    // The message is capped at 100 chars client-side; the rules only bound the
+    // prop map, so a longer message still fits and must not be rejected.
+    await assertSucceeds(
+      addDoc(
+        collection(db(OWNER), 'analytics', OWNER, 'events'),
+        event({ name: 'app_error', props: { kind: 'global', message: 'y'.repeat(100) } })
+      )
+    )
+  })
+
   it('rejects oversized props maps and events are immutable', async () => {
     await assertFails(
       addDoc(

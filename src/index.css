@@ -1357,6 +1357,23 @@ body.tab-dragging .pane-drop {
   color: light-dark(var(--color-text), var(--color-text-dark));
 }
 
+/* ---------- crash ---------- */
+
+/* The render-tree boundary's fallback. Full viewport because it replaces the
+   whole app, and it keeps `.empty`'s metrics so it reads as part of the app
+   rather than as a browser error page. */
+.crash {
+  display: flex;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  background: light-dark(var(--color-bg), var(--color-bg-dark));
+}
+
+.crash .empty {
+  max-width: 34ch;
+}
+
 /* ---------- sign-in ---------- */
 
 .auth {

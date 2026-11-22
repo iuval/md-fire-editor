@@ -84,12 +84,25 @@ describe('boot graph', () => {
   })
 
   it('stays small enough to paint immediately', () => {
-    // main.tsx + App.tsx + theme + storage + desktopLink + legacyHost, all leaf
-    // modules (no imports of their own), plus index.css. `legacyHost` is the
-    // canonical-host guard: 12 lines, zero dependencies, and it has to run
-    // before the first paint. The bound is headroom for a splash component or a
-    // hook, not room for another dependency tree.
-    expect(staticGraph(entry).size).toBeLessThanOrEqual(7)
+    // main.tsx + index.css + App.tsx + theme + storage + desktopLink +
+    // legacyHost + ErrorBoundary. The bound is headroom for a splash component
+    // or a hook, not room for another dependency tree — which is what the next
+    // assertion actually pins down.
+    expect(staticGraph(entry).size).toBeLessThanOrEqual(9)
+  })
+
+  it('is a star: every boot module is a leaf, so no tree can grow behind it', () => {
+    // The count above is a proxy; this is the invariant it is proxying for. A
+    // boot module may only import packages, never other local modules. App.tsx
+    // qualifies because everything below it is reached through `lazy()`.
+    const nested = [...staticGraph(entry)]
+      .filter(([file]) => file !== entry)
+      .map(([file, specifiers]) => ({
+        file: file.slice(ROOT.length + 1),
+        relative: specifiers.filter((s) => s.startsWith('.')),
+      }))
+      .filter(({ relative }) => relative.length > 0)
+    expect(nested).toEqual([])
   })
 
   it('never reaches Firebase through a static import', () => {
