@@ -272,6 +272,14 @@ describe('footer', () => {
     expect(menu.getAttribute('title')).toContain('Iuval')
   })
 
+  it('marks that button with the gear, the same as the collapsed rail', () => {
+    const el = render({ userName: 'Iuval' })
+    const menu = el.querySelector('.sidebar-foot .icon-btn')!
+    // The preferences entry, not a row's "more" menu: the rail shows this gear
+    // too, so the control reads the same in both states.
+    expect(menu.querySelector('svg')?.getAttribute('class')).toContain('settings')
+  })
+
   it('opens the account menu from that button', () => {
     let opened = 0
     const el = render({ onAccountClick: () => (opened += 1) })

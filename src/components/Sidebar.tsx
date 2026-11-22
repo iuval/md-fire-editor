@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   PanelLeftClose,
   Plus,
+  Settings,
   User,
   X,
 } from 'lucide-react'
@@ -509,7 +510,9 @@ export function Sidebar({
           aria-label={userName ? `Cuenta y ajustes de ${userName}` : 'Cuenta y ajustes'}
           title={userName ? `${userName} · Cuenta y ajustes` : 'Cuenta y ajustes'}
         >
-          <MoreHorizontal size={15} />
+          {/* The same gear the collapsed rail uses: this is the preferences
+              entry, not a row's "more" menu. */}
+          <Settings size={15} />
         </button>
       </div>
 

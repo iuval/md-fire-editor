@@ -59,10 +59,11 @@ describe('collapsed rail', () => {
     expect(calls).toEqual(['expand', 'note', 'folder', 'canvas', 'account'])
   })
 
-  it('gives the account menu its own icon, not the footer\'s ⋯', () => {
+  it('marks the account menu with the same gear as the footer', () => {
     const el = renderRail(true)
     const account = byLabel(el, 'Cuenta y ajustes')!
-    // A gear (lucide "settings"), not the row/footer "more" glyph.
+    // A gear (lucide "settings"), not a row's "more" glyph: this is the
+    // preferences entry, and the expanded panel's footer shows the same one.
     expect(account.querySelector('svg')?.getAttribute('class')).toContain('settings')
   })
 
