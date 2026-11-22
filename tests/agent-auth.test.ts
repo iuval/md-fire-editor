@@ -6,26 +6,26 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { siteUrl } from '../agent/auth.mjs'
 
-const original = process.env.MDFIRE_SITE
+const original = process.env.FIREMD_SITE
 
 afterEach(() => {
-  if (original === undefined) delete process.env.MDFIRE_SITE
-  else process.env.MDFIRE_SITE = original
+  if (original === undefined) delete process.env.FIREMD_SITE
+  else process.env.FIREMD_SITE = original
 })
 
 describe('siteUrl', () => {
   it('usa el sitio de producción por defecto', () => {
-    delete process.env.MDFIRE_SITE
+    delete process.env.FIREMD_SITE
     expect(siteUrl()).toBe('https://firemd.app')
   })
 
-  it('respeta MDFIRE_SITE', () => {
-    process.env.MDFIRE_SITE = 'http://localhost:5173'
+  it('respeta FIREMD_SITE', () => {
+    process.env.FIREMD_SITE = 'http://localhost:5173'
     expect(siteUrl()).toBe('http://localhost:5173')
   })
 
   it('saca la barra final para no armar //', () => {
-    process.env.MDFIRE_SITE = 'http://localhost:5173/'
+    process.env.FIREMD_SITE = 'http://localhost:5173/'
     expect(siteUrl()).toBe('http://localhost:5173')
   })
 })

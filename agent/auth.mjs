@@ -1,13 +1,13 @@
 // Identidad: la cuenta del usuario, o un agente anónimo aparte.
 //
-// `mdfire login` abre el navegador y entra con la cuenta del sitio: desde ahí la
+// `firemd login` abre el navegador y entra con la cuenta del sitio: desde ahí la
 // CLI es la persona, con los mismos permisos y sin pegar ningún código. Esa
 // sesión se registra en `agents/{id}` para poder nombrarla.
 //
-// `mdfire login --agent` crea en cambio una cuenta anónima aparte, que sólo ve la
+// `firemd login --agent` crea en cambio una cuenta anónima aparte, que sólo ve la
 // carpeta que el dueño le comparta (el modelo anterior). Es opcional.
 //
-// Las credenciales quedan en `~/.config/mdfire/credentials.json` (0600) y las
+// Las credenciales quedan en `~/.config/firemd/credentials.json` (0600) y las
 // comparte con la app de escritorio, así que un login sirve para las dos.
 
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -17,8 +17,16 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
-const CONFIG_DIR = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'mdfire')
+const CONFIG_DIR = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'firemd')
 const CREDENTIALS = join(CONFIG_DIR, 'credentials.json')
+// The app used to be called mdfire, so a session logged in before the rename
+// lives one directory over. Reading it keeps that login working; the next save
+// lands in the new path and the old file is simply left behind.
+const LEGACY_CREDENTIALS = join(
+  process.env.XDG_CONFIG_HOME || join(homedir(), '.config'),
+  'mdfire',
+  'credentials.json'
+)
 
 // The web API key is public (it ships in the bundle) and restricted by referrer,
 // so requests carry the app origin. That is the only reason this header exists.
@@ -39,8 +47,8 @@ function handshakeOrigins() {
 
 
 export function apiKey() {
-  const key = process.env.MDFIRE_API_KEY
-  if (!key) throw new Error('falta MDFIRE_API_KEY (o usá el .env del repo)')
+  const key = process.env.FIREMD_API_KEY
+  if (!key) throw new Error('falta FIREMD_API_KEY (o usá el .env del repo)')
   return key
 }
 
@@ -56,7 +64,7 @@ function tokenBase() {
 
 function commonHeaders() {
   const headers = { 'Content-Type': 'application/json' }
-  if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) headers.Referer = process.env.MDFIRE_REFERER || DEFAULT_REFERER
+  if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) headers.Referer = process.env.FIREMD_REFERER || DEFAULT_REFERER
   return headers
 }
 
@@ -70,9 +78,9 @@ async function postJson(url, body) {
   return data
 }
 
-/** Dónde vive el sitio. `MDFIRE_SITE` sirve para probar contra localhost. */
+/** Dónde vive el sitio. `FIREMD_SITE` sirve para probar contra localhost. */
 export function siteUrl() {
-  return (process.env.MDFIRE_SITE || DEFAULT_SITE).replace(/\/$/, '')
+  return (process.env.FIREMD_SITE || DEFAULT_SITE).replace(/\/$/, '')
 }
 
 /** Abre el navegador del sistema. Devuelve false si no encontró cómo. */
@@ -118,7 +126,7 @@ function waitForHandshake(server, nonce, timeout) {
 
     server.on('request', (request, response) => {
       const origin = request.headers.origin
-      // El sitio de producción, sus alias de Firebase, y el que diga MDFIRE_SITE
+      // El sitio de producción, sus alias de Firebase, y el que diga FIREMD_SITE
       // (para probar contra localhost sin tocar el código).
       const allowed = origin && handshakeOrigins().has(origin.replace(/\/$/, ''))
       const cors = allowed ? { 'Access-Control-Allow-Origin': origin } : {}
@@ -218,8 +226,8 @@ export async function loginWithBrowser({ site = siteUrl(), timeout = LOGIN_TIMEO
     refreshToken: session.refresh_token || handshake.refreshToken,
     idToken: session.id_token,
     expiresAt: Date.now() + (Number(session.expires_in) || 3600) * 1000,
-    projectId: process.env.MDFIRE_PROJECT || 'md-sync-app',
-    referer: process.env.MDFIRE_REFERER || DEFAULT_REFERER,
+    projectId: process.env.FIREMD_PROJECT || 'md-sync-app',
+    referer: process.env.FIREMD_REFERER || DEFAULT_REFERER,
     email: handshake.email || null,
     agentId: randomBytes(12).toString('hex'),
     agentName: null,
@@ -229,11 +237,14 @@ export async function loginWithBrowser({ site = siteUrl(), timeout = LOGIN_TIMEO
 }
 
 export async function readCredentials() {
-  try {
-    return JSON.parse(await readFile(CREDENTIALS, 'utf8'))
-  } catch {
-    return null
+  for (const path of [CREDENTIALS, LEGACY_CREDENTIALS]) {
+    try {
+      return JSON.parse(await readFile(path, 'utf8'))
+    } catch {
+      // Missing or unreadable: try the next location.
+    }
   }
+  return null
 }
 
 async function writeCredentials(data) {
@@ -253,8 +264,8 @@ export async function login() {
     refreshToken: data.refreshToken,
     idToken: data.idToken,
     expiresAt: Date.now() + (Number(data.expiresIn) || 3600) * 1000,
-    projectId: process.env.MDFIRE_PROJECT || 'md-sync-app',
-    referer: process.env.MDFIRE_REFERER || DEFAULT_REFERER,
+    projectId: process.env.FIREMD_PROJECT || 'md-sync-app',
+    referer: process.env.FIREMD_REFERER || DEFAULT_REFERER,
   }
   await writeCredentials(credentials)
   return credentials
@@ -276,14 +287,14 @@ export async function logout() {
 
 /**
  * Returns a valid ID token, refreshing it when it is close to expiring.
- * `MDFIRE_ID_TOKEN` short-circuits everything (used by tests and CI).
+ * `FIREMD_ID_TOKEN` short-circuits everything (used by tests and CI).
  */
 export async function idToken({ force = false } = {}) {
-  if (process.env.MDFIRE_ID_TOKEN) return process.env.MDFIRE_ID_TOKEN
+  if (process.env.FIREMD_ID_TOKEN) return process.env.FIREMD_ID_TOKEN
 
   const creds = await readCredentials()
   if (!creds?.refreshToken) {
-    throw new Error('no estás logueado: corré `mdfire login`')
+    throw new Error('no estás logueado: corré `firemd login`')
   }
 
   if (!force && creds.idToken && creds.expiresAt - 60_000 > Date.now()) return creds.idToken
@@ -305,7 +316,7 @@ export async function idToken({ force = false } = {}) {
 
 export async function whoami() {
   const creds = await readCredentials()
-  if (process.env.MDFIRE_ID_TOKEN) return { uid: '(token externo)', config: null }
+  if (process.env.FIREMD_ID_TOKEN) return { uid: '(token externo)', config: null }
   if (!creds?.uid) return null
   return {
     uid: creds.uid,
@@ -316,7 +327,7 @@ export async function whoami() {
   }
 }
 
-/** Guarda id y nombre de esta sesión en las credenciales (`mdfire name`). */
+/** Guarda id y nombre de esta sesión en las credenciales (`firemd name`). */
 export async function saveAgentSession({ id, name } = {}) {
   const creds = await readCredentials()
   if (!creds) throw new Error('auth: no estás logueado')
@@ -340,7 +351,7 @@ export function uidFromToken(token) {
 }
 
 export async function currentUid() {
-  // The ID token is authoritative: an external MDFIRE_ID_TOKEN must not be
+  // The ID token is authoritative: an external FIREMD_ID_TOKEN must not be
   // shadowed by whatever credentials happen to be on disk.
   const fromToken = uidFromToken(await idToken())
   if (fromToken) return fromToken

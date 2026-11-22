@@ -25,16 +25,16 @@ npm ci
 El ejecutable es `agent/cli.mjs`. Para no escribir la ruta completa, dejá un alias:
 
 ```bash
-alias mdfire="node $(pwd)/agent/cli.mjs"
+alias firemd="node $(pwd)/agent/cli.mjs"
 ```
 
-Todos los ejemplos de esta página usan `mdfire`. Si trabajás dentro del repo, el
-equivalente es `npm run mdfire -- <comando>`.
+Todos los ejemplos de esta página usan `firemd`. Si trabajás dentro del repo, el
+equivalente es `npm run firemd -- <comando>`.
 
 Verificá que responde:
 
 ```bash
-mdfire --help
+firemd --help
 ```
 
 ---
@@ -42,7 +42,7 @@ mdfire --help
 ## 2. Entrar (el primer paso siempre)
 
 ```bash
-mdfire login
+firemd login
 ```
 
 Abre el navegador del sistema en el sitio del usuario. Ahí se autoriza con su cuenta de
@@ -56,19 +56,19 @@ agente 3f9a1c2b
 
 Esa sesión queda registrada como un **agente conectado** de la cuenta. El usuario la ve en
 la app (menú de cuenta → Agentes conectados) y puede renombrarla ahí o con
-`mdfire name "otro nombre"`.
+`firemd name "otro nombre"`.
 
-Las credenciales se guardan en `~/.config/mdfire/credentials.json` con permisos 0600. El
+Las credenciales se guardan en `~/.config/firemd/credentials.json` con permisos 0600. El
 token de acceso se renueva solo; no hace falta volver a entrar salvo que el usuario
 desconecte la sesión.
 
 ### Si el navegador no está disponible
 
-`mdfire login` necesita un navegador. En una máquina sin entorno gráfico, el usuario puede
+`firemd login` necesita un navegador. En una máquina sin entorno gráfico, el usuario puede
 generar el token desde la app web y pasarlo por variable de entorno:
 
 ```bash
-export MDFIRE_ID_TOKEN="<token>"
+export FIREMD_ID_TOKEN="<token>"
 ```
 
 Un token externo no se renueva: vence en una hora. Es la vía de último recurso, para tests
@@ -79,7 +79,7 @@ y CI.
 Si el usuario no quiere dar acceso a su cuenta completa, puede crear una identidad aparte:
 
 ```bash
-mdfire login --agent
+firemd login --agent
 ```
 
 Imprime un uid y un código de vinculación. El usuario lo pega en la app, en
@@ -92,7 +92,7 @@ funcionando, pero el login normal es más simple.
 ## 3. Comprobar quién sos
 
 ```bash
-mdfire whoami
+firemd whoami
 ```
 
 ```
@@ -103,7 +103,7 @@ agente MacBook de Ana 3f9a1c2b
 Si además querés ver todos los agentes conectados a la cuenta:
 
 ```bash
-mdfire agents
+firemd agents
 ```
 
 ```
@@ -114,7 +114,7 @@ mdfire agents
 El asterisco marca la sesión actual. Cuatro columnas separadas por tab: id corto, nombre,
 tipo y último uso.
 
-`mdfire name "Nombre nuevo"` renombra la sesión actual. El cambio se ve en la app.
+`firemd name "Nombre nuevo"` renombra la sesión actual. El cambio se ve en la app.
 
 ---
 
@@ -122,23 +122,23 @@ tipo y último uso.
 
 | Comando | Qué hace |
 |---|---|
-| `mdfire login` | Entra con la cuenta del sitio (abre el navegador) |
-| `mdfire login --agent` | Crea una identidad anónima aparte |
-| `mdfire whoami` | Email y agente de la sesión actual |
-| `mdfire agents` | Agentes conectados a la cuenta |
-| `mdfire name "Nombre"` | Renombra esta sesión |
-| `mdfire logout` | Revoca el token y borra las credenciales |
-| `mdfire ls [--folder <f\|root>] [--limit n]` | Lista notas: `id`, título, fecha, carpeta |
-| `mdfire folders` | Lista carpetas: `id`, nombre |
-| `mdfire tags` | Etiquetas con su cantidad de notas |
-| `mdfire cat <id> [--max-bytes n] [--etag]` | Markdown crudo de una nota |
-| `mdfire find <texto> [--tag t] [--limit n]` | Busca y devuelve `id:línea: texto` |
-| `mdfire patch <id> [--etag e] [--find a --replace b]... [--all]` | Reemplaza texto |
-| `mdfire append <id> [--text t]` | Agrega al final (o por stdin) |
-| `mdfire new --folder f --title t [--body t]` | Crea una nota |
-| `mdfire rm <id>` | Elimina una nota |
-| `mdfire vault pull [--dir ruta] [--prune]` | Nube → archivos `.md` |
-| `mdfire vault push [--dir ruta]` | Archivos `.md` → nube |
+| `firemd login` | Entra con la cuenta del sitio (abre el navegador) |
+| `firemd login --agent` | Crea una identidad anónima aparte |
+| `firemd whoami` | Email y agente de la sesión actual |
+| `firemd agents` | Agentes conectados a la cuenta |
+| `firemd name "Nombre"` | Renombra esta sesión |
+| `firemd logout` | Revoca el token y borra las credenciales |
+| `firemd ls [--folder <f\|root>] [--limit n]` | Lista notas: `id`, título, fecha, carpeta |
+| `firemd folders` | Lista carpetas: `id`, nombre |
+| `firemd tags` | Etiquetas con su cantidad de notas |
+| `firemd cat <id> [--max-bytes n] [--etag]` | Markdown crudo de una nota |
+| `firemd find <texto> [--tag t] [--limit n]` | Busca y devuelve `id:línea: texto` |
+| `firemd patch <id> [--etag e] [--find a --replace b]... [--all]` | Reemplaza texto |
+| `firemd append <id> [--text t]` | Agrega al final (o por stdin) |
+| `firemd new --folder f --title t [--body t]` | Crea una nota |
+| `firemd rm <id>` | Elimina una nota |
+| `firemd vault pull [--dir ruta] [--prune]` | Nube → archivos `.md` |
+| `firemd vault push [--dir ruta]` | Archivos `.md` → nube |
 
 Los ids son de 8 caracteres: alcanza con el prefijo único. Si el prefijo es ambiguo, el
 comando falla con `E_AMBIGUOUS` y no toca nada.
@@ -146,13 +146,13 @@ comando falla con `E_AMBIGUOUS` y no toca nada.
 ### Ejemplos
 
 ```bash
-mdfire ls --limit 10
-mdfire find harina --limit 5
-mdfire cat 3f9a1c2b
-mdfire patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find '- dos' --replace '- dos
+firemd ls --limit 10
+firemd find harina --limit 5
+firemd cat 3f9a1c2b
+firemd patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find '- dos' --replace '- dos
 - tres'
-mdfire append 3f9a1c2b --text '- sal'
-mdfire new --folder recetas --title "Pan de masa madre" --body "## Ingredientes"
+firemd append 3f9a1c2b --text '- sal'
+firemd new --folder recetas --title "Pan de masa madre" --body "## Ingredientes"
 ```
 
 ---
@@ -162,13 +162,13 @@ mdfire new --folder recetas --title "Pan de masa madre" --body "## Ingredientes"
 `cat` devuelve el markdown y, con `--etag`, también el etag:
 
 ```bash
-mdfire cat 3f9a1c2b --etag
+firemd cat 3f9a1c2b --etag
 ```
 
 Pasalo en el `patch`:
 
 ```bash
-mdfire patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find 'viejo' --replace 'nuevo'
+firemd patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find 'viejo' --replace 'nuevo'
 ```
 
 El parche se rechaza si:
@@ -186,8 +186,8 @@ reintentes con el mismo.
 ## 6. Vault: las notas como archivos
 
 ```bash
-mdfire vault pull --dir ~/notas
-mdfire vault push --dir ~/notas
+firemd vault pull --dir ~/notas
+firemd vault push --dir ~/notas
 ```
 
 `pull` baja todas las notas visibles como archivos `.md` (respeta subcarpetas). `push` sube
@@ -221,7 +221,7 @@ Si el agente habla MCP, el repo trae un servidor con siete tools de texto:
 // .mcp.json
 {
   "mcpServers": {
-    "mdfire": {
+    "firemd": {
       "command": "node",
       "args": ["/ruta/al/repo/agent/mcp.mjs"]
     }
@@ -229,7 +229,7 @@ Si el agente habla MCP, el repo trae un servidor con siete tools de texto:
 }
 ```
 
-Comparte las credenciales con la CLI: si `mdfire login` ya se corrió, el servidor arranca
+Comparte las credenciales con la CLI: si `firemd login` ya se corrió, el servidor arranca
 autenticado.
 
 ---
@@ -249,7 +249,7 @@ autenticado.
 
 ## 10. Reglas de oro
 
-1. **Entrá primero.** Sin `mdfire login` todo lo demás falla con código 3.
+1. **Entrá primero.** Sin `firemd login` todo lo demás falla con código 3.
 2. **Leé antes de escribir.** `cat --etag` y después `patch --etag`.
 3. **No inventes ids.** Salen de `ls`, `find` o `new`.
 4. **Un `patch` por cambio semántico.** Varios `--find/--replace` en un comando es más

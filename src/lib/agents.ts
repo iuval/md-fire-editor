@@ -4,7 +4,7 @@ import { db } from '../firebase'
 /**
  * Un agente conectado: una sesión de la CLI (o de la app de escritorio) que
  * entró con esta cuenta. El id lo elige la sesión al loguearse y no cambia; el
- * nombre sí, desde acá o desde `mdfire name`.
+ * nombre sí, desde acá o desde `firemd name`.
  */
 export interface Agent {
   id: string

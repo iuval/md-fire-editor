@@ -53,7 +53,7 @@ import { resolveCanvasFile, type CanvasFileRef } from '../lib/canvas/files'
 import { CANVAS_PRESETS, canvasColor } from '../lib/canvas/colors'
 import type { YCanvas } from '../lib/canvas/yCanvas'
 
-const SNAP_KEY = 'mdfire.canvas.snap'
+const SNAP_KEY = 'firemd.canvas.snap'
 const MemoCard = memo(CanvasCard)
 
 type MenuState =

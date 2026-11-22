@@ -66,8 +66,8 @@ export interface SidebarProps {
   onDismissNotice?: () => void
 }
 
-const TAGS_KEY = 'mdfire-tags-open'
-const WIDTH_KEY = 'mdfire-sidebar-width'
+const TAGS_KEY = 'firemd-tags-open'
+const WIDTH_KEY = 'firemd-sidebar-width'
 
 function initialWidth(): number {
   try {

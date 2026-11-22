@@ -5,7 +5,7 @@ Obsidian (o cualquier editor) y seguir viendo los cambios en la web.
 
 Rust + [Tauri 2](https://tauri.app): la app pesa ~7 MB y usa el WebView del sistema. El motor
 de sync es el mismo que el del CLI (`agent/`): mismos permisos de Firestore, mismo
-`.mdfire/manifest.json` y mismos archivos de conflicto, así que se puede usar la misma carpeta
+`.firemd/manifest.json` y mismos archivos de conflicto, así que se puede usar la misma carpeta
 con los dos.
 
 ## Qué hace
@@ -31,8 +31,8 @@ con los dos.
 Google no permite su OAuth dentro de un webview embebido, así que el login se hace en el
 navegador del sistema. La app abre un puerto en `127.0.0.1` con un código de un solo uso
 (`state`), espera el handshake y lo cierra. Nada de contraseñas: se guarda el *refresh token*
-que el sitio le entrega, en `~/.config/mdfire/credentials.json` (mismo archivo que usa
-`mdfire login` del CLI, así que también sirve al revés). "Desconectar" lo revoca.
+que el sitio le entrega, en `~/.config/firemd/credentials.json` (mismo archivo que usa
+`firemd login` del CLI, así que también sirve al revés). "Desconectar" lo revoca.
 
 ### Conectar como agente (carpeta compartida)
 
@@ -76,7 +76,7 @@ Un ciclo = `pull` + `push`:
 - **push** recorre la carpeta: los archivos nuevos dentro de una carpeta se crean en la nube
   (el agente no puede crear notas sueltas en la raíz); los modificados se suben con el etag que
   tenían al bajarse, así una edición remota más nueva nunca se pisa.
-- El manifiesto `.mdfire/manifest.json` guarda `{ id, etag, path, mtime, sha }` por archivo.
+- El manifiesto `.firemd/manifest.json` guarda `{ id, etag, path, mtime, sha }` por archivo.
   El CLI ignora `sha`; la app lo usa para detectar cambios aunque el mtime no cambie.
 
 Límites conocidos:

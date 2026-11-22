@@ -5,7 +5,7 @@
 //! puede leer y escribir. Sin Admin SDK, sin claves de servicio, sin bypass.
 //!
 //! El archivo de credenciales es el mismo que usa el CLI (`agent/auth.mjs`), de
-//! modo que un `mdfire login` previo ya sirve para la app de escritorio.
+//! modo que un `firemd login` previo ya sirve para la app de escritorio.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use crate::error::{AppError, Result};
 pub const DEFAULT_PROJECT: &str = "md-sync-app";
 pub const DEFAULT_REFERER: &str = "https://md-sync-app.web.app/";
 /// La clave web de Firebase es pública (viaja en el bundle) y está restringida
-/// por referrer. Se puede cambiar con `MDFIRE_API_KEY` o en los ajustes.
+/// por referrer. Se puede cambiar con `FIREMD_API_KEY` o en los ajustes.
 pub const DEFAULT_API_KEY: &str = "AIzaSyAl9EyRLFIni3XliwC_WCc_yRvhIrWX0YQ";
 
 fn default_project() -> String {
@@ -93,11 +93,21 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Mismo directorio que el CLI: `$XDG_CONFIG_HOME/mdfire` o `~/.config/mdfire`.
+/// Mismo directorio que el CLI: `$XDG_CONFIG_HOME/firemd` o `~/.config/firemd`.
 pub fn config_dir() -> PathBuf {
+    config_dir_named("firemd")
+}
+
+/// Donde vivían las credenciales antes de renombrar la app a FireMD. Se lee de
+/// ahí si todavía no hay nada en la ruta nueva, para no perder el login.
+pub fn legacy_config_dir() -> PathBuf {
+    config_dir_named("mdfire")
+}
+
+fn config_dir_named(name: &str) -> PathBuf {
     match std::env::var_os("XDG_CONFIG_HOME") {
-        Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("mdfire"),
-        _ => home_dir().join(".config").join("mdfire"),
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir).join(name),
+        _ => home_dir().join(".config").join(name),
     }
 }
 
@@ -111,6 +121,7 @@ pub fn settings_path() -> PathBuf {
 
 pub fn load_credentials() -> Option<Credentials> {
     load_credentials_at(&credentials_path())
+        .or_else(|| load_credentials_at(&legacy_config_dir().join("credentials.json")))
 }
 
 pub fn load_credentials_at(path: &Path) -> Option<Credentials> {
@@ -161,7 +172,7 @@ pub fn logout() -> Result<()> {
 }
 
 pub fn api_key() -> String {
-    if let Ok(key) = std::env::var("MDFIRE_API_KEY") {
+    if let Ok(key) = std::env::var("FIREMD_API_KEY") {
         if !key.is_empty() {
             return key;
         }
@@ -359,7 +370,7 @@ pub fn save_account_session(
 
 /// Devuelve un ID token válido, refrescándolo si está por vencer.
 pub fn id_token(force: bool) -> Result<(String, Credentials)> {
-    if let Ok(token) = std::env::var("MDFIRE_ID_TOKEN") {
+    if let Ok(token) = std::env::var("FIREMD_ID_TOKEN") {
         if !token.is_empty() {
             let mut creds = load_credentials().unwrap_or_default();
             if creds.uid.is_empty() {
@@ -400,7 +411,7 @@ mod tests {
 
     #[test]
     fn credenciales_sobreviven_el_round_trip_con_campos_extra() {
-        let dir = std::env::temp_dir().join(format!("mdfire-auth-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("firemd-auth-test-{}", std::process::id()));
         let path = dir.join("credentials.json");
         let mut creds = Credentials {
             uid: "abc123".into(),
@@ -441,7 +452,7 @@ mod tests {
 
     #[test]
     fn el_correo_marca_una_cuenta_real_y_sobrevive_el_round_trip() {
-        let dir = std::env::temp_dir().join(format!("mdfire-auth-email-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("firemd-auth-email-{}", std::process::id()));
         let path = dir.join("credentials.json");
         let creds = Credentials {
             uid: "uidDeCuenta".into(),
@@ -470,7 +481,7 @@ mod tests {
 
     #[test]
     fn sin_correo_el_archivo_no_escribe_la_clave() {
-        let dir = std::env::temp_dir().join(format!("mdfire-auth-nokey-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("firemd-auth-nokey-{}", std::process::id()));
         let path = dir.join("credentials.json");
         save_credentials_at(&path, &Credentials::default()).unwrap();
         let raw = fs::read_to_string(&path).unwrap();

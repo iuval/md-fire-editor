@@ -58,7 +58,7 @@ export interface ThemePreset {
   seeds: Seeds
 }
 
-export const THEME_STORAGE_KEY = 'mdfire-theme-v1'
+export const THEME_STORAGE_KEY = 'firemd-theme-v1'
 
 /* ------------------------------------------------------------------ colors */
 

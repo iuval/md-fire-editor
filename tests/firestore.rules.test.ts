@@ -22,7 +22,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 
-const PROJECT_ID = 'demo-mdfire'
+const PROJECT_ID = 'demo-firemd'
 const OWNER = 'owner-uid'
 const EDITOR = 'editor-uid'
 const VIEWER = 'viewer-uid'

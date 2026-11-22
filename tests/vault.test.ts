@@ -171,7 +171,7 @@ describe('building a vault', () => {
       folders
     )
 
-    expect(vault.fileName).toMatch(/^mdfire-vault-\d{4}-\d{2}-\d{2}\.zip$/)
+    expect(vault.fileName).toMatch(/^firemd-vault-\d{4}-\d{2}-\d{2}\.zip$/)
     expect(vault.notes).toBe(2)
 
     const dir = mkdtempSync(join(tmpdir(), 'vault-out-'))

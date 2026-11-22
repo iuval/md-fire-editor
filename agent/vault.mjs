@@ -9,7 +9,11 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { AgentError, listNotes, readNote, replaceNote, resolveFolder, resolveNote } from './core.mjs'
 
-const MANIFEST = '.mdfire/manifest.json'
+const MANIFEST = '.firemd/manifest.json'
+// The app used to be called mdfire. A vault synced before the rename has its
+// manifest one directory over; reading it means the next push still recognises
+// the files it already uploaded instead of re-creating them as duplicates.
+const LEGACY_MANIFEST = '.mdfire/manifest.json'
 
 export function safeName(name, fallback = 'sin-titulo') {
   const clean = String(name)
@@ -21,19 +25,22 @@ export function safeName(name, fallback = 'sin-titulo') {
 }
 
 export function defaultDir() {
-  return join(homedir(), 'mdfire-vault')
+  return join(homedir(), 'firemd-vault')
 }
 
-async function readManifest(dir) {
-  try {
-    return JSON.parse(await readFile(join(dir, MANIFEST), 'utf8'))
-  } catch {
-    return { version: 1, files: {} }
+export async function readManifest(dir) {
+  for (const path of [MANIFEST, LEGACY_MANIFEST]) {
+    try {
+      return JSON.parse(await readFile(join(dir, path), 'utf8'))
+    } catch {
+      // Missing or corrupt: try the next location.
+    }
   }
+  return { version: 1, files: {} }
 }
 
 async function writeManifest(dir, manifest) {
-  await mkdir(join(dir, '.mdfire'), { recursive: true })
+  await mkdir(join(dir, '.firemd'), { recursive: true })
   await writeFile(join(dir, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`)
 }
 

@@ -1,5 +1,5 @@
 /**
- * El servidor de loopback del `mdfire login` de la CLI, contra procesos reales.
+ * El servidor de loopback del `firemd login` de la CLI, contra procesos reales.
  *
  * No se puede abrir un navegador en un test, así que se le saca `open` del PATH:
  * el spawn falla con ENOENT y la CLI imprime la dirección con el puerto. Con esa
@@ -39,7 +39,7 @@ function startLogin(): Promise<Login> {
       .catch((e) => console.log('LOGIN_ERR ' + e.message))
   `
   const proc = spawn(process.execPath, ['--input-type=module', '-e', script], {
-    env: { ...process.env, NODE_OPTIONS: '', PATH: '/nonexistent', MDFIRE_SITE: SITE, MDFIRE_API_KEY: '' },
+    env: { ...process.env, NODE_OPTIONS: '', PATH: '/nonexistent', FIREMD_SITE: SITE, FIREMD_API_KEY: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   child = proc
@@ -103,7 +103,7 @@ describe('login por loopback de la CLI', () => {
     expect(await good.json()).toEqual({ ok: true })
 
     // El handshake resolvió: el login siguió al canje de token y falló ahí.
-    expect(await finished).toContain('falta MDFIRE_API_KEY')
+    expect(await finished).toContain('falta FIREMD_API_KEY')
   }, 20_000)
 
   it('corta cuando el handshake no llega', async () => {
@@ -114,7 +114,7 @@ describe('login por loopback de la CLI', () => {
         .catch((e) => console.log('LOGIN_ERR ' + e.message))
     `
     const proc = spawn(process.execPath, ['--input-type=module', '-e', script], {
-      env: { ...process.env, NODE_OPTIONS: '', PATH: '/nonexistent', MDFIRE_SITE: SITE, MDFIRE_API_KEY: '' },
+      env: { ...process.env, NODE_OPTIONS: '', PATH: '/nonexistent', FIREMD_SITE: SITE, FIREMD_API_KEY: '' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     child = proc

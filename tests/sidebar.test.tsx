@@ -202,7 +202,7 @@ describe('Etiquetas panel', () => {
 
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(el.querySelectorAll('.tag-tree-row').length).toBeGreaterThan(0)
-    expect(localStorage.getItem('mdfire-tags-open')).toBe('1')
+    expect(localStorage.getItem('firemd-tags-open')).toBe('1')
 
     act(() => roots[0].unmount())
     roots = []
@@ -213,7 +213,7 @@ describe('Etiquetas panel', () => {
   })
 
   it('honours a stored "closed" preference', () => {
-    localStorage.setItem('mdfire-tags-open', '0')
+    localStorage.setItem('firemd-tags-open', '0')
     const el = render()
     expect(el.querySelectorAll('.tag-tree-row')).toHaveLength(0)
   })
@@ -465,7 +465,7 @@ describe('panel width', () => {
     })
 
     expect(aside.style.getPropertyValue('--sidebar-w')).toBe('320px')
-    expect(localStorage.getItem('mdfire-sidebar-width')).toBe('320')
+    expect(localStorage.getItem('firemd-sidebar-width')).toBe('320')
 
     // A drag past either bound stops at it.
     act(() => {
@@ -477,7 +477,7 @@ describe('panel width', () => {
   })
 
   it('restores a stored width on the next visit', () => {
-    localStorage.setItem('mdfire-sidebar-width', '360')
+    localStorage.setItem('firemd-sidebar-width', '360')
     const el = render()
     const aside = el.querySelector('aside') as HTMLElement
     expect(aside.style.getPropertyValue('--sidebar-w')).toBe('360px')
@@ -520,7 +520,7 @@ describe('horizontal scrolling for long trees', () => {
   })
 
   it('wraps the tag rows the same way', () => {
-    localStorage.setItem('mdfire-tags-open', '1')
+    localStorage.setItem('firemd-tags-open', '1')
     const el = render()
     expect(el.querySelector('.tag-tree > .tag-tree-rows')).not.toBeNull()
   })

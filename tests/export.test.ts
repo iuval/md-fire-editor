@@ -66,7 +66,7 @@ describe('zip writer', () => {
       { name: 'Trabajo/Acta.md', content: '# Acta\n\nreunión\n' },
     ])
 
-    const dir = mkdtempSync(join(tmpdir(), 'mdfire-zip-'))
+    const dir = mkdtempSync(join(tmpdir(), 'firemd-zip-'))
     const file = join(dir, 'out.zip')
     writeFileSync(file, bytes)
 

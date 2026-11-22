@@ -65,7 +65,7 @@ function docFrom(response) {
 // ---------- client ----------
 
 export class RestStore {
-  constructor({ projectId = process.env.MDFIRE_PROJECT || DEFAULT_PROJECT, token }) {
+  constructor({ projectId = process.env.FIREMD_PROJECT || DEFAULT_PROJECT, token }) {
     this.projectId = projectId
     this.token = token
     this.root = base(projectId)

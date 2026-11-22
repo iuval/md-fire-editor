@@ -459,7 +459,7 @@ service cloud.firestore {
     // ---------- agentes conectados ----------
     // Cada sesión de la CLI (o de la app de escritorio) se registra sola al
     // loguearse con la cuenta del dueño. El id lo elige el cliente y no cambia;
-    // el nombre se edita desde la app o con `mdfire name`. Sólo lectura y
+    // el nombre se edita desde la app o con `firemd name`. Sólo lectura y
     // edición del nombre: nada acá concede permisos sobre notas.
     function validAgent(d) {
       return d.keys().hasOnly(['ownerUid', 'name', 'kind', 'version', 'createdAt', 'lastSeenAt'])

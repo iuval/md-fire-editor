@@ -118,10 +118,10 @@ import {
   type Role,
 } from './lib/notes'
 
-const ACTIVE_KEY = 'mdfire-active'
-const SIDEBAR_KEY = 'mdfire-sidebar'
-const EXPANDED_KEY = 'mdfire-folders'
-const PANES_KEY = 'mdfire-panes'
+const ACTIVE_KEY = 'firemd-active'
+const SIDEBAR_KEY = 'firemd-sidebar'
+const EXPANDED_KEY = 'firemd-folders'
+const PANES_KEY = 'firemd-panes'
 
 /** Shown instead of a split action once the pane budget is spent. */
 const SPLIT_LIMIT_LABEL = `Máximo de paneles (${MAX_PANES})`

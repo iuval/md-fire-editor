@@ -2,7 +2,7 @@
 //! espejada con las notas de FireMD, en las dos direcciones.
 //!
 //! El motor es el mismo que usa el CLI (`agent/`): mismas reglas de Firestore,
-//! mismo `.mdfire/manifest.json`, mismos archivos de conflicto.
+//! mismo `.firemd/manifest.json`, mismos archivos de conflicto.
 
 pub mod auth;
 pub mod backend;

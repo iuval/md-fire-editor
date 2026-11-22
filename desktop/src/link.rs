@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, Result};
 
-/// Dónde vive la app web. Se puede cambiar con `MDFIRE_SITE`.
+/// Dónde vive la app web. Se puede cambiar con `FIREMD_SITE`.
 pub const DEFAULT_SITE: &str = "https://firemd.app";
 /// Cuánto esperamos a que el usuario termine en el navegador.
 pub const TIMEOUT: Duration = Duration::from_secs(180);
@@ -62,7 +62,7 @@ impl Listener {
 }
 
 pub fn site_url() -> String {
-    std::env::var("MDFIRE_SITE")
+    std::env::var("FIREMD_SITE")
         .ok()
         .filter(|site| !site.is_empty())
         .unwrap_or_else(|| DEFAULT_SITE.to_string())

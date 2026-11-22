@@ -59,7 +59,7 @@ impl Engine {
 
         let worker_status = Arc::clone(&status);
         let handle = thread::Builder::new()
-            .name("mdfire-sync".into())
+            .name("firemd-sync".into())
             .spawn(move || worker(rx, worker_status, vault, auto, interval_secs))
             .ok();
 

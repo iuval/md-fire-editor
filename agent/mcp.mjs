@@ -19,7 +19,7 @@ import {
   searchNotes,
 } from './core.mjs'
 
-const SERVER = { name: 'mdfire', version: '1.0.0' }
+const SERVER = { name: 'firemd', version: '1.0.0' }
 
 const TOOLS = [
   {

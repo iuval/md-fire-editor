@@ -15,7 +15,7 @@ import type { LocalChannelFactory } from '../src/lib/collab/localChannel'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const PROJECT_ID = 'demo-mdfire'
+const PROJECT_ID = 'demo-firemd'
 const NOTE_ID = 'bench-note'
 
 // These tests must exercise the network path only: a real BroadcastChannel

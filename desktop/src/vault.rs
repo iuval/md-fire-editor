@@ -1,4 +1,4 @@
-//! La carpeta local: nombres seguros, manifiesto `.mdfire/manifest.json` y
+//! La carpeta local: nombres seguros, manifiesto `.firemd/manifest.json` y
 //! recorrido de archivos. Compatible con el que escribe `agent/vault.mjs`, así
 //! que el CLI y la app de escritorio pueden usarse sobre la misma carpeta.
 
@@ -10,8 +10,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 
-pub const MANIFEST_DIR: &str = ".mdfire";
-pub const MANIFEST_FILE: &str = ".mdfire/manifest.json";
+pub const MANIFEST_DIR: &str = ".firemd";
+pub const MANIFEST_FILE: &str = ".firemd/manifest.json";
+/// La app se llamaba mdfire: un vault sincronizado antes del cambio tiene el
+/// manifiesto un directorio al lado. Se lee de ahí si todavía no existe el
+/// nuevo, así el primer push reconoce lo ya subido en vez de duplicarlo.
+const LEGACY_MANIFEST_DIR: &str = ".mdfire";
 
 /// Nombres de archivo seguros en Windows y macOS a la vez. Espejo de `safeName`.
 pub fn safe_name(name: &str, fallback: &str) -> String {
@@ -176,10 +180,13 @@ pub fn manifest_path(root: &Path) -> PathBuf {
 }
 
 pub fn read_manifest(root: &Path) -> Manifest {
-    match fs::read_to_string(manifest_path(root)) {
-        Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
-        Err(_) => Manifest::default(),
+    for dir in [MANIFEST_DIR, LEGACY_MANIFEST_DIR] {
+        let path = root.join(dir).join("manifest.json");
+        if let Ok(raw) = fs::read_to_string(path) {
+            return serde_json::from_str(&raw).unwrap_or_default();
+        }
     }
+    Manifest::default()
 }
 
 pub fn write_manifest(root: &Path, manifest: &Manifest) -> Result<()> {
@@ -338,6 +345,35 @@ mod tests {
         let manifest = Manifest::default();
         assert_eq!(manifest.version, 1);
         assert!(manifest.files.is_empty());
+    }
+
+    #[test]
+    fn lee_el_manifiesto_viejo_si_todavia_no_hay_uno_nuevo() {
+        let root = std::env::temp_dir().join(format!(
+            "firemd-vault-legacy-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join(LEGACY_MANIFEST_DIR)).unwrap();
+        fs::write(
+            root.join(LEGACY_MANIFEST_DIR).join("manifest.json"),
+            r#"{"version":1,"files":{"Nota.md":{"id":"abc123","etag":"2-aaaa"}}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(read_manifest(&root).get("Nota.md").unwrap().id, "abc123");
+
+        // El nuevo manda en cuanto existe: el viejo queda como respaldo.
+        fs::create_dir_all(root.join(MANIFEST_DIR)).unwrap();
+        fs::write(
+            root.join(MANIFEST_DIR).join("manifest.json"),
+            r#"{"version":1,"files":{}}"#,
+        )
+        .unwrap();
+        assert!(read_manifest(&root).files.is_empty());
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

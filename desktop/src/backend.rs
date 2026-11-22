@@ -89,7 +89,7 @@ impl FirestoreBackend {
     /// Abre el store con la identidad del agente (renueva el token si hace falta).
     pub fn open() -> Result<Self> {
         let (token, creds) = auth::id_token(false)?;
-        let project = std::env::var("MDFIRE_PROJECT")
+        let project = std::env::var("FIREMD_PROJECT")
             .ok()
             .filter(|value| !value.is_empty())
             .or_else(|| Some(creds.project_id.clone()).filter(|value| !value.is_empty()))

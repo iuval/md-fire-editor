@@ -470,7 +470,7 @@ mod tests {
 
     fn temp_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "mdfire-sync-{}-{}-{}",
+            "firemd-sync-{}-{}-{}",
             std::process::id(),
             tag,
             now_ms()

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// mdfire — token-lean CLI over FireMD notes, authenticated as the agent's own
+// firemd — token-lean CLI over FireMD notes, authenticated as the agent's own
 // Firebase account (paired from the web app). Security rules apply.
 
 import { login, loginWithBrowser, logout, whoami, pairingCode, saveAgentSession } from './auth.mjs'
@@ -8,7 +8,7 @@ import { defaultAgentName, formatAgents, listAgents, registerAgent, renameAgent 
 import { parseArgs } from './args.mjs'
 import { defaultDir, pull, push } from './vault.mjs'
 
-const HELP = `mdfire — notas FireMD desde la terminal (con permisos del agente)
+const HELP = `firemd — notas FireMD desde la terminal (con permisos del agente)
 
   login                                     entra con tu cuenta del sitio
   login --agent                             crea en cambio un agente anónimo
@@ -32,7 +32,7 @@ ids: 8 caracteres (prefijo único alcanza). Salida en texto, nunca JSON.
 Al loguearte con tu cuenta sos vos: ves tus carpetas con tus permisos.
 login --agent crea una cuenta anónima aparte, que sólo ve lo que el dueño le
 comparta como miembro de una carpeta (rol "Lectura" o "Escritura").
-env: MDFIRE_API_KEY, MDFIRE_PROJECT, MDFIRE_ID_TOKEN (tests), MDFIRE_SITE`
+env: FIREMD_API_KEY, FIREMD_PROJECT, FIREMD_ID_TOKEN (tests), FIREMD_SITE`
 
 if (!process.argv[2] || ['-h', '--help', 'help'].includes(process.argv[2])) {
   process.stdout.write(`${HELP}\n`)
@@ -78,7 +78,7 @@ try {
 
     case 'whoami': {
       const me = await whoami()
-      if (!me) fail('no estás logueado: corré `mdfire login`', 3)
+      if (!me) fail('no estás logueado: corré `firemd login`', 3)
       const lines = [me.email ?? me.uid]
       if (me.agentName) lines.push(`agente ${me.agentName} ${me.agentId ? me.agentId.slice(0, 8) : ''}`.trim())
       if (!me.email) lines.push(`codigo ${pairingCode(me.uid)}`)
@@ -96,10 +96,10 @@ try {
 
     case 'name': {
       const name = args._.join(' ').trim()
-      if (!name) fail('uso: mdfire name "MacBook de Ana"', 64)
+      if (!name) fail('uso: firemd name "MacBook de Ana"', 64)
       const db = await openStore()
       const me = await whoami()
-      if (!me?.agentId) fail('esta sesión no está registrada: corré `mdfire login`', 3)
+      if (!me?.agentId) fail('esta sesión no está registrada: corré `firemd login`', 3)
       const agent = await renameAgent(db, me.agentId, name)
       await saveAgentSession({ id: agent.id, name: agent.name })
       process.stdout.write(`ok ${agent.name}\n`)
@@ -145,7 +145,7 @@ try {
             result.conflicts.forEach((c) => process.stdout.write(`conflicto ${c.file} → ${c.conflict}\n`))
             result.errors.forEach((e) => process.stderr.write(`aviso ${e}\n`))
           } else {
-            fail('uso: mdfire vault pull|push [--dir ruta]', 64)
+            fail('uso: firemd vault pull|push [--dir ruta]', 64)
           }
           break
         }
@@ -212,7 +212,7 @@ try {
     fail(error.message, code)
   }
   const message = String(error?.message ?? error)
-  if (/no estás logueado|falta MDFIRE_API_KEY/.test(message)) fail(message, 3)
+  if (/no estás logueado|falta FIREMD_API_KEY/.test(message)) fail(message, 3)
   if (error?.status === 403 || /PERMISSION_DENIED|Missing or insufficient permissions/i.test(message)) {
     fail('el agente no tiene permiso para esto (revisá el rol en la app)', 3)
   }

@@ -48,7 +48,7 @@ export async function registerAgent(db, { id, name, kind = 'cli', version = '' }
   const existing = await db.get(COLLECTION, agentId)
 
   if (existing) {
-    // El nombre guardado manda: si lo cambiaron en la app o con `mdfire name`,
+    // El nombre guardado manda: si lo cambiaron en la app o con `firemd name`,
     // volver a entrar no lo pisa. Sólo se refresca el "último uso".
     const patch = { lastSeenAt: now }
     if (existing.data?.kind !== kind) patch.kind = kind

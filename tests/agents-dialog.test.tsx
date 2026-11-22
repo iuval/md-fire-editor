@@ -67,7 +67,7 @@ describe('lista de agentes', () => {
   it('explica qué hacer cuando no hay ninguno', () => {
     mount([])
     expect(document.body.textContent).toContain('Todavía no hay agentes')
-    expect(document.body.textContent).toContain('mdfire login')
+    expect(document.body.textContent).toContain('firemd login')
   })
 
   it('renombra por el callback y sale del modo edición', async () => {

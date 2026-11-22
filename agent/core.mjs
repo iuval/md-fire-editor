@@ -27,7 +27,7 @@ let cache = null
 export async function openStore() {
   const token = await idToken()
   const creds = await readCredentials()
-  const projectId = process.env.MDFIRE_PROJECT || creds?.projectId || 'md-sync-app'
+  const projectId = process.env.FIREMD_PROJECT || creds?.projectId || 'md-sync-app'
   if (!cache || cache.token !== token || cache.projectId !== projectId) {
     cache = new RestStore({ projectId, token })
     cache.token = token

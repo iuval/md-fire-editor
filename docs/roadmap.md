@@ -28,11 +28,11 @@ Blaze + Functions, cualquier medición hecha en el cliente se puede falsear y si
   sesión (derivados de las notas ya cargadas, sin lectura extra).
 - Reglas: validar el array en `validNote`/`validFolder` (tipo, tamaño, cantidad, regex).
   Los tags no cambian permisos: quien puede escribir la nota puede cambiar sus tags.
-- Superficie: chips bajo el título (editables), panel de filtro, y `mdfire tags` en el CLI.
+- Superficie: chips bajo el título (editables), panel de filtro, y `firemd tags` en el CLI.
 
 **Riesgos / decisiones**: ¿tags de carpeta se heredan a las notas? (propuesta: no, son
 independientes, para no confundir con la ACL). ¿Los tags entran en la búsqueda del agente?
-(propuesta: sí, `mdfire find --tag`).
+(propuesta: sí, `firemd find --tag`).
 
 **Tamaño**: M · **Depende de**: nada.
 
@@ -54,7 +54,7 @@ paridad pendiente).
 **Implementado**: `src/lib/tags.ts` (parseo de `#tag`, `#a/b`, frontmatter, código y URLs
 excluidos), `tags: string[]` denormalizado en notas y carpetas, chips de filtro en el sidebar,
 etiquetas visibles bajo el título, "Etiquetas…" en el menú de carpeta, y en el CLI
-`mdfire tags`, `mdfire find --tag` (también como `tags_list` en MCP). El CLI mantiene el campo
+`firemd tags`, `firemd find --tag` (también como `tags_list` en MCP). El CLI mantiene el campo
 al parchear; reglas validan lista y tope de 30 (no pueden recorrer elementos).
 
 ---
@@ -70,7 +70,7 @@ real de una carpeta Obsidian.
   - mismo ZIP, pero con nombres y contenidos compatibles: notas en `.md` respetando carpetas,
     frontmatter intacto, `[[wikilinks]]` sin tocar, y un `.obsidian/` mínimo **opcional**
     (solo `app.json` vacío) para que Obsidian abra la carpeta sin quejarse.
-  - nombre sugerido `mdfire-vault-YYYY-MM-DD.zip`.
+  - nombre sugerido `firemd-vault-YYYY-MM-DD.zip`.
 - **Import**: aceptar `.zip` (vault completo) o `.md` sueltos (ya implementado).
   - Descomprimir **sin dependencias** con `DecompressionStream('deflate-raw')`
     (Baseline: Chrome/Safari/Firefox modernos) y un lector de ZIP propio: parsear el directorio
@@ -108,12 +108,12 @@ editor y con Obsidian.
 
 - **CLI primero** (reusa `agent/core.mjs`, que ya habla Firestore REST con la identidad del
   agente y respeta reglas):
-  - `mdfire vault pull [--dir ~/Vault]` → escribe `carpeta/nota.md` desde la nube.
-  - `mdfire vault push` → sube cambios locales por nota, comparando **etag** (el hash de
+  - `firemd vault pull [--dir ~/Vault]` → escribe `carpeta/nota.md` desde la nube.
+  - `firemd vault push` → sube cambios locales por nota, comparando **etag** (el hash de
     contenido que ya existe) para no pisar ediciones remotas.
-  - `mdfire vault watch` → `fs.watch` + debounce 500 ms; cada archivo modificado se aplica con
+  - `firemd vault watch` → `fs.watch` + debounce 500 ms; cada archivo modificado se aplica con
     `patch` sobre el documento (no reescritura completa) para no romper el CRDT del editor.
-  - Manifiesto local `.mdfire/sync.json` con `{ ruta: { id, etag, updatedAt } }`.
+  - Manifiesto local `.firemd/sync.json` con `{ ruta: { id, etag, updatedAt } }`.
 - **App de escritorio** (hecha): Tauri 2 con bandeja del sistema, login con la cuenta del
   sitio (Google, por loopback al navegador) o con un agente anónimo, selector de carpeta base,
   start/stop y vista de conflictos. Ciclo automático cada 15 s (pull y
@@ -133,8 +133,8 @@ editor y con Obsidian.
 **Tamaño**: M (CLI) + M (app de escritorio) · **Depende de**: nada para CLI; app depende de
 certificados y de decidir adjuntos.
 
-**Implementado (CLI)**: `mdfire vault pull|push` (`agent/vault.mjs`) con manifiesto
-`.mdfire/manifest.json`, escritura por `replaceNote` con precondición de `updateTime`, y
+**Implementado (CLI)**: `firemd vault pull|push` (`agent/vault.mjs`) con manifiesto
+`.firemd/manifest.json`, escritura por `replaceNote` con precondición de `updateTime`, y
 **archivo de conflicto** `<nota>.conflicto-YYYYMMDD-HHMM.md` si el remoto cambió: nunca pisa ni
 descarta. Los archivos nuevos solo se aceptan dentro de una carpeta compartida (el agente no
 puede crear notas sueltas ajenas).
@@ -157,7 +157,7 @@ referencia que se le pasa a un agente en vez de un prompt ad-hoc.
 
 **Agentes conectados**: cada sesión que entra con la cuenta se registra en `agents/{id}`
 (`agent/agents.mjs`) y aparece en la app (menú de cuenta → *Agentes conectados*), donde se
-puede renombrar; `mdfire name` hace lo mismo desde la terminal. El registro no concede
+puede renombrar; `firemd name` hace lo mismo desde la terminal. El registro no concede
 permisos: desde que la sesión entra con la cuenta del usuario, ya tiene los suyos. El pareado
 por uid (`login --agent`) sigue disponible para el modelo anónimo.
 

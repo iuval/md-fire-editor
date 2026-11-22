@@ -845,7 +845,7 @@ export async function getFolder(folderId: string): Promise<Folder | null> {
 
 // ---------- migration ----------
 
-const MIGRATION_FLAG = 'mdfire-migrated-v2'
+const MIGRATION_FLAG = 'firemd-migrated-v2'
 
 /**
  * One-time move of bodies that still live inside the note document.

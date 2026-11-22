@@ -186,7 +186,7 @@ export function notesToFiles(notes: Note[], folders: Folder[]): ExportedFile[] {
 
 export function suggestExportName(now = new Date()): string {
   const stamp = now.toISOString().slice(0, 10)
-  return `mdfire-${stamp}.zip`
+  return `firemd-${stamp}.zip`
 }
 
 /** Triggers a browser download. No-op outside a document (tests, SSR). */

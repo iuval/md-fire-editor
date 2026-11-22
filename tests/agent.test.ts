@@ -8,7 +8,7 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
 
-const PROJECT_ID = 'demo-mdfire'
+const PROJECT_ID = 'demo-firemd'
 const OWNER = 'owner-uid'
 const AUTH_EMULATOR = 'http://127.0.0.1:9099'
 
@@ -30,16 +30,16 @@ async function anonymousUser(): Promise<{ idToken: string; uid: string }> {
 }
 
 function asAgent(token: string) {
-  process.env.MDFIRE_ID_TOKEN = token
+  process.env.FIREMD_ID_TOKEN = token
 }
 
 beforeAll(async () => {
   process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080'
   process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099'
-  process.env.MDFIRE_PROJECT = PROJECT_ID
-  process.env.MDFIRE_API_KEY = 'fake-key'
-  // Keep `mdfire login` out of the developer's real home directory.
-  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), 'mdfire-test-'))
+  process.env.FIREMD_PROJECT = PROJECT_ID
+  process.env.FIREMD_API_KEY = 'fake-key'
+  // Keep `firemd login` out of the developer's real home directory.
+  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), 'firemd-test-'))
 
   env = await initializeTestEnvironment({
     projectId: PROJECT_ID,

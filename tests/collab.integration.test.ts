@@ -11,7 +11,7 @@ import { FirestoreYjsProvider } from '../src/lib/collab/provider'
 import type { LocalChannelFactory } from '../src/lib/collab/localChannel'
 import { FirestoreAwareness } from '../src/lib/collab/awareness'
 
-const PROJECT_ID = 'demo-mdfire'
+const PROJECT_ID = 'demo-firemd'
 const ALICE = 'alice-uid'
 const BOB = 'bob-uid'
 const VIEWER = 'viewer-uid'

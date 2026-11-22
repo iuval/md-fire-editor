@@ -1,5 +1,5 @@
 [package]
-name = "mdfire-desktop"
+name = "firemd-desktop"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.77"
@@ -7,11 +7,11 @@ description = "Sincronización de dos vías entre FireMD y una carpeta local"
 license = "MIT"
 
 [lib]
-name = "mdfire_desktop"
+name = "firemd_desktop"
 path = "src/lib.rs"
 
 [[bin]]
-name = "mdfire-desktop"
+name = "firemd-desktop"
 path = "src/main.rs"
 
 [build-dependencies]

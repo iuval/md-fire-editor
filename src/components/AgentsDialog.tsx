@@ -30,7 +30,7 @@ function since(date: Date | null): string {
  * Los agentes conectados a esta cuenta. Cada sesión de la CLI se registra sola
  * al loguearse con tu cuenta, así que no hay códigos que pegar: acá se ve la
  * lista y se le pone nombre. El nombre también se cambia desde la terminal con
- * `mdfire name`.
+ * `firemd name`.
  *
  * El pareado por uid sigue disponible para el modo `login --agent`, que crea
  * una cuenta anónima aparte en vez de usar la tuya.
@@ -78,7 +78,7 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
       return
     }
     if (!/^[A-Za-z0-9]{16,40}$/.test(clean)) {
-      setError('El uid tiene 28 caracteres. Copialo de `mdfire whoami`.')
+      setError('El uid tiene 28 caracteres. Copialo de `firemd whoami`.')
       return
     }
 
@@ -106,7 +106,7 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
 
       <p className="share-hint-box">
         Cada sesión de la CLI que entra con tu cuenta aparece acá. Cambiale el nombre desde la app
-        o con <code>mdfire name</code>; el id no cambia nunca. La guía para agentes está en{' '}
+        o con <code>firemd name</code>; el id no cambia nunca. La guía para agentes está en{' '}
         <a href="https://firemd.app/agent.md" target="_blank" rel="noreferrer">
           firemd.app/agent.md
         </a>
@@ -122,7 +122,7 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
 
       {agents.length === 0 ? (
         <p className="hint">
-          Todavía no hay agentes. Instalá la CLI y corré <code>mdfire login</code>: se registra solo.
+          Todavía no hay agentes. Instalá la CLI y corré <code>firemd login</code>: se registra solo.
         </p>
       ) : (
         <ul className="agent-list">
@@ -178,12 +178,12 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
       <details className="agent-anon">
         <summary>Vincular un agente anónimo (opcional)</summary>
         <p className="hint">
-          <code>mdfire login --agent</code> crea una cuenta aparte en vez de usar la tuya. Esa
+          <code>firemd login --agent</code> crea una cuenta aparte en vez de usar la tuya. Esa
           cuenta sólo ve la carpeta que le des, y podés quitársela desde Compartir.
         </p>
 
         <label className="hint" htmlFor="agent-uid">
-          Uid del agente (te lo da <code>mdfire whoami</code>)
+          Uid del agente (te lo da <code>firemd whoami</code>)
         </label>
         <input
           id="agent-uid"
