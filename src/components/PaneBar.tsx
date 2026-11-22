@@ -1,9 +1,8 @@
-import { PanelLeftOpen, Menu, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import type { AwarenessUser } from '../lib/collab/awareness'
 
 interface PaneBarProps {
   presence: AwarenessUser[]
-  sidebarCollapsed: boolean
   isMobile: boolean
   onToggleSidebar: () => void
   selectedTags?: string[]
@@ -14,7 +13,6 @@ interface PaneBarProps {
 
 export function PaneBar({
   presence,
-  sidebarCollapsed,
   isMobile,
   onToggleSidebar,
   selectedTags = [],
@@ -23,14 +21,16 @@ export function PaneBar({
 }: PaneBarProps) {
   return (
     <div className="pane-head">
-      {(isMobile || sidebarCollapsed) && (
+      {/* A phone has no rail, so the drawer's opener lives here. On desktop the
+          collapsed panel's own rail carries the expand button. */}
+      {isMobile && (
         <button
           className="icon-btn"
           onClick={onToggleSidebar}
-          aria-label={isMobile ? 'Abrir notas' : 'Mostrar panel'}
-          title={isMobile ? 'Abrir notas' : 'Mostrar panel'}
+          aria-label="Abrir notas"
+          title="Abrir notas"
         >
-          {isMobile ? <Menu size={16} /> : <PanelLeftOpen size={15} />}
+          <Menu size={16} />
         </button>
       )}
 

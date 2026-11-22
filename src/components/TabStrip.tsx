@@ -27,6 +27,11 @@ interface TabStripProps {
   onClose: (tabId: string) => void
   onNewNote: () => void
   /**
+   * Renames the note behind a tab, from a double click on its title. Absent
+   * when the tab's note cannot be written: then the title stays a plain label.
+   */
+  onRename?: (tabId: string, title: string) => void
+  /**
    * Splits, as plain buttons: the pane actions are three icons, never a menu.
    * Absent on a phone, which shows one pane at a time.
    */
@@ -44,6 +49,58 @@ interface TabStripProps {
 }
 
 /**
+ * The tab's title, as a field: a double click puts it in place of the label, so
+ * a rename never leaves the strip for a dialog.
+ */
+function TabRenameInput({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string
+  onCommit: (title: string) => void
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState(initial)
+  const ref = useRef<HTMLInputElement>(null)
+  // Enter, Escape and a click elsewhere all end the edit; only the first wins,
+  // because the blur that follows a key press must not commit again.
+  const done = useRef(false)
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+    node.focus()
+    node.select()
+  }, [])
+
+  const finish = (commit: boolean) => {
+    if (done.current) return
+    done.current = true
+    if (commit) onCommit(value)
+    else onCancel()
+  }
+
+  return (
+    <input
+      ref={ref}
+      className="tab-rename"
+      value={value}
+      aria-label={`Renombrar ${initial}`}
+      spellCheck={false}
+      // Same cap as the note title itself.
+      maxLength={300}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={() => finish(true)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') finish(true)
+        else if (event.key === 'Escape') finish(false)
+      }}
+    />
+  )
+}
+
+/**
  * One tab per open file, in the pane's own header.
  *
  * The tail of the strip is the pane's own three actions — split right, split
@@ -58,6 +115,7 @@ export function TabStrip({
   onActivate,
   onClose,
   onNewNote,
+  onRename,
   onSplitRight,
   onSplitDown,
   splitLimitLabel,
@@ -66,6 +124,10 @@ export function TabStrip({
 }: TabStripProps) {
   const buttons = useRef(new Map<string, HTMLButtonElement | null>())
   const listRef = useRef<HTMLDivElement>(null)
+  /** The tab whose title is being typed, and the text it had before. */
+  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
+  /** Tab to focus once renaming ends: the input that had the focus is gone. */
+  const refocus = useRef<string | null>(null)
   /** The tab being dragged, painted faded while it is in flight. */
   const [draggingId, setDraggingId] = useState<string | null>(null)
   /** Where an insertion line shows: `tabs.length` is past the last tab. */
@@ -77,6 +139,23 @@ export function TabStrip({
       const rect = node.getBoundingClientRect()
       return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
     })
+
+  useEffect(() => {
+    if (renaming) return
+    const id = refocus.current
+    if (!id) return
+    refocus.current = null
+    buttons.current.get(id)?.focus()
+  }, [renaming])
+
+  const finishRename = (tabId: string, before: string, next: string | null) => {
+    refocus.current = tabId
+    setRenaming(null)
+    // An emptied or unchanged title is not a rename: writing it would replace a
+    // real name with nothing.
+    const value = next?.trim()
+    if (value && value !== before) onRename?.(tabId, value)
+  }
 
   // Keep the active tab visible: opening a file at the end of a long strip used
   // to leave it scrolled out of sight on narrow panes and phones.
@@ -150,7 +229,7 @@ export function TabStrip({
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId
           const title = tab.title || 'Sin título'
-          const draggable = Boolean(onDropTab)
+          const draggable = Boolean(onDropTab) && renaming?.id !== tab.id
           return (
             <div
               key={tab.id}
@@ -172,20 +251,29 @@ export function TabStrip({
               }}
             >
               {gap === index && <span className="tab-drop-line" aria-hidden="true" />}
-              <button
-                ref={(el) => {
-                  buttons.current.set(tab.id, el)
-                }}
-                className="tab-label"
-                role="tab"
-                aria-selected={active}
-                tabIndex={active ? 0 : -1}
-                title={title}
-                onClick={() => onActivate(tab.id)}
-                onKeyDown={(event) => onKeyDown(event, index)}
-              >
-                <span className="tab-text">{title}</span>
-              </button>
+              {renaming?.id === tab.id ? (
+                <TabRenameInput
+                  initial={title}
+                  onCommit={(next) => finishRename(tab.id, title, next)}
+                  onCancel={() => finishRename(tab.id, title, null)}
+                />
+              ) : (
+                <button
+                  ref={(el) => {
+                    buttons.current.set(tab.id, el)
+                  }}
+                  className="tab-label"
+                  role="tab"
+                  aria-selected={active}
+                  tabIndex={active ? 0 : -1}
+                  title={title}
+                  onClick={() => onActivate(tab.id)}
+                  onDoubleClick={onRename ? () => setRenaming({ id: tab.id, title }) : undefined}
+                  onKeyDown={(event) => onKeyDown(event, index)}
+                >
+                  <span className="tab-text">{title}</span>
+                </button>
+              )}
               <button
                 className="tab-close"
                 aria-label={`Cerrar ${title}`}

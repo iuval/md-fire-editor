@@ -83,7 +83,8 @@ function render(overrides: Partial<SidebarProps> = {}) {
     activeId: null,
     onSelect: () => {},
     onNewNote: () => {},
-    onHeaderMenu: () => {},
+    onNewFolder: () => {},
+    onNewCanvas: () => {},
     rootSort: 'updated',
     onFolderMenu: () => {},
     expanded: new Set(['g', 'lm', 'v3']),
@@ -117,6 +118,49 @@ function totalIndent(row: HTMLElement): number {
   }
   return total
 }
+
+describe('sidebar head', () => {
+  it('carries the app name and the three create actions plus collapse', () => {
+    const el = render()
+    const head = el.querySelector('.sidebar-head')!
+
+    expect(head.querySelector('.sidebar-title')!.textContent).toBe('FireMD')
+    expect([...head.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Nueva nota',
+      'Nueva carpeta',
+      'Nuevo canvas',
+      'Ocultar panel',
+    ])
+    // Nothing else lives up there: no overflow menu, no section label.
+    expect(head.querySelector('[aria-label="Más acciones"]')).toBeNull()
+  })
+
+  it('fires each create action from its own button', () => {
+    const calls: string[] = []
+    const el = render({
+      onNewNote: () => calls.push('note'),
+      onNewFolder: () => calls.push('folder'),
+      onNewCanvas: () => calls.push('canvas'),
+    })
+    const head = el.querySelector('.sidebar-head')!
+    for (const label of ['Nueva nota', 'Nueva carpeta', 'Nuevo canvas']) {
+      act(() => head.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click())
+    }
+    expect(calls).toEqual(['note', 'folder', 'canvas'])
+  })
+
+  it('closes the drawer on a phone instead of collapsing it', () => {
+    const calls: string[] = []
+    const el = render({
+      isMobile: true,
+      onClose: () => calls.push('close'),
+      onCollapse: () => calls.push('collapse'),
+    })
+    const button = el.querySelector<HTMLButtonElement>('.sidebar-head [aria-label="Cerrar panel"]')!
+    act(() => button.click())
+    expect(calls).toEqual(['close'])
+  })
+})
 
 describe('sidebar collapse', () => {
   it('actually collapses the desktop panel, not just the button state', () => {

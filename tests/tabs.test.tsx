@@ -252,6 +252,83 @@ describe('dragging a tab', () => {
   })
 })
 
+describe('renaming a tab in place', () => {
+  function doubleClick(el: HTMLElement, index: number) {
+    const label = el.querySelectorAll('.tab-label')[index] as HTMLElement
+    act(() => label.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+  }
+
+  function type(input: HTMLInputElement, value: string, key?: string) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      if (key) input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    })
+  }
+
+  const inputOf = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.tab-rename')
+
+  it('opens the double-clicked title in an input, focused and selected', () => {
+    const el = strip({ onRename: () => {} })
+    doubleClick(el, 1)
+    const input = inputOf(el)
+    expect(input).not.toBeNull()
+    expect(input!.value).toBe('Segunda')
+    expect(document.activeElement).toBe(input)
+    expect([input!.selectionStart, input!.selectionEnd]).toEqual([0, 'Segunda'.length])
+  })
+
+  it('commits the trimmed name on Enter and puts the label back', () => {
+    const renamed: [string, string][] = []
+    const el = strip({ onRename: (id, title) => renamed.push([id, title]) })
+    doubleClick(el, 2)
+    type(inputOf(el)!, '  Tercera parte  ', 'Enter')
+    expect(renamed).toEqual([['t3', 'Tercera parte']])
+    expect(inputOf(el)).toBeNull()
+    expect(el.querySelectorAll('.tab-label')[2].textContent).toBe('Tercera')
+    // Focus goes back to the tab that was being renamed, not to the body.
+    expect(document.activeElement).toBe(el.querySelectorAll('.tab-label')[2])
+  })
+
+  it('leaves the name alone on Escape', () => {
+    const renamed: [string, string][] = []
+    const el = strip({ onRename: (id, title) => renamed.push([id, title]) })
+    doubleClick(el, 0)
+    type(inputOf(el)!, 'Otra cosa', 'Escape')
+    expect(renamed).toEqual([])
+    expect(inputOf(el)).toBeNull()
+    expect(el.querySelectorAll('.tab-label')[0].textContent).toBe('Primera')
+  })
+
+  it('commits on blur, so clicking away keeps what was typed', () => {
+    const renamed: [string, string][] = []
+    const el = strip({ onRename: (id, title) => renamed.push([id, title]) })
+    doubleClick(el, 0)
+    const input = inputOf(el)!
+    type(input, 'Primera bis')
+    // React's onBlur listens to `focusout`, which bubbles (unlike `blur`).
+    act(() => input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    expect(renamed).toEqual([['t1', 'Primera bis']])
+    expect(inputOf(el)).toBeNull()
+  })
+
+  it('ignores an empty name and a name that did not change', () => {
+    const renamed: [string, string][] = []
+    const el = strip({ onRename: (id, title) => renamed.push([id, title]) })
+    doubleClick(el, 0)
+    type(inputOf(el)!, '   ', 'Enter')
+    doubleClick(el, 0)
+    type(inputOf(el)!, 'Primera', 'Enter')
+    expect(renamed).toEqual([])
+  })
+
+  it('does not start renaming when the strip has nothing to write to', () => {
+    const el = strip()
+    doubleClick(el, 1)
+    expect(inputOf(el)).toBeNull()
+  })
+})
 
 function leaf(id: string): PaneLeaf {
   return singlePane(id, `note-${id}`, `tab-${id}`)

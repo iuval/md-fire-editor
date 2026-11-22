@@ -16,7 +16,7 @@ import {
 } from '../lib/notes'
 import { MAX_CANVAS_CHARS, canvasTagsOf } from '../lib/canvas/model'
 import type { CanvasFileRef } from '../lib/canvas/files'
-import { folderPath, sharedFolderOf } from '../lib/folders'
+import { DocCrumbs } from './DocCrumbs'
 import { joinFrontmatter, sameMarkdown, splitFrontmatter } from '../lib/markdown'
 import { extractTags } from '../lib/tags'
 import { parseProperties, setProperty } from '../lib/properties'
@@ -81,10 +81,8 @@ function NoteDocument({
    */
   const creatingRef = useRef(creating)
 
-  const foldersById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders])
   const editable = noteCanEdit(note, folders, uid)
   const isCanvas = note.kind === 'canvas'
-  const sharedFolder = sharedFolderOf(note, folders)
 
   useEffect(() => {
     // Follow external renames (agent, another device) unless the user is typing.
@@ -205,6 +203,7 @@ function NoteDocument({
 
   const header = (
     <div className="doc-header">
+      <DocCrumbs folderId={note.folderId} folders={folders} />
       <input
         className="inline-title"
         value={title}
@@ -231,11 +230,6 @@ function NoteDocument({
         onRenameTag={onRenameTag}
         onPropertyChange={(change) => void handlePropertyChange(change)}
       />
-      {sharedFolder && (
-        <p className="readonly-note">
-          En «{folderPath(sharedFolder.id, foldersById)}» · permisos heredados de la carpeta
-        </p>
-      )}
     </div>
   )
 
@@ -301,6 +295,8 @@ interface NotePaneProps {
   onActivateTab: (tabId: string) => void
   onCloseTab: (tabId: string) => void
   onNewNote: () => void
+  /** Renames a note from a double click on its tab; absent when it cannot be written. */
+  onRenameNote?: (noteId: string, title: string) => void
   /** Absent when this is the only pane. */
   onClosePane?: () => void
   /** Its tabs are rendered by the top bar (single-pane layout). */
@@ -354,6 +350,7 @@ export function NotePane({
   onActivateTab,
   onCloseTab,
   onNewNote,
+  onRenameNote,
   onClosePane,
   hideTabs = false,
   tabDrop,
@@ -387,6 +384,14 @@ export function NotePane({
           onActivate={onActivateTab}
           onClose={onCloseTab}
           onNewNote={onNewNote}
+          onRename={
+            onRenameNote
+              ? (tabId, title) => {
+                  const tab = pane.tabs.find((candidate) => candidate.id === tabId)
+                  if (tab) onRenameNote(tab.noteId, title)
+                }
+              : undefined
+          }
           onSplitRight={onSplitRight}
           onSplitDown={onSplitDown}
           splitLimitLabel={splitLimitLabel}

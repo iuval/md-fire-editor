@@ -121,6 +121,10 @@ button {
   background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
   border-right: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   overflow: hidden;
+  /* The rail keeps its 44px in the flex line; the panel gives them back while
+     it is open, so the total width stays 240 and collapsing animates one
+     property. Phones override both (the drawer has no rail). */
+  margin-left: calc(-1 * var(--rail-w, 44px));
   transition: margin-left 0.16s ease, visibility 0.16s ease;
 }
 
@@ -129,6 +133,29 @@ button {
 .sidebar.collapsed {
   margin-left: calc(-1 * var(--sidebar-w, 240px));
   visibility: hidden;
+}
+
+/* The panel's collapsed face. It stays mounted under the open panel so the
+   shell's width never jumps; only its buttons come and go. */
+.sidebar-rail {
+  flex: 0 0 var(--rail-w, 44px);
+  width: var(--rail-w, 44px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
+  border-right: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+}
+
+/* The create actions keep the top and the account menu sits at the bottom,
+   mirroring the panel's own head and foot. */
+.sidebar-rail-actions {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* 6px grab strip on the border. Sits above the rows so the whole edge works. */
@@ -162,22 +189,30 @@ button {
 
 .sidebar-head {
   display: flex;
+  /* The name may take the full row when the controls cannot share it: on a
+     phone the touch targets are 44px and the drawer is 240px wide. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 8px 8px 4px;
 }
 
+/* Four controls share the row with the app name: 30px keeps the wordmark
+   whole at the 200px minimum width. */
+.sidebar-head .icon-btn {
+  width: 30px;
+  height: 30px;
+}
+
+/* The app name, not a section label: no uppercase, no tracking. It never
+   truncates: when the row is too tight it wraps onto its own line. */
 .sidebar-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
+  flex: 1 1 auto;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  letter-spacing: 0.01em;
+  color: light-dark(var(--color-text), var(--color-text-dark));
   padding-left: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -245,6 +280,43 @@ button {
 
 .file-row:hover {
   background: light-dark(rgba(0, 0, 0, 0.045), rgba(255, 255, 255, 0.055));
+}
+
+/* A row is as wide as its longest title, so the ⋯ scrolls out of view with the
+   title. Sticky keeps it on the panel's right edge.
+
+   It also needs a backdrop of its own: with a bare transparent button the title
+   slid *through* the glyph, and a line of words running under the dots reads as
+   part of the button. So the dots sit on a frosted pad — a tint of the panel
+   plus a 3px backdrop blur — feathered on its left edge so the title dissolves
+   instead of stopping at a hard cut, and carried a little past the button on the
+   right so the row cannot reappear in the gutter between the ⋯ and the panel
+   edge. Blur alone would leave a smudge of legible words; the tint is what
+   actually clears them. */
+.file-row > .icon-btn--sm,
+.folder-row > .icon-btn--sm {
+  /* Translucent on purpose: the pad has to read over a plain, a hovered and a
+     selected row without turning into three different blocks. */
+  --row-pad: light-dark(
+    color-mix(in oklab, var(--color-bg-2) 86%, transparent),
+    color-mix(in oklab, var(--color-bg-2-dark) 86%, transparent)
+  );
+  position: sticky;
+  right: 2px;
+  z-index: 1;
+  background: linear-gradient(90deg, transparent 0, var(--row-pad) 45%);
+  box-shadow: 12px 0 0 0 var(--row-pad);
+  backdrop-filter: blur(3px);
+}
+
+/* That pad is painted instead of the button's own hover fill, so the hover
+   state is drawn here: same colour as .icon-btn:hover, same feather. */
+.file-row > .icon-btn--sm:hover,
+.folder-row > .icon-btn--sm:hover {
+  --row-pad: light-dark(
+    color-mix(in oklab, var(--color-bg-3) 92%, transparent),
+    color-mix(in oklab, var(--color-bg-3-dark) 92%, transparent)
+  );
 }
 
 .file-item {
@@ -779,6 +851,8 @@ body.tab-dragging .pane-drop {
 }
 
 .pane-drop[data-zone='bottom'] .pane-drop-hint {
+  inset: 50% 8px 8px 8px;
+}
 
 .tab-label {
   min-width: 0;
@@ -797,6 +871,27 @@ body.tab-dragging .pane-drop {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The title while it is being renamed: a field exactly where the label was, so
+   the tab does not move under the pointer. */
+.tab-rename {
+  width: 160px;
+  min-width: 0;
+  max-width: 208px;
+  height: 22px;
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 1px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  border-radius: 4px;
+  background: light-dark(var(--color-page), var(--color-page-dark));
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.tab-rename:focus {
+  outline: none;
 }
 
 .tab-close {
@@ -848,6 +943,40 @@ body.tab-dragging .pane-drop {
   max-width: 100%;
   padding-left: clamp(16px, 5%, 40px);
   padding-right: clamp(16px, 5%, 40px);
+}
+
+/* Where the note lives: one quiet line above the title. Ancestors shrink with
+   an ellipsis and the note's own folder never shrinks, so the closest folder
+   stays readable in a narrow pane. */
+.doc-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 7px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.doc-crumb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The folder holding the note is the answer to "which one is this?": it stays
+   whole and slightly stronger than its ancestors. */
+.doc-crumb:last-child {
+  flex-shrink: 0;
+  color: light-dark(var(--color-text), var(--color-text-dark));
+  opacity: 0.75;
+}
+
+.doc-crumb-sep {
+  flex-shrink: 0;
+  opacity: 0.6;
 }
 
 .inline-title {
@@ -1910,9 +2039,16 @@ body.tab-dragging .pane-drop {
 
   /* Touch targets: 44px minimum, no exceptions. Desktop keeps 32px so the
      sidebar stays dense where a mouse is pointing. */
-  .icon-btn {
+  .icon-btn,
+  .sidebar-head .icon-btn {
     width: 44px;
     height: 44px;
+  }
+
+  /* Four 44px controls fill the 240px drawer: the name gets its own row so
+     the buttons stay together instead of the collapse button dropping alone. */
+  .sidebar-title {
+    flex: 1 0 100%;
   }
 
   .file-item {

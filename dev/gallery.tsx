@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import '../src/index.css'
 import { Sidebar } from '../src/components/Sidebar'
+import { SidebarRail } from '../src/components/SidebarRail'
 import { PaneBar } from '../src/components/PaneBar'
 import { NotePane } from '../src/components/NotePane'
 import { TabStrip } from '../src/components/TabStrip'
@@ -116,13 +117,24 @@ function Shell({
 
   return (
     <div className="shell">
+      {!mobile && (
+        <SidebarRail
+          collapsed={collapsed}
+          onExpand={() => setCollapsed(false)}
+          onNewNote={() => {}}
+          onNewFolder={() => {}}
+          onNewCanvas={() => {}}
+          onAccountClick={() => {}}
+        />
+      )}
       <Sidebar
         notes={list}
         folders={folders}
         activeId={activeId}
         onSelect={() => {}}
         onNewNote={() => {}}
-        onHeaderMenu={() => {}}
+        onNewFolder={() => {}}
+        onNewCanvas={() => {}}
         rootSort="updated"
         onFolderMenu={() => {}}
         expanded={expanded}
@@ -145,7 +157,6 @@ function Shell({
       <main className="pane">
         <PaneBar
           presence={presenceUsers}
-          sidebarCollapsed={!mobile && collapsed}
           isMobile={mobile}
           onToggleSidebar={() => setCollapsed((v) => !v)}
           tabs={barTabs}
@@ -307,8 +318,8 @@ function TabsProbe({ single = false }: { single?: boolean }) {
             onActivateTab={() => {}}
             onCloseTab={() => {}}
             onNewNote={() => {}}
-            onClosePane={closable ? () => setTree((current) => closePane(current, pane.id)) : undefined}
             tabDrop={tabDrop(pane.id)}
+            onClosePane={closable ? () => setTree((current) => closePane(current, pane.id)) : undefined}
             hideTabs={single}
             onImport={() => {}}
             emptyWorkspace={false}
@@ -716,19 +727,28 @@ function App() {
   }
 }
 
-/** Sidebar collapsed: the pane bar grows a "show panel" button. */
+/** Sidebar collapsed: the rail carries the create actions and the expand button. */
 function CollapsedShell() {
   const note = activeNote
   const body = splitFrontmatter(note.markdown).body
   return (
     <div className="shell">
+      <SidebarRail
+        collapsed
+        onExpand={() => {}}
+        onNewNote={() => {}}
+        onNewFolder={() => {}}
+        onNewCanvas={() => {}}
+        onAccountClick={() => {}}
+      />
       <Sidebar
         notes={notes}
         folders={folders}
         activeId={activeNote.id}
         onSelect={() => {}}
         onNewNote={() => {}}
-        onHeaderMenu={() => {}}
+        onNewFolder={() => {}}
+        onNewCanvas={() => {}}
         rootSort="updated"
         onFolderMenu={() => {}}
         expanded={allExpanded}
@@ -748,12 +768,7 @@ function CollapsedShell() {
         onAccountClick={() => {}}
       />
       <main className="pane">
-        <PaneBar
-          presence={[]}
-          sidebarCollapsed
-          isMobile={false}
-          onToggleSidebar={() => {}}
-        />
+        <PaneBar presence={[]} isMobile={false} onToggleSidebar={() => {}} />
         <div className="scroll">
           <div className="doc">
             <input className="inline-title" value={note.title} readOnly aria-label="Título de la nota" />

@@ -3,7 +3,9 @@ import {
   Bell,
   ChevronRight,
   Folder,
+  FolderPlus,
   Frame,
+  SquareDashed,
   Link2,
   MoreHorizontal,
   PanelLeftClose,
@@ -34,7 +36,8 @@ export interface SidebarProps {
   activeId: string | null
   onSelect: (id: string) => void
   onNewNote: (folder?: FolderType) => void
-  onHeaderMenu: (pos: { x: number; y: number }) => void
+  onNewFolder: () => void
+  onNewCanvas: () => void
   /** Per-note actions (share, order, export, move, delete) live on the row. */
   onNoteMenu: (note: Note, pos: { x: number; y: number }) => void
   rootSort: SortMode
@@ -89,7 +92,8 @@ export function Sidebar({
   activeId,
   onSelect,
   onNewNote,
-  onHeaderMenu,
+  onNewFolder,
+  onNewCanvas,
   onNoteMenu,
   rootSort,
   orderOverrides,
@@ -294,20 +298,15 @@ export function Sidebar({
       aria-hidden={isOpen ? undefined : true}
     >
       <div className="sidebar-head">
-        <span className="sidebar-title">Notas</span>
+        <span className="sidebar-title">FireMD</span>
         <button className="icon-btn" onClick={() => onNewNote()} aria-label="Nueva nota" title="Nueva nota">
           <Plus size={15} />
         </button>
-        <button
-          className="icon-btn"
-          aria-label="Más acciones"
-          title="Más acciones"
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect()
-            onHeaderMenu({ x: rect.left - 150, y: rect.bottom + 4 })
-          }}
-        >
-          <MoreHorizontal size={15} />
+        <button className="icon-btn" onClick={onNewFolder} aria-label="Nueva carpeta" title="Nueva carpeta">
+          <FolderPlus size={15} />
+        </button>
+        <button className="icon-btn" onClick={onNewCanvas} aria-label="Nuevo canvas" title="Nuevo canvas">
+          <SquareDashed size={15} />
         </button>
         <button
           className="icon-btn"

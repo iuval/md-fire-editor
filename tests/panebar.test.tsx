@@ -30,12 +30,7 @@ const status: ProviderStatus = { connected: true, pendingWrites: 0, updateCount:
 
 function renderBar() {
   return mount(
-    <PaneBar
-      presence={[]}
-      sidebarCollapsed={false}
-      isMobile={false}
-      onToggleSidebar={() => {}}
-    />
+    <PaneBar presence={[]} isMobile={false} onToggleSidebar={() => {}} />
   )
 }
 
@@ -44,7 +39,6 @@ describe('pane bar slots', () => {
     const el = mount(
       <PaneBar
         presence={[]}
-        sidebarCollapsed={false}
         isMobile={false}
         onToggleSidebar={() => {}}
         tabs={<span data-testid="tabs">pestañas</span>}
@@ -73,6 +67,16 @@ describe('pane bar actions', () => {
     const el = renderBar()
     expect(el.querySelector('[aria-label="Más acciones"]')).toBeNull()
   })
+
+  it('leaves the desktop expand button to the collapsed rail', () => {
+    const el = renderBar()
+    expect(el.querySelector('[aria-label="Mostrar panel"]')).toBeNull()
+  })
+
+  it('keeps the drawer opener on a phone', () => {
+    const el = mount(<PaneBar presence={[]} isMobile onToggleSidebar={() => {}} />)
+    expect(el.querySelector('[aria-label="Abrir notas"]')).not.toBeNull()
+  })
 })
 
 describe('sync status', () => {
@@ -99,7 +103,7 @@ describe('sync status', () => {
 })
 
 describe('when the bar exists at all', () => {
-  const base = { hasTabs: false, isMobile: false, sidebarCollapsed: false, selectedTags: 0, presence: 0 }
+  const base = { hasTabs: false, isMobile: false, selectedTags: 0, presence: 0 }
 
   it('is not rendered for a split workspace with nothing to carry', () => {
     // Two panes keep their tabs in their own strips: an empty row would just
@@ -110,7 +114,6 @@ describe('when the bar exists at all', () => {
   it('is rendered for each thing that needs a home up there', () => {
     expect(paneBarNeeded({ ...base, hasTabs: true })).toBe(true)
     expect(paneBarNeeded({ ...base, isMobile: true })).toBe(true)
-    expect(paneBarNeeded({ ...base, sidebarCollapsed: true })).toBe(true)
     expect(paneBarNeeded({ ...base, selectedTags: 1 })).toBe(true)
     expect(paneBarNeeded({ ...base, presence: 1 })).toBe(true)
   })

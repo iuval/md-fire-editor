@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Frame, Hash, Link2, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
+import { SidebarRail } from './components/SidebarRail'
 import { PaneBar } from './components/PaneBar'
 import { SyncAnnouncer } from './components/SyncAnnouncer'
 import { paneBarNeeded } from './lib/paneBar'
@@ -98,6 +99,7 @@ import {
   isAclOwner,
   optimisticFolder,
   moveNoteTo,
+  noteCanEdit,
   renameFolder,
   reserveNoteId,
   saveNoteContent,
@@ -327,7 +329,6 @@ function AppTree() {
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   /** The row's own menu: the tree is where a file's actions live. */
   const [noteMenu, setNoteMenu] = useState<{ note: Note; x: number; y: number } | null>(null)
-  const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(initialExpanded)
   const [presence, setPresence] = useState<AwarenessUser[]>([])
   const [status, setStatus] = useState({
@@ -1382,6 +1383,29 @@ function AppTree() {
   }, [notes, notesById])
 
   /**
+   * Rename from the tab strip. The title is one field on the note document, so a
+   * rename from a tab and a rename from the pane land in the same place; the row
+   * reads the live list, and the strip follows it without local state.
+   */
+  const renameNote = useCallback(
+    (noteId: string, title: string) => {
+      const note = notesByIdFromList.get(noteId) ?? notesById[noteId]
+      const next = title.trim()
+      if (!note || !next || next === note.title) return
+      // A note still being created has no document to write to yet.
+      if (pendingNotes.has(noteId)) return
+      if (!noteCanEdit(note, folders, user?.uid)) {
+        setNotice('No tenés permiso para renombrar esta nota.')
+        return
+      }
+      void saveNoteContent(noteId, { title: next }).catch(() =>
+        setNotice('No se pudo renombrar la nota. Revisá la conexión.')
+      )
+    },
+    [folders, notesById, notesByIdFromList, pendingNotes, user?.uid]
+  )
+
+  /**
    * The pane's whole action set: split right, split down, close. Three buttons
    * and no menu — a new note already has its `+`, so nothing is duplicated here.
    * A phone shows one pane at a time, so it gets no split buttons at all.
@@ -1406,16 +1430,19 @@ function AppTree() {
       onActivate={(tabId) => activateTab(inlinePane.id, tabId)}
       onClose={(tabId) => closePaneTab(inlinePane.id, tabId)}
       onNewNote={() => void handleNewNote(undefined, inlinePane.id)}
+      onRename={(tabId, title) => {
+        const tab = inlinePane.tabs.find((candidate) => candidate.id === tabId)
+        if (tab) renameNote(tab.noteId, title)
+      }}
       {...splitActions(inlinePane.id)}
     />
   ) : undefined
 
-  // No tabs to host, no toggle to show, no filter, nobody else editing: the
-  // panes start at the top of the window (see `paneBarNeeded`).
+  // No tabs to host, no filter, nobody else editing: the panes start at the
+  // top of the window (see `paneBarNeeded`).
   const barNeeded = paneBarNeeded({
     hasTabs: Boolean(inlineTabs),
     isMobile,
-    sidebarCollapsed: !isMobile && collapsed,
     selectedTags: selectedTags.length,
     presence: presence.length,
   })
@@ -1464,6 +1491,19 @@ function AppTree() {
     <div className="shell">
       {isMobile && sidebarOpen && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
 
+      {/* The panel's collapsed face. Always mounted on desktop: the open panel
+          covers it, so the shell's width never jumps on collapse. */}
+      {!isMobile && (
+        <SidebarRail
+          collapsed={collapsed}
+          onExpand={toggleSidebar}
+          onNewNote={() => void handleNewNote(undefined)}
+          onNewFolder={() => setDialog({ kind: 'new-folder', parentId: null })}
+          onNewCanvas={() => handleNewCanvas()}
+          onAccountClick={() => setDialog({ kind: 'account-menu' })}
+        />
+      )}
+
       <Sidebar
         notes={visibleNotes}
         folders={folders}
@@ -1474,7 +1514,8 @@ function AppTree() {
           setSidebarOpen(false)
         }}
         onNewNote={(folder) => void handleNewNote(folder)}
-        onHeaderMenu={(pos) => setHeaderMenu(pos)}
+        onNewFolder={() => setDialog({ kind: 'new-folder', parentId: null })}
+        onNewCanvas={() => handleNewCanvas()}
         onNoteMenu={(note, pos) => setNoteMenu({ note, ...pos })}
         rootSort={rootSort}
         onFolderMenu={(folder, pos) => setFolderMenu({ folder, ...pos })}
@@ -1518,7 +1559,6 @@ function AppTree() {
         {barNeeded && (
           <PaneBar
             presence={presence}
-            sidebarCollapsed={!isMobile && collapsed}
             isMobile={isMobile}
             onToggleSidebar={toggleSidebar}
             selectedTags={selectedTags}
@@ -1568,6 +1608,7 @@ function AppTree() {
                 onActivateTab={(tabId) => activateTab(pane.id, tabId)}
                 onCloseTab={(tabId) => closePaneTab(pane.id, tabId)}
                 onNewNote={() => void handleNewNote(undefined, pane.id)}
+                onRenameNote={renameNote}
                 onClosePane={panes.length > 1 ? () => closePaneAt(pane.id) : undefined}
                 hideTabs={pane.id === inlinePane?.id}
                 tabDrop={
@@ -1604,37 +1645,6 @@ function AppTree() {
           anchor="pointer"
           pos={{ x: noteMenu.x, y: noteMenu.y }}
           onClose={() => setNoteMenu(null)}
-        />
-      )}
-
-      {headerMenu && (
-        <Menu
-          anchor="pointer"
-          pos={headerMenu}
-          onClose={() => setHeaderMenu(null)}
-          items={[
-            {
-              label: 'Nueva carpeta',
-              icon: <FolderPlus size={14} />,
-              onSelect: () => setDialog({ kind: 'new-folder', parentId: null }),
-            },
-            {
-              label: 'Nuevo canvas',
-              icon: <Frame size={14} />,
-              onSelect: () => handleNewCanvas(),
-            },
-            {
-              label: `Orden de la lista: ${SORT_LABELS[rootSort]}…`,
-              icon: <ArrowDownWideNarrow size={14} />,
-              separatorBefore: true,
-              onSelect: () => setDialog({ kind: 'sort', folderId: null }),
-            },
-            {
-              label: 'Apariencia…',
-              icon: <Palette size={14} />,
-              onSelect: () => setDialog({ kind: 'theme' }),
-            },
-          ]}
         />
       )}
 
@@ -1685,6 +1695,11 @@ function AppTree() {
                 icon: <Palette size={14} />,
                 onSelect: () => setDialog({ kind: 'theme' }),
                 separatorBefore: true,
+              },
+              {
+                label: `Orden de la lista: ${SORT_LABELS[rootSort]}…`,
+                icon: <ArrowDownWideNarrow size={14} />,
+                onSelect: () => setDialog({ kind: 'sort', folderId: null }),
               },
               {
                 label: 'Cerrar sesión',
