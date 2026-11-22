@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "deploy": "npm run build && firebase deploy --only firestore:rules,firestore:indexes,hosting",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run tests/collab.test.ts tests/editor.test.tsx tests/editor-echo.test.tsx tests/editor-table.test.tsx tests/editor-toolbar.test.tsx tests/modal.test.tsx tests/export.test.ts tests/tags.test.ts tests/properties.test.ts tests/folders.test.ts tests/sorting.test.ts tests/sort-apply.test.ts tests/markdown.test.ts tests/markdownEmitter.test.ts tests/usage.test.ts tests/vault.test.ts tests/notes.test.ts tests/browser.test.ts tests/sidebar.test.tsx tests/panebar.test.tsx tests/panes.test.ts tests/noteSession.test.ts tests/tabs.test.tsx",
