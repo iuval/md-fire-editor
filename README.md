@@ -268,6 +268,28 @@ reales y verifican que convergen, que un cliente tardío se hidrata desde la bit
 que un extraño no puede leer ni escribir. `tests/editor.test.tsx` monta el editor en
 jsdom para detectar roturas de wiring (extensiones, presence, modo solo lectura).
 
+## Operación (producción)
+
+Todo esto vive en el proyecto `md-sync-app` del plan **Blaze**.
+
+| Pieza | Qué hace | Dónde se ve |
+|---|---|---|
+| Uptime check `firemd.app` | `GET /` cada 5 min desde 4 regiones, SSL validado | *Monitoring → Uptime checks* |
+| Alert policy «firemd.app caído» | avisa cuando el check falla 10 min seguidos desde ≥2 regiones; auto-cierra a los 30 min | *Monitoring → Alerting* |
+| Canal de email | manda los avisos a la cuenta del dueño | *Monitoring → Notification channels* |
+| Presupuesto «guardrail mensual» | USD 50/mes, avisa al 50 %, 90 %, 100 % del gasto real y al 100 % proyectado | *Billing → Budgets & alerts* |
+| Firestore PITR | restauración a cualquier minuto de los últimos 7 días | *Firestore → Backups* |
+| Backup diario | snapshot automático, retención 7 días | *Firestore → Backups* |
+| Delete protection | la base no se puede borrar sin desactivarla antes | *Firestore → Database* |
+
+El presupuesto avisa, no corta el gasto: Blaze no tiene tope. Si querés un tope duro,
+hay que apagar el proyecto a mano o pasar a presupuesto con corte por Cloud Billing.
+
+Además, `.github/workflows/uptime.yml` corre `scripts/check-site.mjs` cada hora y falla
+si el sitio no responde, si el certificado no cubre el host, si le quedan menos de 21
+días o si desaparecen los headers (CSP, HSTS, `X-Frame-Options`) o el canonical. Ese
+es el que detecta un renewal fallido; el uptime check de Google sólo ve si responde.
+
 ## Dominio
 
 Un solo sitio de Hosting (`md-sync-app`) con dos dominios personalizados: el apex

@@ -1,0 +1,29 @@
+name: Site uptime
+
+# Monitoreo de los dominios públicos sin servicio de terceros: si el sitio deja
+# de responder, el certificado no cubre el host, o le quedan menos de 21 días,
+# el run falla y GitHub le avisa al dueño del repo.
+on:
+  schedule:
+    # Cada hora al minuto 17 (UTC). Un renewal de Firebase que falle se detecta
+    # el mismo día, mucho antes de que el certificado expire.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: site-uptime
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Probar dominios, TLS y headers
+        run: node scripts/check-site.mjs
