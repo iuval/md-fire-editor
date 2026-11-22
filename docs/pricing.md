@@ -1,0 +1,239 @@
+# Costos de Firestore y modelo de precios — FireMD
+
+**Estado**: propuesta. El cobro no está implementado; la medición y la UI sí (ver §6).
+**Fecha**: 22-nov-2026. **Fuente de los números**: `scripts/pricing-model.mjs`
+(reproducible con `node scripts/pricing-model.mjs`; no depende de Firebase).
+
+Este documento fija dos cosas: (1) cuánto cuesta operar la arquitectura actual en
+Firestore Standard (US), y (2) qué se cobra y a quién. El punto 2 no se puede ejecutar
+todavía porque falta medición confiable del lado servidor (§6).
+
+---
+
+## 1. Tarifas y cuota gratuita
+
+Región **US** (`us-central1` / `nam5`). En `southamerica-east1` (São Paulo) las
+operaciones cuestan ~50–60 % más: la base queda en US, como está hoy.
+
+| Concepto | Cuota gratis (proyecto) | Precio excedente | Nota para FireMD |
+|---|---|---|---|
+| Escrituras | 20.000 / día | **$0,09 / 100k** ($0,90 / 1M) | Cada bloque del CRDT (throttle 350 ms), cada guardado de nota y cada heartbeat de presencia es 1 escritura. Es el costo dominante. |
+| Lecturas | 50.000 / día | **$0,03 / 100k** ($0,30 / 1M) | Listeners `onSnapshot`, apertura de notas, `get()` de reglas y los `ls`/`find` de agentes. |
+| Borrados | 20.000 / día | **$0,01 / 100k** ($0,10 / 1M) | Compactación de la subcolección `updates` y borrado de notas. |
+| Almacenamiento | 1 GiB total | **$0,15 / GiB-mes** | ~4.000 notas markdown al límite de 250 KB, o ~1.700 lienzos de 600 KB, por GiB. |
+| PITR | sin cuota | **$0,15 / GiB-mes** | Activo en producción (README §Operación). |
+| Backup | sin cuota | **$0,03 / GiB-mes** | Activo en producción. |
+| Egress | 10 GiB / mes | **$0,12 / GiB** | Markdown comprimido: consume poco. |
+| Auth / Hosting | 50.000 MAU / 10 GiB | gratis hasta escalar | Login con Google sin costo hasta 50k MAU. |
+
+La cuota de operaciones es **por día y por proyecto**, no por usuario. La de storage y
+egress es mensual. Eso importa: el free tier se consume entre todos los usuarios a la
+vez, así que el costo marginal de un usuario no es cero hasta agotar la cuota del día.
+
+---
+
+## 2. Costo por usuario y por flota
+
+Perfil simulado: usuario intensivo, 22 días activos/mes, 30 min de tipeo real por día,
+colabora con una persona y corre ~100 comandos de agente CLI/MCP por día. 20 MB de
+notas + historial.
+
+El script corre dos juegos de supuestos sobre el mismo modelo:
+
+- **base** — las premisas del documento original (2 escrituras/s, heartbeat 20 s).
+- **code** — las constantes reales del código (throttle 350 ms → 2,86 escrituras/s,
+  heartbeat 10 s, borrados de compactación, guardados de nota y escrituras del medidor).
+
+| | base | code (real) |
+|---|---|---|
+| Escrituras / día | 4.100 | 6.332 |
+| Lecturas / día | 5.300 | 6.093 |
+| Borrados / día | 3.600 | 5.144 |
+| **Costo bruto usuario/mes** | **$0,1271** | **$0,1799** |
+| — escrituras | $0,0812 | $0,1254 |
+| — lecturas | $0,0350 | $0,0402 |
+| — borrados | $0,0079 | $0,0113 |
+| — storage | $0,0030 | $0,0030 |
+| **100 DAU/mes (neto de cuota)** | **$16,02** | **$23,22** |
+| Operaciones facturables (100 DAU) | 11,7M writes · 14,4M reads · 10,2M deletes | 18,4M writes · 16,8M reads · 14,8M deletes |
+
+Salida literal del script:
+
+```text
+[base] usuario intensivo/mes: $0.1271
+  writes=$0.0812 reads=$0.0350 deletes=$0.0079 storage=$0.0030
+  100 DAU/mes (neto de cuota): $16.02
+[code] usuario intensivo/mes: $0.1799
+  writes=$0.1254 reads=$0.0402 deletes=$0.0113 storage=$0.0030
+  100 DAU/mes (neto de cuota): $23.22
+1M writes=$0.90 1M reads=$0.30 1M deletes=$0.10
+Margen con $5/1M operaciones: reads 94%, writes 82%
+Storage: costo $0.33/GiB-mes, precio $0.50 -> margen 34%
+```
+
+**Por qué el modelo original subestima ~40 %** (detalle en §3):
+
+1. El comentario dice "throttle 350 ms (~2,8 writes/s)" pero después calcula con
+   **2 writes/s**. El código usa 350 ms (`provider.ts:25`): 1.800 s / 0,35 = 5.143
+   bloques, no 3.600.
+2. El modelo asume heartbeat de presencia cada **20 s**; el código usa **10 s**
+   (`awareness.ts:30`): 720 escrituras/día en 2 h, no 360.
+3. No cuenta los **guardados de nota** (debounce 1,2 s en `NotePane.tsx:147-154`): cada uno
+   escribe 2 documentos (`body/main` + `notes/{id}`).
+4. No cuenta el **propio medidor de uso**: 1 escritura cada 30 s por editor activo
+   (`CollaborativeEditor.tsx:80-92`).
+5. No cuenta los **borrados reales** de la compactación (borra todos los bloques
+   aplicados, `provider.ts:423-427`).
+
+El orden de magnitud se mantiene: un usuario intensivo cuesta **centavos**, y 100 DAU
+cuestan **decenas de dólares**, no cientos. El riesgo financiero no está en el usuario
+humano: está en el agente en bucle y en el free tier sin medidor.
+
+---
+
+## 3. Discrepancias entre el modelo y el código
+
+| # | Modelo dice | El código hace | Efecto |
+|---|---|---|---|
+| 1 | 2 escrituras/s | 2,86/s (`FLUSH_MS = 350`) | +43 % de bloques |
+| 2 | Heartbeat 20 s | 10 s (`HEARTBEAT_MS = 10_000`) | +100 % de presencia |
+| 3 | 3.600 borrados/día | Borra todos los bloques aplicados al compactar | Borrados ≈ escrituras de bloque |
+| 4 | Compacta cada 40 bloques o 160 KB | Además compacta por inactividad a los 5 min (`COMPACT_IDLE_MS`) | Manifiestos extra al cerrar sesión |
+| 5 | Costo = escrituras + lecturas | `estimateCost()` solo suma reads y writes (`usage.ts:43-44`) | El costo mostrado omite deletes, storage y egress |
+| 6 | Cuota gratis por proyecto | No hay contabilidad de cuota ni tope en el cliente | El free tier se consume sin aviso |
+| 7 | Egress $0,12/GiB | `bytesRead`/`bytesWritten` se miden pero no se cotizan | Egress no aparece en el costo |
+| 8 | PITR + backup | Activos en producción (README), fuera del modelo | +$0,18/GiB-mes no contabilizado |
+
+Nota menor: las reglas hacen `get()` de la nota y del entitlement. Cada `get()` en
+reglas se factura como lectura (cacheada por request), así que abrir una nota puede
+costar 1 lectura más de las que cuenta el modelo.
+
+---
+
+## 4. Modelo comercial propuesto
+
+El costo marginal es tan bajo que **no conviene poner barrera de pago en la edición
+humana**: mata la adopción y el loop viral de compartir links. Se monetiza lo que
+escala por volumen o automatización.
+
+### A. Cuota gratuita permanente (sin tarjeta)
+
+- Notas y carpetas ilimitadas, hasta **250 MB** de almacenamiento total (costo real
+  máximo ~$0,04/mes).
+- Colaboración en tiempo real ilimitada (o 3–5 editores por documento).
+- **10.000 operaciones de agente/mes** (CLI/MCP). Costo < $0,01/mes por usuario; deja
+  probar la integración con Claude/Cursor/OpenClaw sin fricción.
+
+### B. Saldo prepago (packs que no vencen)
+
+- Packs de **$5, $15 o $50**, con auto top-up opcional cuando el saldo baja de $1.
+- Tarifas en la página de uso:
+  - **Operaciones de agente: $0,50 / 100k** ($5 / 1M). Margen bruto 82 % (si son
+    escrituras) a 94 % (si son lecturas).
+  - **Almacenamiento extra: $0,50 / GB-mes** sobre los 250 MB gratis. Costo con PITR +
+    backup: $0,33/GiB-mes → margen 34 %.
+  - Historial extendido / snapshots / exportación automática: micro-cargo o
+    desbloqueado con saldo cargado.
+
+### C. Conflicto a resolver antes de construir
+
+La UI ya muestra **planes flat de $4 (solo) y $12 (hasta 5 personas)**
+(`UpgradeDialog.tsx`), y `entitlements` ya bloquea compartir y agentes con
+`plan === 'paid'`. Este documento propone **créditos prepagos**, no suscripción. Son
+dos modelos distintos y no conviene tener los dos:
+
+- **Flat + packs**: el plan paga la edición y la colaboración; los packs pagan agentes,
+  storage e historial. Es el que encaja con lo ya construido (`entitlements` +
+  `credits`).
+- **Solo créditos**: más simple de operar, pero compartir y agentes dejan de tener un
+  precio predecible y el margen depende del uso.
+
+Recomendación: **flat $4/$12 para edición + colaboración; créditos para agentes,
+storage e historial**. Así el ingreso base es predecible y el costo variable se cobra
+donde se genera.
+
+### D. Proveedor de pagos
+
+Stripe no opera desde Uruguay. Opciones: Merchant of Record (Paddle / Lemon Squeezy /
+Polar, ~5 % + $0,50, resuelve IVA) o MercadoPago / dLocal local. El mínimo de $2 es
+caro: en $2 el fee se lleva 18 % (Stripe) a 30 % (MoR). Empujar packs de $5/$10 y
+aceptar $2 como mínimo configurable.
+
+---
+
+## 5. Salvaguardas financieras
+
+1. **Throttle del CRDT según actividad**: subir de 350 ms a 500–600 ms sigue siendo
+   instantáneo al ojo y recorta escrituras y borrados de compactación ~35–40 %.
+   Cambia una constante (`provider.ts:25`) y los tests de collab miden la latencia.
+2. **Rate limit por minuto en CLI/MCP**: hoy no existe. Un agente en bucle haciendo
+   `find`/`patch` puede quemar el saldo en minutos. Default 60 req/min, configurable.
+3. **Cuota cacheada en el cliente/reglas**: no hacer una lectura extra por tecla. El
+   estado de cuota/tier va en `profiles/{uid}` o en Custom Claims (viajan en el JWT y
+   se leen en reglas sin lectura extra).
+4. **Tope duro de gasto**: un presupuesto de Firebase avisa pero no corta. Para el free
+   tier hace falta un tope real (contador del servidor o límite por reglas).
+
+---
+
+## 6. Qué está implementado y qué falta
+
+### Implementado (con evidencia)
+
+| Pieza | Dónde | Qué hace |
+|---|---|---|
+| Contadores de uso | `src/lib/usage.ts:47-84` | `usage/{uid}` con `writes`, `reads`, `bytesWritten`, `bytesRead`, `storageBytes`; incrementos con `setDoc(..., {merge:true})`. |
+| Alimentación desde el sync | `src/AppTree.tsx:452-467` | Deltas de `SyncStats` (bloques/bytes escritos y aplicados) cada 30 s (`CollaborativeEditor.tsx:80-92`). |
+| Storage recalculado | `src/AppTree.tsx:470-478` | Suma de `markdownBytes` de las notas, debounce 5 s. |
+| Estimación de costo | `src/lib/usage.ts:43-44` | Solo lecturas + escrituras con tarifas públicas. |
+| Diálogo de uso | `src/components/UsageDialog.tsx` | Costo, notas, carpetas, storage, escrituras/lecturas, transferencia y diagnóstico de memoria. |
+| Créditos (modelo) | `src/lib/usage.ts:109-134` + `firestore.rules:551-570` | `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (≥ $2), `autoTopUp`; ledger inmutable; el usuario solo lee. |
+| Entitlements | `src/lib/entitlements.ts` + `firestore.rules:502-512` | `entitlements/{uid}` con `plan: free|paid`; `hasPaidPlan()` en reglas. |
+| Gating de plan | `src/AppTree.tsx:1261,1352,1691` | Compartir y agentes piden plan pago; `UpgradeDialog` muestra $4/$12. |
+| Reglas de uso y créditos | `firestore.rules:528-570` | Solo el dueño escribe `usage`, mes `YYYY-MM`, enteros ≥ 0; `credits` solo admin. |
+| Tests | `tests/usage.test.ts`; `tests/firestore.rules.test.ts:1089+` | Tarifas, formato, mínimo de recarga; reglas de `usage` y `credits`. |
+| Backups / PITR | README §Operación | Activos en producción. |
+
+### Falta (por prioridad)
+
+| # | Falta | Evidencia del hueco | Tamaño |
+|---|---|---|---|
+| 1 | **Medición confiable server-side** | `usage/{uid}` lo escribe el cliente y las reglas lo permiten (`firestore.rules:528-546`): sirve para mostrar, no para cobrar. El propio código lo dice (`usage.ts:4-14`). | L — Cloud Function + contadores. |
+| 2 | **Contador de borrados** | `SyncStats` no tiene `deletes` (`provider.ts:32-39`); la compactación borra sin contabilizar (`provider.ts:423-427`); las reglas no aceptan el campo. | S — campo + regla + test. |
+| 3 | **Costo completo** | `estimateCost()` omite deletes, storage y egress (`usage.ts:43-44`); el diálogo muestra storage pero no lo cotiza. | S. |
+| 4 | **Reset mensual** | `recordUsage` incrementa y setea `month` pero nunca resetea: los contadores son de por vida y el diálogo los rotula con el mes del último guardado. | S — reset al cambiar de mes. |
+| 5 | **Metering de agentes** | La CLI/MCP escribe directo en Firestore y no toca `usage`; no hay atribución ni contador de operaciones. | M — contador en CLI/MCP + reglas. |
+| 6 | **Rate limit CLI/MCP** | Sin `rate`/`throttle` en `agent/*.mjs`. | S. |
+| 7 | **Cuota y topes** | No hay 250 MB, ni 10k operaciones, ni tope duro: el free tier es ilimitado. | M — reglas + contador + UI. |
+| 8 | **Consumo de créditos** | `credits` existe pero nada lo debita; el ledger es inmutable desde el cliente. | M — backend. |
+| 9 | **Checkout / proveedor** | `UpgradeDialog` es "escribinos"; no hay pasarela. Stripe no opera en UY. | L — MoR o MercadoPago/dLocal. |
+| 10 | **Cuota en claims** | `profiles/{uid}` solo tiene `name`; no hay Custom Claims; `hasPaidPlan()` hace `get()` por evaluación. | S/M. |
+| 11 | **PITR/backup en el costo** | Activos en producción, fuera del modelo y del diálogo. | S. |
+| 12 | **Throttle 500–600 ms** | Sigue en 350 ms (`provider.ts:25`). | S — una constante + medir. |
+
+### Deriva de documentación detectada
+
+- `docs/roadmap.md:5-9` dice que el proyecto está en **Spark**; el README §Operación dice
+  **Blaze**. El roadmap quedó viejo.
+- `docs/comercial-review.md` dice "no hay backups ni PITR habilitados"; el README los
+  lista como activos. Verificar cuál es el estado real antes de citarlo.
+- `docs/comercial-review.md` estima storage a $0,006/GiB-mes; la tarifa Standard es
+  **$0,15/GiB-mes**. El texto viejo subestima 25× el storage (irrelevante para texto,
+  pero corrige el número).
+
+---
+
+## 7. Plan sugerido (orden)
+
+1. **Completar el medidor** (S): contar borrados, reset mensual, costo con deletes +
+   storage + egress, y mostrar el desglose en el diálogo. Tests en `tests/usage.test.ts`.
+2. **Decidir el modelo comercial** (S): flat + packs o solo créditos (§4C). Sin esta
+   decisión no se toca el checkout.
+3. **Metering de agentes + rate limit** (M): contador por agente en la CLI/MCP y tope de
+   60 req/min. Es la superficie donde el costo se descontrola.
+4. **Cuota free tier** (M): 250 MB y 10k operaciones, con aviso antes del tope.
+5. **Medición server-side** (L): Cloud Function que agregue eventos y escriba
+   `usage/{uid}`; el cliente pasa a solo lectura. Recién ahí el cobro es posible.
+6. **Checkout** (L): MoR o MercadoPago/dLocal, webhook idempotente, ledger, factura.
+
+Los pasos 1–3 no dependen de Blaze ni del proveedor de pagos y se pueden hacer hoy.
