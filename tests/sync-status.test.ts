@@ -33,6 +33,12 @@ describe('sync tone', () => {
   it('gives a real error precedence over a dropped connection', () => {
     expect(syncTone(status({ offline: true, error: 'No tenés permiso' }))).toBe('error')
   })
+
+  // A visitor's document lives in this browser: there is no server to reach, so
+  // "Local" is healthy, not a failure.
+  it('is ok for a local-only document', () => {
+    expect(syncTone(status({ connected: false, offline: true, local: true }))).toBe('ok')
+  })
 })
 
 describe('sync words', () => {
@@ -46,6 +52,13 @@ describe('sync words', () => {
 
   it('does not call a broken change "Offline"', () => {
     expect(syncText(status({ error: 'Se descartó un cambio dañado' }))).not.toBe('Offline')
+  })
+
+  it('names a local-only document "Local"', () => {
+    expect(syncText(status({ connected: false, offline: true, local: true }))).toBe('Local')
+    expect(syncDetail(status({ local: true }))).toBe(
+      'Saved in this browser. Sign in to keep it in your account.'
+    )
   })
 })
 

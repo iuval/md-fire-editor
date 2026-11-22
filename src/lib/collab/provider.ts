@@ -15,9 +15,11 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db as defaultDb } from '../../firebase'
+import { postBlock, proxyEnabled } from '../proxy'
 import { base64ToBytes, bytesToBase64, sha256Hex } from './encoding'
 import { openLocalChannel, type LocalChannel, type LocalChannelFactory } from './localChannel'
 import { classifyTransportError } from './transportError'
+import { isLocalMode } from '../localStore'
 
 const REMOTE_ORIGIN = Symbol('firestore-remote')
 
@@ -48,6 +50,12 @@ export interface SyncStats {
 
 export interface ProviderStatus {
   connected: boolean
+  /**
+   * The document lives in this browser only: a visitor's workspace. Nothing is
+   * missing and nothing is broken — the sidebar says "Local" instead of claiming
+   * a sync error for a store that has no server to sync with.
+   */
+  local?: boolean
   /**
    * The backend is unreachable. Optional because the listener keeps serving
    * cached snapshots when the socket drops, so `connected` alone cannot tell
@@ -183,6 +191,12 @@ export class FirestoreYjsProvider {
     }
 
     if (!this.fs) {
+      // A visitor's document is persisted in this browser: there is no server to
+      // reach, so this is not an error. A signed-in session without Firebase is.
+      if (isLocalMode()) {
+        this.setStatus({ connected: true, offline: false, local: true, error: null })
+        return
+      }
       this.setStatus({ connected: false, offline: true, error: t('error.firebaseNotConfigured') })
       return
     }
@@ -319,20 +333,36 @@ export class FirestoreYjsProvider {
     this.inflight++
 
     try {
-      const ref = await addDoc(collection(this.fs, 'notes', this.noteId, 'updates'), {
-        v: BLOCK_VERSION,
-        jid,
-        hash,
-        bytes: merged.byteLength,
-        data,
-        clientId: this.doc.clientID,
-        createdAt: serverTimestamp(),
-      })
+      if (proxyEnabled) {
+        // El proxy es el único escritor: resuelve ACL, cuota y saldo, y debita
+        // en la misma transacción (docs/prepaid-usage-model.md §3.6).
+        const receipt = await postBlock(this.noteId, {
+          v: BLOCK_VERSION,
+          jid,
+          hash,
+          bytes: merged.byteLength,
+          data,
+          clientId: this.doc.clientID,
+        })
+        // El bloque llega por el listener con el id del opId: registrarlo ya
+        // evita aplicarlo dos veces y deja que la compactación lo pode.
+        this.appliedIds.add(receipt.id)
+      } else {
+        const ref = await addDoc(collection(this.fs, 'notes', this.noteId, 'updates'), {
+          v: BLOCK_VERSION,
+          jid,
+          hash,
+          bytes: merged.byteLength,
+          data,
+          clientId: this.doc.clientID,
+          createdAt: serverTimestamp(),
+        })
+        // Our own block arrives through the listener; record it so compaction can
+        // prune it and the document is not applied twice.
+        this.appliedIds.add(ref.id)
+      }
       this.stats.blocksWritten++
       this.stats.bytesWritten += merged.byteLength
-      // Our own block arrives through the listener; record it so compaction can
-      // prune it and the document is not applied twice.
-      this.appliedIds.add(ref.id)
       this.logBytes += data.length
       this.setStatus({ error: null })
     } catch (err) {

@@ -91,6 +91,8 @@ export const en = {
     viewer: 'Read only',
   },
   sync: {
+    local: 'Local',
+    localDetail: 'Saved in this browser. Sign in to keep it in your account.',
     error: 'Sync error',
     offline: 'Offline',
     saving: 'Saving',
@@ -150,6 +152,12 @@ export const en = {
     blockHashMismatch: 'A change that does not match its signature was discarded',
     signInFailed: 'Could not sign in with Google.',
     noPermissionEdit: 'You do not have permission to edit this note',
+    quotaExhausted:
+      'You reached today\'s free limit. It renews at 00:00 UTC, or you can add $5 of credit. Your text stays saved on this device.',
+    balanceExhausted:
+      'No balance left. Add credit to keep syncing this note; your text stays saved on this device.',
+    storageOver:
+      'You reached the 100 MB storage limit. Export your notes to free space; nothing was deleted.',
   },
   property: {
     text: 'Text',
@@ -328,6 +336,20 @@ export const en = {
     stripLabel: 'About FireMD',
     whatIs: 'What is FireMD?',
     plans: 'Plans and usage',
+    quota: 'Free: 100 MB and 700 actions a day, no card.',
+    welcomeTitle: 'Welcome to FireMD',
+    infoTitle: 'What is FireMD?',
+    infoLead:
+      'A real-time collaborative Markdown editor. Everything you just wrote stays in this browser until you sign in.',
+    infoCollab: 'Two people in the same paragraph without stepping on each other (CRDT).',
+    infoFolders: 'Folders and permissions: Owner, Can edit, Read only, per folder and per note.',
+    infoAgents: 'Agents: firemd ls, firemd cat, firemd patch --etag … and an MCP server.',
+    infoPortable: 'Your Markdown stays Markdown: export the vault whenever you want.',
+    infoPlans:
+      'Free tier: 100 MB of storage and 700 actions a day. Past that, prepaid credits — no subscription.',
+    infoClose: 'Keep writing',
+    storeSaved: 'Saved {notes} notes and {folders} folders in your account.',
+    storeSaveFailed: 'I could not save your local workspace. It is still in this browser.',
     save: 'Save to my account',
     signIn: 'Sign in with Google',
     dialogTitle: 'Save your draft?',
@@ -337,5 +359,6 @@ export const en = {
     dialogDiscard: 'Discard',
     saved: 'Draft saved in your account.',
     saveFailed: 'I could not save the draft. Try again.',
+    localBadge: 'Local',
   },
 } as const

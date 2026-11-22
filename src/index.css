@@ -1437,63 +1437,77 @@ body.tab-dragging .pane-drop {
   padding: 8px 16px;
 }
 
-/* ---------- guest view ----------
-   The visitor's editor is the real editor stack (Tiptap + Yjs + markdown) in
-   the app's reading column: same title, same typography, same formatting bar.
-   The only difference is where the document lives — localStorage, not
-   Firestore. The strip is 36 px at the bottom and only appears in this view. */
-
-.guest {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 100svh;
-  width: 100%;
-  overflow-y: auto;
-  background: light-dark(var(--color-page), var(--color-page-dark));
-}
-
-/* The welcome text is multi-line: the editor's placeholder rule clamps to one
-   line, so the visitor's copy gets its own. */
-.guest .md-editor-content p.is-editor-empty:first-child::before {
-  height: auto;
-  float: none;
-  white-space: pre-wrap;
-  line-height: 1.7;
-}
+/* ---------- guest strip ----------
+   The visitor gets the same shell as a signed-in session: sidebar, tabs, panes
+   and the same editor. The only extra chrome is this 36 px row above the pane,
+   carrying the free quota and one sign-in button. It never covers the document
+   and never opens anything on its own. */
 
 .guest-strip {
-  position: sticky;
-  bottom: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-shrink: 0;
   align-items: center;
-  gap: 8px 14px;
+  justify-content: space-between;
+  gap: 12px;
   min-height: 36px;
-  padding: 6px 16px;
-  border-top: 1px solid light-dark(var(--color-border), var(--color-border-dark));
-  background: light-dark(var(--color-page), var(--color-page-dark));
+  padding: 4px 12px;
+  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  background: light-dark(var(--color-bg-2), var(--color-bg-2-dark));
   font-size: 12.5px;
 }
 
-.guest-strip-link {
+.guest-strip-quota {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: light-dark(var(--color-muted), var(--color-muted-dark));
-  text-decoration: none;
+}
+
+.guest-strip-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.guest-strip-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .guest-strip-link:hover {
   color: light-dark(var(--color-text), var(--color-text-dark));
-  text-decoration: underline;
 }
 
-.guest-strip-spacer {
-  flex: 1;
+.guest-strip-link:focus-visible {
+  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .guest-strip .btn {
   min-height: 26px;
   padding: 2px 10px;
   font-size: 12.5px;
+}
+
+.guest-info-lead {
+  margin: 0 0 12px;
+}
+
+.guest-info-list {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
 }
 
 .empty {

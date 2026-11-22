@@ -412,7 +412,12 @@ export const PRESETS: readonly ThemePreset[] = [
   }),
 ]
 
-export const DEFAULT_PRESET_ID = PRESETS[0].id
+/**
+ * The theme a first visit paints. `nordico` is the calm blue-grey design: it is
+ * the one the product ships as its own face, so a visitor's first frame is the
+ * real editor in the real theme instead of a stock white page.
+ */
+export const DEFAULT_PRESET_ID = 'nordico'
 
 export function findPreset(presetId: string): ThemePreset {
   return PRESETS.find((entry) => entry.id === presetId) ?? PRESETS[0]

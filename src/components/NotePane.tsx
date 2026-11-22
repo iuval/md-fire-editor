@@ -15,6 +15,7 @@ import {
   type Note,
 } from '../lib/notes'
 import { MAX_CANVAS_CHARS, canvasTagsOf } from '../lib/canvas/model'
+import { isLocalMode } from '../lib/localStore'
 import type { CanvasFileRef } from '../lib/canvas/files'
 import { DocCrumbs } from './DocCrumbs'
 import { joinFrontmatter, sameMarkdown, splitFrontmatter } from '../lib/markdown'
@@ -273,6 +274,7 @@ function NoteDocument({
         onStatus={onStatus}
         onStats={onStats}
         isMobile={isMobile}
+        local={isLocalMode()}
       />
     </div>
   )

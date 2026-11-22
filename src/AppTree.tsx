@@ -1,5 +1,5 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogIn, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { SidebarRail } from './components/SidebarRail'
 import { PaneBar } from './components/PaneBar'
@@ -91,15 +91,25 @@ import {
   type UsageTotals,
 } from './lib/usage'
 import { requestTopUp, updateCreditSettings } from './lib/credits'
-import { GuestWorkspace } from './components/GuestWorkspace'
+import { subscribeAllowance, type ServerAllowance } from './lib/allowance'
+import { proxyEnabled, startCheckout } from './lib/proxy'
 import { GuestDraftDialog } from './components/GuestDraftDialog'
+import { GuestInfoDialog, GuestStrip } from './components/GuestStrip'
 import { clearGuestDraft, readGuestDraft, isMigratable, guestDraftTitle, type GuestDraft } from './lib/guestDraft'
 import { migrateGuestDraft } from './lib/guestMigration'
 import { shouldShowGuestView } from './lib/guestMode'
 import { flushGuestEvents } from './lib/guestAnalytics'
+import {
+  LOCAL_UID,
+  localStoreSummary,
+  migrateLocalStore,
+  setLocalMode,
+} from './lib/localStore'
 import { useT } from './i18n/index.ts'
 import type { ProviderStatus, SyncStats } from './lib/collab/provider'
 import {
+  createFolder,
+  createNote,
   fetchNoteBodies,
   importNotes,
   migrateNoteBodies,
@@ -176,6 +186,7 @@ type Dialog =
   | { kind: 'sort'; folderId: string | null }
   | { kind: 'rename-tag' }
   | { kind: 'theme' }
+  | { kind: 'guest-info' }
 
 function noteFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get('note')
@@ -248,6 +259,22 @@ function AppTree() {
   const t = useT()
   const { user, loading: authLoading, error: authError, doGoogleSignIn, doSignOut } = useAuth()
   const isAdmin = useIsAdmin(user)
+
+  /**
+   * The visitor's workspace: the same shell and the same editor as a signed-in
+   * session, with localStorage instead of Firestore. A shared-note link still
+   * needs a session, so the auth wall stays for that case only.
+   */
+  const guest = !user && shouldShowGuestView({ hasUser: false, hasSharedNote: noteFromUrl() !== null })
+  const uid = user?.uid ?? LOCAL_UID
+  /** The uid the workspace subscribes to: local store for a visitor. */
+  const workspaceUid = guest ? LOCAL_UID : user?.uid
+  /**
+   * Who the tree renders for. A visitor is a real session as far as the shell is
+   * concerned: same sidebar, same tabs, same panes — only the transport differs.
+   * The fallback keeps the signed-in branches from reading `null`.
+   */
+  const viewer = user ?? { uid: LOCAL_UID, displayName: null, email: null, photoURL: null }
   const {
     notes,
     folders,
@@ -259,8 +286,14 @@ function AppTree() {
     reserveFolderId,
     removeNote,
     removeFolder,
-  } = useWorkspace(user?.uid)
+  } = useWorkspace(workspaceUid)
   const { agents, error: agentsError } = useAgents(user?.uid)
+
+  /** The local workspace is migrated once per sign-in, not on every auth tick. */
+  const guestMigrated = useRef(false)
+  // Layout effects run before the data effects below, so the store dispatch is
+  // already in place when the first subscription mounts.
+  useLayoutEffect(() => setLocalMode(guest), [guest])
 
   const [workspace, setWorkspace] = useState<WorkspaceState>(initialWorkspace)
   const { layout, focusedPaneId } = workspace
@@ -352,6 +385,8 @@ function AppTree() {
   const [notice, setNotice] = useState<string | null>(null)
   const [usage, setUsage] = useState<UsageTotals | null>(null)
   const [credits, setCredits] = useState<Credits | null>(null)
+  /** Cuota medida por el proxy; null hasta que el proxy escriba la del día. */
+  const [serverAllowance, setServerAllowance] = useState<ServerAllowance | null>(null)
   /** A guest draft waiting to be offered after sign-in. */
   const [guestDraft, setGuestDraft] = useState<GuestDraft | null>(null)
   const [guestSaving, setGuestSaving] = useState(false)
@@ -439,9 +474,9 @@ function AppTree() {
   }, [])
 
   useEffect(() => {
-    if (!user) return
-    return subscribeUserSettings(user.uid, (settings) => setRootSortState(settings.rootSort))
-  }, [user])
+    if (!uid) return
+    return subscribeUserSettings(uid, (settings) => setRootSortState(settings.rootSort))
+  }, [uid])
 
   // Usage and credits are only read by the usage dialog: subscribe when it
   // opens instead of using two of the startup listeners.
@@ -450,14 +485,17 @@ function AppTree() {
     if (!user) {
       setUsage(null)
       setCredits(null)
+      setServerAllowance(null)
       return
     }
     if (!usageOpen) return
     const offUsage = subscribeUsage(user.uid, setUsage)
     const offCredits = subscribeCredits(user.uid, setCredits)
+    const offAllowance = subscribeAllowance(user.uid, setServerAllowance)
     return () => {
       offUsage()
       offCredits()
+      offAllowance()
     }
   }, [user, usageOpen])
 
@@ -507,21 +545,65 @@ function AppTree() {
     track('collab_session', user.uid, { peers: presence.length })
   }, [user, presence.length])
 
-  // A visitor who signs in keeps the funnel events collected before the login
-  // and gets one offer to save the draft. Both are one-shot: the draft is
-  // cleared after the migration and the counter after the flush.
+  // A visitor who signs in brings the workspace with them: the local notes and
+  // folders are copied into Firestore once, and the local copy is cleared only
+  // after the whole copy succeeds. The single-draft path stays as a fallback for
+  // a draft saved before the workspace existed.
   useEffect(() => {
     if (!user) {
       setGuestDraft(null)
       guestOffered.current = false
+      guestMigrated.current = false
       return
     }
     flushGuestEvents(user.uid)
+    const summary = localStoreSummary()
+    if (summary.notes > 0 && !guestMigrated.current) {
+      guestMigrated.current = true
+      void migrateLocalStore(user.uid, { createFolder, createNote, saveNoteContent })
+        .then(({ notes: migratedNotes, folders: migratedFolders }) =>
+          setNotice(
+            t('guest.storeSaved', { notes: migratedNotes, folders: migratedFolders })
+          )
+        )
+        .catch(() => setNotice(t('guest.storeSaveFailed')))
+      return
+    }
     if (guestOffered.current) return
     guestOffered.current = true
     const draft = readGuestDraft()
     if (isMigratable(draft)) setGuestDraft(draft)
-  }, [user])
+  }, [user, t])
+
+  /**
+   * The visitor's first frame: one welcome note, already open and writable.
+   *
+   * It is a real note in the local store, not a placeholder and not a modal: the
+   * visitor can type in it, create more, organise them in folders, and the whole
+   * workspace travels to the account on sign-in. Seeded once per browser, so a
+   * returning visitor gets their own notes back.
+   */
+  const guestSeeded = useRef(false)
+  useEffect(() => {
+    if (!guest || guestSeeded.current) return
+    guestSeeded.current = true
+    if (localStoreSummary().notes > 0) return
+    void (async () => {
+      try {
+        const note = await createNote(LOCAL_UID)
+        await saveNoteContent(note.id, {
+          title: t('guest.welcomeTitle'),
+          markdown: t('guest.welcome'),
+        })
+        setWorkspace((ws) => ({
+          layout: openTab(ws.layout, ws.focusedPaneId, note.id, newId('tab')),
+          focusedPaneId: ws.focusedPaneId,
+        }))
+      } catch {
+        // A failed seed leaves the empty workspace; the visitor can create a note.
+      }
+    })()
+  }, [guest, t])
 
   // Only *visible* notes cost a subscription, and it is a body subscription: the
   // metadata already arrives with the workspace list, so a tab no longer holds a
@@ -532,7 +614,7 @@ function AppTree() {
   /** Every open note id, including the ones still being created. */
   const allOpenIdsKey = activeNoteIds(layout).join('|')
   useEffect(() => {
-    if (!user) {
+    if (!uid) {
       setBodies({})
       setNotesById({})
       setNoteErrors({})
@@ -560,7 +642,7 @@ function AppTree() {
       )
     )
     return () => offs.forEach((off) => off())
-  }, [openIdsKey, allOpenIdsKey, user])
+  }, [openIdsKey, allOpenIdsKey, uid])
 
   /**
    * A note the list has never seen — a `?note=` deep link, or one just created
@@ -573,7 +655,7 @@ function AppTree() {
   /** Drafts of notes still being written are pruned by their own lifetime. */
   const pendingKey = Array.from(pendingNotes).join('|')
   useEffect(() => {
-    if (!user) return
+    if (!uid) return
     const ids = orphanIdsKey ? orphanIdsKey.split('|') : []
     const pendingIds = pendingKey ? pendingKey.split('|') : []
     setNotesById((prev) => keepIds(prev, [...ids, ...pendingIds]))
@@ -600,7 +682,7 @@ function AppTree() {
       )
     )
     return () => offs.forEach((off) => off())
-  }, [orphanIdsKey, pendingKey, user])
+  }, [orphanIdsKey, pendingKey, uid])
 
   useEffect(() => {
     setPresence([])
@@ -741,7 +823,7 @@ function AppTree() {
 
   const handleImportFiles = useCallback(
     async (files: FileList | null) => {
-      if (!files || !user) return
+      if (!files || !uid) return
       const list = Array.from(files)
       // Keyed by lower-case path: the props array does not contain folders created
       // during this import, so the cache is the source of truth (this used to
@@ -771,7 +853,7 @@ function AppTree() {
       const flush = async () => {
         if (queue.length === 0) return
         const pending = queue.splice(0, queue.length)
-        const { created, failed } = await importNotes(user.uid, pending, {
+        const { created, failed } = await importNotes(uid, pending, {
           onProgress: (done) => setNotice(`Importando… ${imported + done} notas`),
         })
         imported += created.length
@@ -846,7 +928,7 @@ function AppTree() {
       }
 
       await flush()
-      track('import', user.uid, { count: imported })
+      track('import', uid, { count: imported })
       const details: string[] = []
       if (skippedJunk > 0) details.push(`${skippedJunk} archivos de sistema de macOS`)
       if (skippedAttachments > 0) details.push(`${skippedAttachments} adjuntos (todavía no se guardan imágenes)`)
@@ -859,7 +941,7 @@ function AppTree() {
       )
       if (first) selectNote(first)
     },
-    [addFolder, folders, selectNote, user]
+    [addFolder, folders, selectNote, uid]
   )
 
   const focusPane = useCallback((paneId: string) => {
@@ -961,20 +1043,20 @@ function AppTree() {
 
   const handleChooseSort = useCallback(
     async (mode: SortMode) => {
-      if (!user || dialog.kind !== 'sort') return
+      if (!uid || dialog.kind !== 'sort') return
       if (dialog.folderId) await setFolderSort(dialog.folderId, mode)
       else {
         setRootSortState(mode)
-        await setRootSort(user.uid, mode)
+        await setRootSort(uid, mode)
       }
     },
-    [dialog, user]
+    [dialog, uid]
   )
 
   /** Moves a note one position inside its folder (manual order only). */
   const handleMoveNote = useCallback(
     async (note: Note, direction: -1 | 1) => {
-      if (!user) return
+      if (!uid) return
       const parentId = note.folderId ?? null
       const mode = resolveSort(parentId, foldersById, rootSort)
       if (mode !== 'manual') {
@@ -999,7 +1081,7 @@ function AppTree() {
         setNotice('No se pudo guardar el orden. Revisá la conexión.')
       }
     },
-    [foldersById, notes, rootSort, user]
+    [foldersById, notes, rootSort, uid]
   )
 
   const handleMoveFolder = useCallback(
@@ -1031,7 +1113,7 @@ function AppTree() {
 
   const handleRenameTag = useCallback(
     async (from: string, to: string) => {
-      if (!user) return
+      if (!uid) return
       const source = from.replace(/^#/, '')
       const target = to.replace(/^#/, '')
       const affected = notes.filter((note) =>
@@ -1082,9 +1164,9 @@ function AppTree() {
         current.map((tag) => (tag === source.toLowerCase() ? target.toLowerCase() : tag))
       )
       setNotice(`Etiqueta renombrada en ${changed} ${changed === 1 ? 'nota' : 'notas'}.`)
-      track('note_shared', user.uid, { kind: 'tag-rename' })
+      track('note_shared', uid, { kind: 'tag-rename' })
     },
-    [notes, user]
+    [notes, uid]
   )
 
   const toggleFolder = useCallback((id: string) => {
@@ -1127,8 +1209,8 @@ function AppTree() {
       // Everything the first frame needs is local: the tab, a note with the
       // fields the write will produce, and an empty body. The Firestore write
       // and the body subscription happen behind the open page.
-      if (user) {
-        const draft = newNoteDraft(user.uid, folder, noteId, kind)
+      if (uid) {
+        const draft = newNoteDraft(uid, folder, noteId, kind)
         setNotesById((prev) => ({ ...prev, [noteId]: draft }))
         // Same body `createNote` writes: a new canvas is a valid empty canvas.
         setBodies((prev) => ({ ...prev, [noteId]: kind === 'canvas' ? EMPTY_CANVAS_JSON : '' }))
@@ -1179,7 +1261,7 @@ function AppTree() {
         })
       }
     },
-    [addNote, focusedPaneId, isMobile, layout, user]
+    [addNote, focusedPaneId, isMobile, layout, uid]
   )
 
   /** Obsidian's "New canvas": an empty JSON Canvas document in a new tab. */
@@ -1203,7 +1285,7 @@ function AppTree() {
       const siblings = folders.filter((f) => (f.parentId ?? null) === parentId)
       const options = { sort: inherited, order: nextOrder(siblings) }
       const id = reserveFolderId()
-      const optimistic = id && user ? optimisticFolder(user.uid, id, name, parentId, options) : null
+      const optimistic = id && uid ? optimisticFolder(uid, id, name, parentId, options) : null
       if (optimistic) addOptimisticFolder(optimistic)
       if (parentId) setExpanded((prev) => new Set(prev).add(parentId))
 
@@ -1229,7 +1311,7 @@ function AppTree() {
       foldersById,
       reserveFolderId,
       rootSort,
-      user,
+      uid,
     ]
   )
 
@@ -1302,9 +1384,10 @@ function AppTree() {
   const noteMenuItems: MenuItem[] = noteMenu
     ? (() => {
         const note = noteMenu.note
-        const owner = !!user && note.ownerId === user.uid
+        const owner = note.ownerId === viewer.uid
         const inherited = sharedFolderOf(note, folders)
-        const canManageShare = owner && note.aclSource === 'own'
+        // Sharing needs a cloud account: a visitor's note lives in this browser.
+        const canManageShare = owner && note.aclSource === 'own' && !guest
         const items: MenuItem[] = []
         if (canManageShare || inherited) {
           items.push({
@@ -1500,16 +1583,93 @@ function AppTree() {
     presence: presence.length,
   })
 
+  /**
+   * The account menu. A visitor gets the same export, import and appearance as
+   * anyone else — those work on the local store — plus the sign-in button where
+   * a session would have "sign out". Nothing that needs a server is offered.
+   */
+  const accountMenuItems: MenuItem[] = guest
+    ? [
+        {
+          label: t('guest.signIn'),
+          icon: <LogIn size={14} />,
+          onSelect: () => {
+            setDialog({ kind: 'none' })
+            void doGoogleSignIn()
+          },
+        },
+        {
+          label: 'Exportar vault (.zip)',
+          icon: <Download size={14} />,
+          onSelect: handleExportAll,
+          separatorBefore: true,
+        },
+        {
+          label: 'Importar vault (.zip o .md)…',
+          icon: <Upload size={14} />,
+          onSelect: () => importRef.current?.click(),
+        },
+        {
+          label: 'Apariencia…',
+          icon: <Palette size={14} />,
+          onSelect: () => setDialog({ kind: 'theme' }),
+          separatorBefore: true,
+        },
+        {
+          label: `${t('menu.listOrder')}: ${sortLabel(rootSort)}…`,
+          icon: <ArrowDownWideNarrow size={14} />,
+          onSelect: () => setDialog({ kind: 'sort', folderId: null }),
+        },
+      ]
+    : [
+        {
+          label: 'Exportar vault (.zip)',
+          icon: <Download size={14} />,
+          onSelect: handleExportAll,
+        },
+        {
+          label: 'Uso y facturación…',
+          icon: <Activity size={14} />,
+          onSelect: () => setDialog({ kind: 'usage' }),
+          separatorBefore: true,
+        },
+        {
+          label: 'Importar vault (.zip o .md)…',
+          icon: <Upload size={14} />,
+          onSelect: () => importRef.current?.click(),
+        },
+        {
+          label: 'Agentes de IA…',
+          icon: <Bot size={14} />,
+          onSelect: () => setDialog({ kind: 'agents' }),
+          separatorBefore: true,
+        },
+        {
+          label: 'Apariencia…',
+          icon: <Palette size={14} />,
+          onSelect: () => setDialog({ kind: 'theme' }),
+          separatorBefore: true,
+        },
+        {
+          label: `${t('menu.listOrder')}: ${sortLabel(rootSort)}…`,
+          icon: <ArrowDownWideNarrow size={14} />,
+          onSelect: () => setDialog({ kind: 'sort', folderId: null }),
+        },
+        {
+          label: 'Cerrar sesión',
+          icon: <LogOut size={14} />,
+          separatorBefore: true,
+          onSelect: () => void handleSignOut(),
+        },
+      ]
+
   if (authLoading) return <div className="empty">{t('app.loading')}</div>
 
-  if (!user) {
-    // A shared-note link still needs a session: the visitor has no access to
-    // that document, so the guest editor would be a dead end. Everywhere else,
-    // the visitor writes first and signs in only when they want to keep it.
-    if (shouldShowGuestView({ hasUser: false, hasSharedNote: noteFromUrl() !== null })) {
-      return <GuestWorkspace onSignIn={() => void doGoogleSignIn()} authError={authError} />
-    }
-
+  // A visitor without a session falls through to the real tree below: same
+  // sidebar, same tabs, same panes, same editor, backed by the local store. The
+  // auth wall stays for a shared-note link, which has no access without a
+  // session.
+  if (!user && !guest) {
     const browser = currentBrowser()
     const appUrl = typeof window !== 'undefined' ? window.location.origin : ''
 
@@ -1595,9 +1755,9 @@ function AppTree() {
             current.includes(key) ? current.filter((t) => t !== key) : [...current, key]
           )
         }
-        uid={user.uid}
+        uid={viewer.uid}
         userName={userName}
-        photoURL={user.photoURL}
+        photoURL={viewer.photoURL}
         onAccountClick={() => setDialog({ kind: 'account-menu' })}
         notice={notice}
         onDismissNotice={() => setNotice(null)}
@@ -1613,6 +1773,17 @@ function AppTree() {
         <span className="sr-only" role="status">
           {notice ?? ''}
         </span>
+
+        {/* The visitor's only extra chrome: the free quota and one sign-in
+            button. Nothing here interrupts typing, and collapsing the panel
+            leaves just the button, so the page stays clean. */}
+        {guest && (
+          <GuestStrip
+            compact={!isMobile && collapsed}
+            onSignIn={() => void doGoogleSignIn()}
+            onInfo={() => setDialog({ kind: 'guest-info' })}
+          />
+        )}
 
         {/* The bar exists only when it carries something. With more than one
             pane the tabs live in each pane's own strip, so an empty row above
@@ -1659,7 +1830,7 @@ function AppTree() {
                 noteError={noteId ? (noteErrors[noteId] ?? null) : null}
                 creating={noteId ? pendingNotes.has(noteId) : false}
                 focused={pane.id === focusedPaneId}
-                uid={user.uid}
+                uid={viewer.uid}
                 userName={userName || 'Alguien'}
                 folders={folders}
                 isMobile={isMobile}
@@ -1720,6 +1891,16 @@ function AppTree() {
 
       {dialog.kind === 'theme' && <ThemeDialog onClose={() => setDialog({ kind: 'none' })} />}
 
+      {dialog.kind === 'guest-info' && (
+        <GuestInfoDialog
+          onSignIn={() => {
+            setDialog({ kind: 'none' })
+            void doGoogleSignIn()
+          }}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
       {dialog.kind === 'account-menu' && (
         <>
           <div
@@ -1728,47 +1909,7 @@ function AppTree() {
             onClick={() => setDialog({ kind: 'none' })}
           />
           <Menu
-            items={[
-              {
-                label: 'Exportar vault (.zip)',
-                icon: <Download size={14} />,
-                onSelect: handleExportAll,
-              },
-              {
-                label: 'Uso y facturación…',
-                icon: <Activity size={14} />,
-                onSelect: () => setDialog({ kind: 'usage' }),
-                separatorBefore: true,
-              },
-              {
-                label: 'Importar vault (.zip o .md)…',
-                icon: <Upload size={14} />,
-                onSelect: () => importRef.current?.click(),
-              },
-              {
-                label: 'Agentes de IA…',
-                icon: <Bot size={14} />,
-                onSelect: () => setDialog({ kind: 'agents' }),
-                separatorBefore: true,
-              },
-              {
-                label: 'Apariencia…',
-                icon: <Palette size={14} />,
-                onSelect: () => setDialog({ kind: 'theme' }),
-                separatorBefore: true,
-              },
-              {
-                label: `${t('menu.listOrder')}: ${sortLabel(rootSort)}…`,
-                icon: <ArrowDownWideNarrow size={14} />,
-                onSelect: () => setDialog({ kind: 'sort', folderId: null }),
-              },
-              {
-                label: 'Cerrar sesión',
-                icon: <LogOut size={14} />,
-                separatorBefore: true,
-                onSelect: () => void handleSignOut(),
-              },
-            ]}
+            items={accountMenuItems}
             onClose={() => setDialog({ kind: 'none' })}
             anchor="bottom-left"
           />
@@ -1787,10 +1928,10 @@ function AppTree() {
               ? { id: shareNoteFolder.id, name: shareNoteFolder.name }
               : null,
           }}
-          currentUid={user.uid}
+          currentUid={viewer.uid}
           onClose={() => setDialog({ kind: 'none' })}
           onChangeAccess={(access: Access) => {
-            track('note_shared', user.uid, { kind: 'note', access })
+            track('note_shared', viewer.uid, { kind: 'note', access })
             return updateNoteSharing(shareNote, { access })
           }}
           onAddMember={(uid: string, role: Role) =>
@@ -1817,10 +1958,10 @@ function AppTree() {
             },
             ownerId: shareFolderTarget.ownerId,
           }}
-          currentUid={user.uid}
+          currentUid={viewer.uid}
           onClose={() => setDialog({ kind: 'none' })}
           onChangeAccess={(access: Access) => {
-            track('note_shared', user.uid, { kind: 'folder', access })
+            track('note_shared', viewer.uid, { kind: 'folder', access })
             return updateFolderSharing(shareFolderTarget, { access })
           }}
           onAddMember={(uid: string, role: Role) =>
@@ -1889,6 +2030,7 @@ function AppTree() {
         <UsageDialog
           usage={usage}
           credits={credits}
+          serverAllowance={serverAllowance}
           isAdmin={isAdmin}
           notes={notes.length}
           folders={folders.length}
@@ -1906,6 +2048,13 @@ function AppTree() {
             if (user) await updateCreditSettings(user.uid, settings)
           }}
           onRequestTopUp={async (amountUsd) => {
+            // Con el proxy, cargar saldo es una sesión de checkout del MoR: el
+            // saldo se acredita cuando el webhook firmado confirma el pago.
+            if (proxyEnabled) {
+              const session = await startCheckout(amountUsd)
+              location.assign(session.url)
+              return
+            }
             if (user) await requestTopUp(user.uid, amountUsd)
           }}
           onClose={() => setDialog({ kind: 'none' })}
@@ -1933,7 +2082,7 @@ function AppTree() {
           onRename={renameAgent}
           onLink={async (agentUid, folder, role) => {
             await updateFolderSharing(folder, { addMember: { uid: agentUid, role } })
-            track('agent_linked', user.uid, { role })
+            track('agent_linked', viewer.uid, { role })
           }}
         />
       )}

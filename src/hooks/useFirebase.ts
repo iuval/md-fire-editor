@@ -19,6 +19,7 @@ import {
 import { publishOwnDirectoryEntry } from '../lib/directory'
 import { subscribeMyAgents, type Agent } from '../lib/agents'
 import { resolveIsAdmin } from '../lib/admin'
+import { isLocalMode } from '../lib/localStore'
 import { t } from '../i18n/index.ts'
 
 export function useAuth() {
@@ -108,7 +109,9 @@ export function useWorkspace(uid: string | undefined) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!uid || !isFirebaseReady()) {
+    // The visitor's workspace lives in the browser: same subscriptions, same
+    // callbacks, local transport. `subscribeMyNotes` routes on `isLocalMode()`.
+    if (!uid || (!isFirebaseReady() && !isLocalMode())) {
       setNotes([])
       setFolders([])
       setLoading(false)

@@ -5,9 +5,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import { ThemeDialog } from '../src/components/ThemeDialog'
 import { t } from '../src/i18n/index.ts'
 import {
+  DEFAULT_PRESET_ID,
   PRESETS,
   THEME_TOKENS,
   derivePalette,
+  findPreset,
   loadThemeState,
   presetState,
   resolvePalette,
@@ -113,7 +115,7 @@ describe('theme dialog', () => {
     })
 
     const expected = derivePalette(
-      { canvas: '#fdf6e3', accent: PRESETS[0].seeds.accent },
+      { canvas: '#fdf6e3', accent: findPreset(DEFAULT_PRESET_ID).seeds.accent },
       'light',
     )
     expect(cssVar('--color-bg')).toBe(expected.bg)
@@ -130,10 +132,10 @@ describe('theme dialog', () => {
     })
     try {
       mount(<ThemeDialog onClose={() => {}} />)
-      // Obsidiana is a light design; on a dark screen the fields still show the
-      // light half, so a tweak is never painted nowhere.
+      // Every preset is written in one appearance; on a dark screen the fields
+      // still show the light half, so a tweak is never painted nowhere.
       const paneles = document.querySelector<HTMLInputElement>('input[aria-label="Panels"]')
-      expect(paneles?.value).toBe(resolvePalette(presetState(PRESETS[0].id), 'light').bg2)
+      expect(paneles?.value).toBe(resolvePalette(presetState(DEFAULT_PRESET_ID), 'light').bg2)
 
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
       act(() => {
@@ -154,7 +156,7 @@ describe('theme dialog', () => {
 
   it('restores the preset after the colors were touched', () => {
     mount(<ThemeDialog onClose={() => {}} />)
-    const preset = PRESETS[0]
+    const preset = findPreset(DEFAULT_PRESET_ID)
     const original = resolvePalette(presetState(preset.id), 'light').bg
 
     const swatch = document.querySelector<HTMLButtonElement>('.color-swatch[aria-label="Background: #1e1e1e"]')
@@ -168,7 +170,7 @@ describe('theme dialog', () => {
 
   it('drops the per-color tweaks when asked', () => {
     mount(<ThemeDialog onClose={() => {}} />)
-    const original = resolvePalette(presetState(PRESETS[0].id), 'light').bg2
+    const original = resolvePalette(presetState(DEFAULT_PRESET_ID), 'light').bg2
     const field = document.querySelector<HTMLInputElement>('input[aria-label="Panels"]')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     act(() => {

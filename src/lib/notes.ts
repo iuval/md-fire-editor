@@ -16,6 +16,32 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import { postBody, proxyEnabled } from './proxy'
+import {
+  applyLocalOrder,
+  createLocalFolder,
+  createLocalNote,
+  deleteLocalFolder,
+  deleteLocalNote,
+  fetchLocalBodies,
+  getLocalFolder,
+  importLocalNotes,
+  isLocalMode,
+  moveLocalFolder,
+  moveLocalNoteTo,
+  renameLocalFolder,
+  reserveLocalFolderId,
+  reserveLocalNoteId,
+  saveLocalNoteContent,
+  setLocalFolderSort,
+  setLocalRootSort,
+  subscribeLocalBody,
+  subscribeLocalFolders,
+  subscribeLocalNote,
+  subscribeLocalNotes,
+  subscribeLocalSettings,
+  updateLocalFolderTags,
+} from './localStore'
 import { canReadAcl, canWriteAcl, type Access, type Acl, type Role } from './acl'
 import { DEFAULT_SORT, type SortMode } from './sorting'
 import { EMPTY_CANVAS_JSON, MAX_CANVAS_CHARS } from './canvas/model'
@@ -156,6 +182,7 @@ export function subscribeMyNotes(
   onChange: (notes: Note[]) => void,
   onError: (message: string) => void
 ): () => void {
+  if (isLocalMode()) return subscribeLocalNotes(uid, onChange)
   if (!db) return () => undefined
   const q = query(
     collection(db, 'notes'),
@@ -174,6 +201,7 @@ export function subscribeMyFolders(
   onChange: (folders: Folder[]) => void,
   onError: (message: string) => void
 ): () => void {
+  if (isLocalMode()) return subscribeLocalFolders(uid, onChange)
   if (!db) return () => undefined
   const q = query(
     collection(db, 'folders'),
@@ -192,6 +220,7 @@ export function subscribeNote(
   onChange: (note: Note | null) => void,
   onError: (message: string) => void
 ): () => void {
+  if (isLocalMode()) return subscribeLocalNote(noteId, onChange)
   if (!db) return () => undefined
   return onSnapshot(
     doc(db, 'notes', noteId),
@@ -217,6 +246,7 @@ export function subscribeNoteBody(
   onChange: (body: string | null) => void,
   onError: (message: string) => void
 ): () => void {
+  if (isLocalMode()) return subscribeLocalBody(noteId, onChange)
   if (!db) return () => undefined
   return onSnapshot(
     bodyRef(noteId),
@@ -235,6 +265,7 @@ export async function fetchNoteBodies(
   noteIds: string[],
   { onProgress, concurrency = 8 }: { onProgress?: (done: number) => void; concurrency?: number } = {}
 ): Promise<Map<string, string>> {
+  if (isLocalMode()) return fetchLocalBodies(noteIds)
   const bodies = new Map<string, string>()
   if (!db) return bodies
   const database = db
@@ -270,6 +301,7 @@ export async function fetchNoteBodies(
  * first frame while Firestore creates the document in the background.
  */
 export function reserveNoteId(): string | null {
+  if (isLocalMode()) return reserveLocalNoteId()
   if (!db) return null
   return doc(collection(db, 'notes')).id
 }
@@ -312,6 +344,7 @@ export async function createNote(
   id?: string,
   kind: NoteKind = 'note'
 ): Promise<Note> {
+  if (isLocalMode()) return createLocalNote(uid, folder, id, kind)
   if (!db) throw new Error(t('error.firebaseNotConfigured'))
   const ref = id ? doc(db, 'notes', id) : doc(collection(db, 'notes'))
   const now = serverTimestamp()
@@ -460,6 +493,7 @@ export async function importNotes(
   notes: NewNoteInput[],
   { onProgress }: { onProgress?: (written: number) => void } = {}
 ): Promise<{ created: string[]; failed: number }> {
+  if (isLocalMode()) return importLocalNotes(uid, notes)
   if (!db) throw new Error(t('error.firebaseNotConfigured'))
   const database = db
   const created: string[] = []
@@ -525,6 +559,14 @@ export async function saveNoteContent(
     maxChars?: number
   }
 ): Promise<void> {
+  if (isLocalMode()) return saveLocalNoteContent(noteId, patch)
+  // El texto va por el proxy, que cobra la escritura en la misma transacción.
+  // Sin proxy configurado se mantiene la escritura directa (desarrollo).
+  const markdown = patch.markdown
+  if (proxyEnabled && markdown !== undefined) {
+    await postBody(noteId, { ...patch, markdown })
+    return
+  }
   if (!db) return
   const database = db
   const batch = writeBatch(database)
@@ -556,6 +598,7 @@ export async function saveNoteContent(
  * becomes private to its owner again.
  */
 export async function moveNoteTo(note: Note, target: Folder | null): Promise<void> {
+  if (isLocalMode()) return moveLocalNoteTo(note, target)
   if (!db) return
   const acl: Acl = target
     ? { memberIds: target.memberIds, roles: target.roles, access: target.access }
@@ -570,6 +613,7 @@ export async function moveNoteTo(note: Note, target: Folder | null): Promise<voi
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
+  if (isLocalMode()) return deleteLocalNote(noteId)
   if (!db) return
   const database = db
   // The note goes first: it is what grants access to the body. If the second
@@ -590,6 +634,7 @@ export function cleanFolderName(name: string): string {
  * the row shows up in the first frame and the document catches up.
  */
 export function reserveFolderId(): string | null {
+  if (isLocalMode()) return reserveLocalFolderId()
   if (!db) return null
   return doc(collection(db, 'folders')).id
 }
@@ -624,6 +669,7 @@ export async function createFolder(
   options: { sort?: SortMode; order?: number } = {},
   id?: string
 ): Promise<Folder> {
+  if (isLocalMode()) return createLocalFolder(uid, name, parentId, tags, options, id)
   if (!db) throw new Error(t('error.firebaseNotConfigured'))
   const ref = id ? doc(db, 'folders', id) : doc(collection(db, 'folders'))
   const now = serverTimestamp()
@@ -657,6 +703,7 @@ export async function createFolder(
 }
 
 export async function setFolderSort(folderId: string, sort: SortMode): Promise<void> {
+  if (isLocalMode()) return setLocalFolderSort(folderId, sort)
   if (!db) return
   await updateDoc(doc(db, 'folders', folderId), { sort, updatedAt: serverTimestamp() })
 }
@@ -669,6 +716,7 @@ export function subscribeUserSettings(
   uid: string,
   onChange: (settings: UserSettings) => void
 ): () => void {
+  if (isLocalMode()) return subscribeLocalSettings(onChange)
   if (!db) return () => undefined
   return onSnapshot(
     doc(db, 'settings', uid),
@@ -681,6 +729,7 @@ export function subscribeUserSettings(
 }
 
 export async function setRootSort(uid: string, rootSort: SortMode): Promise<void> {
+  if (isLocalMode()) return setLocalRootSort(rootSort)
   if (!db) return
   await setDoc(
     doc(db, 'settings', uid),
@@ -702,6 +751,7 @@ export async function applyOrder(
   collection: 'folders' | 'notes',
   pairs: Array<{ id: string; order: number }>
 ): Promise<void> {
+  if (isLocalMode()) return applyLocalOrder(collection, pairs)
   if (!db) return
   const database = db
   for (let start = 0; start < pairs.length; start += BATCH_LIMIT) {
@@ -714,16 +764,19 @@ export async function applyOrder(
 }
 
 export async function moveFolder(folderId: string, parentId: string | null): Promise<void> {
+  if (isLocalMode()) return moveLocalFolder(folderId, parentId)
   if (!db) return
   await updateDoc(doc(db, 'folders', folderId), { parentId, updatedAt: serverTimestamp() })
 }
 
 export async function updateFolderTags(folderId: string, tags: string[]): Promise<void> {
+  if (isLocalMode()) return updateLocalFolderTags(folderId, tags)
   if (!db) return
   await updateDoc(doc(db, 'folders', folderId), { tags, updatedAt: serverTimestamp() })
 }
 
 export async function renameFolder(folderId: string, name: string): Promise<void> {
+  if (isLocalMode()) return renameLocalFolder(folderId, name)
   if (!db) return
   await updateDoc(doc(db, 'folders', folderId), {
     name: name.trim().slice(0, MAX_FOLDER_NAME) || t('app.folderName'),
@@ -738,6 +791,7 @@ export async function setFolderAccess(folderId: string, access: Access): Promise
 
 /** Remove the folder, moving its notes back to the root first. */
 export async function deleteFolder(folderId: string): Promise<void> {
+  if (isLocalMode()) return deleteLocalFolder(folderId)
   if (!db) return
   const notesSnap = await getDocs(query(collection(db, 'notes'), where('folderId', '==', folderId)))
   const batch = writeBatch(db)
@@ -787,6 +841,8 @@ export async function updateNoteSharing(
   note: Note,
   change: { access?: Access; addMember?: { uid: string; role: Role }; removeMember?: string; setRole?: { uid: string; role: Role } }
 ): Promise<void> {
+  // A visitor's workspace has no one to share with: the ACL stays local.
+  if (isLocalMode()) return
   if (!db) return
   if (note.aclSource === 'folder') {
     throw new Error(t('error.folderInheritedAcl'))
@@ -805,6 +861,8 @@ export async function updateFolderSharing(
   folder: Folder,
   change: { access?: Access; addMember?: { uid: string; role: Role }; removeMember?: string; setRole?: { uid: string; role: Role } }
 ): Promise<void> {
+  // A visitor's workspace has no one to share with: the ACL stays local.
+  if (isLocalMode()) return
   if (!db) return
 
   let next: Acl = { memberIds: folder.memberIds, roles: folder.roles, access: folder.access }
@@ -839,6 +897,7 @@ async function propagateFolderAcl(folderId: string, acl: Acl): Promise<void> {
 }
 
 export async function getFolder(folderId: string): Promise<Folder | null> {
+  if (isLocalMode()) return getLocalFolder(folderId)
   if (!db) return null
   const snap = await getDoc(doc(db, 'folders', folderId))
   return snap.exists() ? toFolder(snap.id, snap.data()) : null

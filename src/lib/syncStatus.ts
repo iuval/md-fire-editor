@@ -17,12 +17,14 @@ export type SyncTone = 'ok' | 'pending' | 'error'
  * dead connection.
  */
 export function syncTone(status: ProviderStatus): SyncTone {
+  if (status.local) return 'ok'
   if (status.error) return 'error'
   if (status.offline || status.pendingWrites > 0 || !status.connected) return 'pending'
   return 'ok'
 }
 
 export function syncText(status: ProviderStatus): string {
+  if (status.local) return t('sync.local')
   if (status.error) return t('sync.error')
   if (status.offline) return t('sync.offline')
   if (status.pendingWrites > 0) return t('sync.saving')
@@ -36,6 +38,7 @@ export function syncText(status: ProviderStatus): string {
  * sincronización" without a reason is worse than no status at all.
  */
 export function syncDetail(status: ProviderStatus): string | null {
+  if (status.local) return t('sync.localDetail')
   if (status.error) return status.error
   if (status.offline) return t('sync.offlineDetail')
   if (status.pendingWrites > 0) {

@@ -129,10 +129,12 @@ desde el principio para no tener que corregirlo después.
 > | # | Decisión | Implementación |
 > |---|---|---|
 > | D1 | **Cuota gratuita mensual + créditos prepagos** (pay-per-use + fee; el tiempo real es pago). | `src/lib/quota.ts`, `src/lib/credits.ts`, `docs/prepaid-usage-model.md` |
-> | D2 | **Borrador local-first** en `localStorage` (`firemd-guest-draft`), migrado al entrar. | `src/lib/guestDraft.ts`, `src/lib/guestMigration.ts` |
+> | D2 | **Workspace local-first** en `localStorage` (`firemd-local-store`): notas, carpetas y cuerpos. Se migra al entrar, una sola vez. | `src/lib/localStore.ts`, `src/AppTree.tsx` |
 > | D3 | **Página estática** `public/planes/index.html` con HTML prerenderizado y rewrite en `firebase.json`. | `public/planes/index.html`, `firebase.json` |
 > | D4 | **La franja y la landing solo en visitante sin sesión y sin nota compartida.** | `src/lib/guestMode.ts`, `src/AppTree.tsx` |
-| D5 | **El visitante usa el mismo editor que la app** (Tiptap + Yjs + markdown), con sesión local sin Firestore. No hay editor propio ni página aparte. | `src/components/GuestWorkspace.tsx`, `src/lib/collab/noteSession.ts` (`local`) |
+| D5 | **El visitante usa el shell completo y el mismo editor** (sidebar, carpetas, pestañas, paneles, Tiptap + Yjs) con transporte local. No hay editor propio ni página aparte: es el mismo `AppTree` con otro store. | `src/AppTree.tsx` (`guest`), `src/lib/localStore.ts`, `src/lib/collab/noteSession.ts` (`local`) |
+| D6 | **Tema por defecto: `nordico`** (azul-gris), no el blanco de fábrica. La apariencia sigue al sistema. | `src/lib/theme.ts` (`DEFAULT_PRESET_ID`) |
+| D7 | **Una sola franja de 36 px** con la cuota y el CTA; sin popup ni modal al escribir. Se compacta a solo el botón cuando el panel está colapsado. | `src/components/GuestStrip.tsx`, `src/index.css` |
 
 **D1 — Modelo comercial: flat o pay-per-use.**
 Recomendación: **flat ahora, pay-per-use cuando el medidor sea confiable**. Razones:
@@ -176,28 +178,34 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
 
 - [x] Interfaz mínima: `guestDraft.ts` (persistencia local) y `guestMigration.ts` (crear la
       nota real con `createNote` + `saveNoteContent`). No se reescribió `notes.ts`.
-- [x] `AppTree`: si no hay `user` y no hay nota compartida, monta `GuestWorkspace` con el
-      **editor real** (`CollaborativeEditor` + sesión local de `noteSession`), no un textarea.
+- [x] `AppTree`: si no hay `user` y no hay nota compartida, cae en el **mismo árbol** con
+      `localStore` como transporte (`CollaborativeEditor` + sesión local de `noteSession`).
       Sin modal, sin muro. El cursor queda listo.
-- [ ] Shell completo para el visitante: sidebar, carpetas y varias notas locales. Hoy ve una
-      sola nota con el editor real; el resto del shell sigue siendo solo-sesión. Es el paso
-      que falta para que "usa la app tal cual" sea literal.
-- [x] Persistencia: guardado con debounce + flush en `beforeunload`/desmontaje. Clave
-      `firemd-guest-draft`.
-- [x] Migración al login: `GuestDraftDialog` ofrece guardar; el borrador se borra solo
-      después de que la escritura confirma.
-- [x] Tests: `tests/guest-draft.test.ts`, `tests/guest-mode.test.tsx`.
+- [x] Shell completo para el visitante: el mismo `AppTree` (sidebar, carpetas, pestañas,
+      paneles, editor) con `localStore` como transporte. No hay un componente de editor
+      propio: se borró `GuestWorkspace.tsx`. El visitante ve la app tal cual.
+- [x] Persistencia: `localStore` guarda notas, carpetas y cuerpos en `localStorage`
+      (`firemd-local-store`), con debounce en el editor y flush en `beforeunload`.
+- [x] Migración al login: `migrateLocalStore()` copia carpetas y notas con `createNote` +
+      `saveNoteContent` y borra el store **solo** después de que todas las escrituras
+      confirman. El borrador suelto (`firemd-guest-draft`) queda como respaldo.
+- [x] Tests: `tests/localStore.test.ts`, `tests/guest-mode.test.tsx`.
 - [ ] Aceptación end-to-end en incógnito contra producción (requiere deploy).
 
 ### Fase 2 — Capa de descubrimiento no invasiva (1–2 días)
 
-- [x] Franja mínima (~36 px) en la vista de visitante: `¿Qué es FireMD?` + `Planes y uso` +
-      `Guardar / Entrar con Google`. Sin hero encima del editor.
-- [x] CTA progresivo: aparece al primer cambio real del borrador, nunca como popup. Botón en
-      la franja, no modal.
-- [x] Nota de bienvenida: placeholder editable con los 4 pilares y espacio para probar.
+- [x] Franja de 36 px (`GuestStrip`) sobre el panel: cuota gratuita + `¿Qué es FireMD?` +
+      `Entrar con Google`. Sin hero encima del editor y sin modal.
+- [x] CTA: botón en la franja, siempre visible; nunca un popup al escribir. Cuando el panel
+      está colapsado la franja se compacta a solo el botón.
+- [x] Nota de bienvenida: **nota real** sembrada en el store local con los 4 pilares, ya
+      abierta en una pestaña. No es un placeholder: se puede editar, borrar y reabrir.
+- [x] Diálogo `¿Qué es FireMD?` (`GuestInfoDialog`) con pilares y modelo, abierto desde la
+      franja; nunca automático.
 - [x] Regla D4 explícita en `shouldShowGuestView()`: solo `!user && !sharedNote`.
-- [x] Tests: `tests/guest-mode.test.tsx` (render sin sesión, franja, CTA, restauración).
+- [x] Estado de sincronización honesto: el proveedor local reporta `Local` en vez de un
+      "error de sincronización" falso.
+- [x] Tests: `tests/guest-mode.test.tsx` (franja, diálogo, compacto), `tests/sync-status.test.ts`.
 - [ ] Aceptación en navegador real (requiere deploy).
 
 ### Fase 3 — `/planes` + landing informativa (1–2 días)
@@ -267,20 +275,29 @@ Archivos nuevos:
 
 | Archivo | Qué hace |
 |---|---|
-| `src/lib/guestDraft.ts` | Persistencia local del borrador, validación y título derivado. |
+| `src/lib/localStore.ts` | El workspace del visitante: notas, carpetas y cuerpos en `localStorage`, con `migrateLocalStore()` al entrar. |
+| `src/lib/guestDraft.ts` | Borrador suelto anterior al workspace; queda como respaldo de la migración. |
 | `src/lib/guestMigration.ts` | Crea la nota real con `createNote` + `saveNoteContent`. |
 | `src/lib/guestMode.ts` | Condición única D4: `!user && !sharedNote`. |
 | `src/lib/guestAnalytics.ts` | Contador local del embudo y volcado a `analytics` al entrar. |
-| `src/components/GuestWorkspace.tsx` | **El editor real** (`CollaborativeEditor` con sesión local) + franja + CTA progresivo. |
-| `src/components/GuestDraftDialog.tsx` | Oferta de guardar el borrador al entrar. |
+| `src/components/GuestStrip.tsx` | Franja de 36 px: cuota, `¿Qué es FireMD?` y el CTA. Incluye `GuestInfoDialog`. |
+| `src/components/GuestDraftDialog.tsx` | Oferta de guardar el borrador suelto al entrar. |
 | `public/planes/index.html` | Landing estática con SEO propio. |
 | `public/robots.txt`, `public/sitemap.xml` | Indexación. |
 
 Cambios:
 
-- `src/AppTree.tsx`: sin sesión y sin `?note=` monta `GuestWorkspace`; con sesión ofrece
-  migrar el borrador. Se retiró el gating flat (`UpgradeDialog`, `entitlements`) porque el
-  modelo decidido es cuota + créditos.
+- `src/AppTree.tsx`: sin sesión y sin `?note=` **cae en el mismo árbol** con
+  `localStore` como transporte (`guest`, `workspaceUid`, `viewer`); siembra la nota de
+  bienvenida una vez; al entrar migra el workspace local. Se retiró el gating flat
+  (`UpgradeDialog`, `entitlements`) porque el modelo decidido es cuota + créditos.
+- `src/components/NotePane.tsx`: pasa `local={isLocalMode()}` al editor.
+- `src/lib/collab/provider.ts`: con `local`, el estado es `Local` (sano), no un error de
+  Firebase sin configurar. `src/lib/syncStatus.ts` traduce ese estado.
+- `src/lib/theme.ts`: `DEFAULT_PRESET_ID = 'nordico'` (D6).
+- `src/lib/localStore.ts`: `read()` devolvía una copia superficial de una constante
+  compartida, así que el primer `push` contaminaba el "vacío" para siempre y
+  `clearLocalStore()` no limpiaba la memoria. Ahora `empty()` es una fábrica.
 - `src/lib/collab/noteSession.ts`: `acquireNoteSession(..., local)` construye el provider y la
   awareness con `null` en lugar de Firestore. El stack de edición es el mismo; solo cambia el
   transporte. `FirestoreYjsProvider` y `FirestoreAwareness` ya aceptaban `null`.
@@ -299,8 +316,8 @@ Pendiente y por qué:
 3. **Cobro real y débito de créditos**: requiere checkout y backend.
 4. **Eventos del visitante en servidor**: hoy son locales y se vuelcan al entrar; una
    colección anónima con reglas propias es la alternativa si se quiere medir sin login.
-5. **Shell completo para el visitante**: sidebar, carpetas y varias notas locales. Hoy la
-   vista de visitante es una sola nota con el editor real; el shell sigue siendo solo-sesión.
+5. ~~Shell completo para el visitante~~ **hecho**: el visitante corre el mismo `AppTree` con
+   `localStore`. Queda pendiente la aceptación en navegador real y contra producción.
 
 ---
 
@@ -334,13 +351,21 @@ Pendiente y por qué:
 ## 8. Cómo verificar el estado documentado
 
 ```bash
-# el visitante usa el editor real, no un textarea
-grep -n "local" src/components/GuestWorkspace.tsx
-grep -n "local = false" src/lib/collab/noteSession.ts
-grep -n "textarea" src/components/GuestWorkspace.tsx   # sin resultados
+# el visitante usa el mismo árbol y el mismo editor: no hay editor propio
+grep -n "if (!user && !guest)" src/AppTree.tsx
+grep -n "workspaceUid" src/AppTree.tsx
+grep -n "local={isLocalMode()}" src/components/NotePane.tsx
+test ! -e src/components/GuestWorkspace.tsx && echo "sin editor propio"
+
+# el workspace del visitante vive en el navegador
+grep -n "LOCAL_STORE_KEY" src/lib/localStore.ts
+grep -n "migrateLocalStore" src/AppTree.tsx
 
 # la sesión local no toca Firestore
 grep -n "local ? null : undefined" src/lib/collab/noteSession.ts
+
+# tema por defecto
+grep -n "DEFAULT_PRESET_ID = 'nordico'" src/lib/theme.ts
 
 # rutas: /planes es estática con rewrite
 grep -c rewrites firebase.json
