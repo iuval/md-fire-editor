@@ -456,6 +456,43 @@ service cloud.firestore {
       allow delete: if profileId == uid();
     }
 
+    // ---------- agentes conectados ----------
+    // Cada sesión de la CLI (o de la app de escritorio) se registra sola al
+    // loguearse con la cuenta del dueño. El id lo elige el cliente y no cambia;
+    // el nombre se edita desde la app o con `mdfire name`. Sólo lectura y
+    // edición del nombre: nada acá concede permisos sobre notas.
+    function validAgent(d) {
+      return d.keys().hasOnly(['ownerUid', 'name', 'kind', 'version', 'createdAt', 'lastSeenAt'])
+        && isString(d.ownerUid)
+        && isString(d.name)
+        && d.name.size() > 0
+        && d.name.size() <= 80
+        && isString(d.kind)
+        && d.kind.size() <= 20
+        && isString(d.version)
+        && d.version.size() <= 40
+        && isTimestamp(d.createdAt)
+        && isTimestamp(d.lastSeenAt);
+    }
+
+    match /agents/{agentId} {
+      allow get: if resource != null && resource.data.ownerUid == uid();
+
+      allow list: if signedIn() && resource.data.ownerUid == uid();
+
+      allow create: if signedIn()
+        && validAgent(request.resource.data)
+        && request.resource.data.ownerUid == uid();
+
+      allow update: if resource != null
+        && resource.data.ownerUid == uid()
+        && validAgent(request.resource.data)
+        && request.resource.data.ownerUid == uid()
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if resource != null && resource.data.ownerUid == uid();
+    }
+
     // ---------- plans ----------
     match /admins/{adminId} {
       allow get: if signedIn();

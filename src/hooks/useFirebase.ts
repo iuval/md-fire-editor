@@ -17,6 +17,7 @@ import {
   type NoteKind,
 } from '../lib/notes'
 import { publishOwnDirectoryEntry } from '../lib/directory'
+import { subscribeMyAgents, type Agent } from '../lib/agents'
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
@@ -229,4 +230,30 @@ export function useWorkspace(uid: string | undefined) {
     removeNote,
     removeFolder,
   }
+}
+
+/**
+ * Los agentes conectados a esta cuenta. Se registran solos al loguearse con la
+ * CLI o con la app de escritorio; acá sólo se miran y se renombran.
+ */
+export function useAgents(uid: string | undefined) {
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!uid || !isFirebaseReady()) {
+      setAgents([])
+      return
+    }
+    return subscribeMyAgents(
+      uid,
+      (next) => {
+        setAgents(next)
+        setError(null)
+      },
+      (message) => setError(message)
+    )
+  }, [uid])
+
+  return { agents, error }
 }

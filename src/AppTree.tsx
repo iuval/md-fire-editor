@@ -26,7 +26,7 @@ import { AgentsDialog } from './components/AgentsDialog'
 import { UpgradeDialog } from './components/UpgradeDialog'
 import { UsageDialog } from './components/UsageDialog'
 import { ThemeDialog } from './components/ThemeDialog'
-import { useAuth, useWorkspace } from './hooks/useFirebase'
+import { useAgents, useAuth, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, safeFileName } from './lib/export'
 import { buildVault, planVault, streamVaultNotes } from './lib/vault'
@@ -83,6 +83,7 @@ import {
 } from './lib/panes'
 import { RenameTagDialog } from './components/RenameTagDialog'
 import { isPaid, subscribeEntitlement } from './lib/entitlements'
+import { renameAgent } from './lib/agents'
 import {
   recordUsage,
   setStorageUsage,
@@ -252,6 +253,7 @@ function AppTree() {
     removeNote,
     removeFolder,
   } = useWorkspace(user?.uid)
+  const { agents, error: agentsError } = useAgents(user?.uid)
 
   const [workspace, setWorkspace] = useState<WorkspaceState>(initialWorkspace)
   const { layout, focusedPaneId } = workspace
@@ -1852,8 +1854,11 @@ function AppTree() {
 
       {dialog.kind === 'agents' && (
         <AgentsDialog
+          agents={agents}
+          error={agentsError}
           folders={folders}
           onClose={() => setDialog({ kind: 'none' })}
+          onRename={renameAgent}
           onLink={async (agentUid, folder, role) => {
             await updateFolderSharing(folder, { addMember: { uid: agentUid, role } })
             track('agent_linked', user.uid, { role })

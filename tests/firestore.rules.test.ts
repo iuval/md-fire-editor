@@ -830,6 +830,71 @@ describe('profiles', () => {
   })
 })
 
+describe('agents', () => {
+  const agentDoc = (overrides: Record<string, unknown> = {}) => ({
+    ownerUid: OWNER,
+    name: 'MacBook de Ana',
+    kind: 'cli',
+    version: '0.1.0',
+    createdAt: ts(),
+    lastSeenAt: ts(),
+    ...overrides,
+  })
+
+  it('the owner registers an agent', async () => {
+    await assertSucceeds(setDoc(doc(db(OWNER), 'agents', 'a1'), agentDoc()))
+  })
+
+  it('cannot register an agent for somebody else', async () => {
+    await assertFails(setDoc(doc(db(EDITOR), 'agents', 'a1'), agentDoc()))
+  })
+
+  it('only the owner reads it', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'agents', 'a1'), agentDoc())
+    })
+    await assertSucceeds(getDoc(doc(db(OWNER), 'agents', 'a1')))
+    await assertFails(getDoc(doc(db(STRANGER), 'agents', 'a1')))
+  })
+
+  it('the owner lists their own agents only', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'agents', 'a1'), agentDoc())
+      await setDoc(doc(ctx.firestore(), 'agents', 'a2'), agentDoc({ ownerUid: EDITOR }))
+    })
+    await assertSucceeds(getDocs(query(collection(db(OWNER), 'agents'), where('ownerUid', '==', OWNER))))
+    await assertFails(getDocs(collection(db(OWNER), 'agents')))
+  })
+
+  it('renaming keeps the owner and the creation date', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'agents', 'a1'), agentDoc())
+    })
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'agents', 'a1'), { name: 'Notebook', lastSeenAt: ts() }))
+    await assertFails(updateDoc(doc(db(OWNER), 'agents', 'a1'), { ownerUid: EDITOR }))
+    await assertFails(updateDoc(doc(db(OWNER), 'agents', 'a1'), { createdAt: ts() }))
+    await assertFails(updateDoc(doc(db(EDITOR), 'agents', 'a1'), { name: 'ajeno' }))
+  })
+
+  it('rejects an empty or oversized name', async () => {
+    await assertFails(setDoc(doc(db(OWNER), 'agents', 'a1'), agentDoc({ name: '' })))
+    await assertFails(setDoc(doc(db(OWNER), 'agents', 'a1'), agentDoc({ name: 'x'.repeat(81) })))
+  })
+
+  it('rejects unknown fields and unsigned access', async () => {
+    await assertFails(setDoc(doc(db(OWNER), 'agents', 'a1'), agentDoc({ role: 'owner' })))
+    await assertFails(getDoc(doc(db(), 'agents', 'a1')))
+  })
+
+  it('the owner deletes it', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'agents', 'a1'), agentDoc())
+    })
+    await assertFails(deleteDoc(doc(db(EDITOR), 'agents', 'a1')))
+    await assertSucceeds(deleteDoc(doc(db(OWNER), 'agents', 'a1')))
+  })
+})
+
 describe('tags', () => {
   it('a note can carry a bounded tag list', async () => {
     await seedNote('n1')

@@ -1,28 +1,76 @@
 import { useState } from 'react'
-import { Bot, X } from 'lucide-react'
+import { Bot, Check, Pencil, X } from 'lucide-react'
 import { Modal } from './Modal'
 import { ROLE_LABELS, type Folder, type Role } from '../lib/notes'
+import { cleanAgentName, MAX_AGENT_NAME, type Agent } from '../lib/agents'
 
 interface AgentsDialogProps {
+  agents: Agent[]
+  /** Error del listener de Firestore, si la lista no se pudo leer. */
+  error?: string | null
   folders: Folder[]
+  onRename: (agentId: string, name: string) => Promise<void>
   onLink: (agentUid: string, folder: Folder, role: Role) => Promise<void>
   onClose: () => void
 }
 
+/** "hace 2 min", sin dependencias: la lista es corta y se refresca sola. */
+function since(date: Date | null): string {
+  if (!date) return 'sin uso'
+  const minutes = Math.round((Date.now() - date.getTime()) / 60_000)
+  if (minutes < 1) return 'recién'
+  if (minutes < 60) return `hace ${minutes} min`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `hace ${hours} h`
+  const days = Math.round(hours / 24)
+  return days === 1 ? 'ayer' : `hace ${days} días`
+}
+
 /**
- * Pairs an agent with a folder. The agent is just another Firebase user (an
- * anonymous account created by `mdfire login`), so linking it is a normal
- * member add — and removing it from the folder revokes it instantly.
+ * Los agentes conectados a esta cuenta. Cada sesión de la CLI se registra sola
+ * al loguearse con tu cuenta, así que no hay códigos que pegar: acá se ve la
+ * lista y se le pone nombre. El nombre también se cambia desde la terminal con
+ * `mdfire name`.
+ *
+ * El pareado por uid sigue disponible para el modo `login --agent`, que crea
+ * una cuenta anónima aparte en vez de usar la tuya.
  */
-export function AgentsDialog({ folders, onLink, onClose }: AgentsDialogProps) {
+export function AgentsDialog({ agents, error: listError, folders, onRename, onLink, onClose }: AgentsDialogProps) {
+  const [editing, setEditing] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
   const [uid, setUid] = useState('')
   const [folderId, setFolderId] = useState(folders[0]?.id ?? '')
   const [role, setRole] = useState<Role>('editor')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
 
-  const submit = async () => {
+  const startRename = (agent: Agent) => {
+    setEditing(agent.id)
+    setDraft(agent.name)
+    setError(null)
+  }
+
+  const saveRename = async (agentId: string) => {
+    const name = cleanAgentName(draft)
+    if (!name) {
+      setError('El nombre no puede quedar vacío')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await onRename(agentId, name)
+      setEditing(null)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const submitLink = async () => {
     const clean = uid.trim()
     const folder = folders.find((f) => f.id === folderId)
     if (!folder) {
@@ -49,16 +97,89 @@ export function AgentsDialog({ folders, onLink, onClose }: AgentsDialogProps) {
 
   return (
     <Modal labelledBy="agents-heading" onClose={onClose}>
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h2 id="agents-heading">Agentes de IA</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
-            <X size={15} />
-          </button>
-        </div>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2 id="agents-heading">Agentes conectados</h2>
+        <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
+          <X size={15} />
+        </button>
+      </div>
 
-        <p className="share-hint-box">
-          El agente es una cuenta propia, no la tuya: solo ve las notas de la carpeta que le
-          des, y podés quitarle el acceso cuando quieras desde Compartir.
+      <p className="share-hint-box">
+        Cada sesión de la CLI que entra con tu cuenta aparece acá. Cambiale el nombre desde la app
+        o con <code>mdfire name</code>; el id no cambia nunca. La guía para agentes está en{' '}
+        <a href="https://firemd.app/agent.md" target="_blank" rel="noreferrer">
+          firemd.app/agent.md
+        </a>
+        .
+      </p>
+
+      {listError && (
+        <p className="hint tone-danger">
+          No se pudo cargar la lista: {listError}. Si acabás de actualizar la app, las reglas
+          nuevas todavía no están publicadas.
+        </p>
+      )}
+
+      {agents.length === 0 ? (
+        <p className="hint">
+          Todavía no hay agentes. Instalá la CLI y corré <code>mdfire login</code>: se registra solo.
+        </p>
+      ) : (
+        <ul className="agent-list">
+          {agents.map((agent) => (
+            <li key={agent.id} className="agent-row">
+              <Bot size={14} aria-hidden="true" />
+              {editing === agent.id ? (
+                <>
+                  <input
+                    className="field"
+                    value={draft}
+                    maxLength={MAX_AGENT_NAME}
+                    aria-label={`Nombre de ${agent.name}`}
+                    autoFocus
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void saveRename(agent.id)
+                      if (e.key === 'Escape') setEditing(null)
+                    }}
+                  />
+                  <button
+                    className="icon-btn"
+                    onClick={() => void saveRename(agent.id)}
+                    disabled={busy}
+                    aria-label="Guardar nombre"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button className="icon-btn" onClick={() => setEditing(null)} aria-label="Cancelar">
+                    <X size={14} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="agent-name">{agent.name}</span>
+                  <span className="hint agent-meta">
+                    {agent.kind} · {since(agent.lastSeenAt)}
+                  </span>
+                  <button
+                    className="icon-btn"
+                    onClick={() => startRename(agent)}
+                    aria-label={`Renombrar ${agent.name}`}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <details className="agent-anon">
+        <summary>Vincular un agente anónimo (opcional)</summary>
+        <p className="hint">
+          <code>mdfire login --agent</code> crea una cuenta aparte en vez de usar la tuya. Esa
+          cuenta sólo ve la carpeta que le des, y podés quitársela desde Compartir.
         </p>
 
         <label className="hint" htmlFor="agent-uid">
@@ -100,13 +221,15 @@ export function AgentsDialog({ folders, onLink, onClose }: AgentsDialogProps) {
         </div>
 
         <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button className="btn" onClick={() => void submit()} disabled={busy || !uid.trim()}>
+          <button className="btn" onClick={() => void submitLink()} disabled={busy || !uid.trim()}>
             <Bot size={13} /> Vincular
           </button>
         </div>
 
         {done && <p className="hint tone-ok">{done}</p>}
-        {error && <p className="hint tone-danger">{error}</p>}
+      </details>
+
+      {error && <p className="hint tone-danger">{error}</p>}
     </Modal>
   )
 }
