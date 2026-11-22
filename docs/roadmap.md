@@ -114,8 +114,9 @@ editor y con Obsidian.
   - `mdfire vault watch` → `fs.watch` + debounce 500 ms; cada archivo modificado se aplica con
     `patch` sobre el documento (no reescritura completa) para no romper el CRDT del editor.
   - Manifiesto local `.mdfire/sync.json` con `{ ruta: { id, etag, updatedAt } }`.
-- **App de escritorio** (hecha): Tauri 2 con bandeja del sistema, login del agente, selector
-  de carpeta base, start/stop y vista de conflictos. Ciclo automático cada 15 s (pull y
+- **App de escritorio** (hecha): Tauri 2 con bandeja del sistema, login con la cuenta del
+  sitio (Google, por loopback al navegador) o con un agente anónimo, selector de carpeta base,
+  start/stop y vista de conflictos. Ciclo automático cada 15 s (pull y
   después push) en vez de `fs.watch`: menos casos raros con los guardados atómicos de Obsidian
   y el mismo resultado para el usuario. Windows: MSI/NSIS; Mac: DMG (firmar requiere cuenta
   Apple Developer, $99/año — costo a presupuestar; el build sin firmar funciona con Gatekeeper
@@ -140,9 +141,25 @@ puede crear notas sueltas ajenas).
 
 **Implementado (app de escritorio)**: `desktop/` (Rust + Tauri 2), mismo manifiesto y mismos
 archivos de conflicto que el CLI, así que se puede usar la misma carpeta con los dos. El motor
-en Rust reusa el modelo de datos y las reglas de Firestore tal cual (identidad anónima del
-agente, sin Admin SDK). Ciclo automático: pull (no toca archivos con cambios locales sin subir)
-y push (etag viejo → conflicto, nunca pisa). Ver `desktop/README.md`.
+en Rust reusa el modelo de datos y las reglas de Firestore tal cual (sin Admin SDK): entra con
+tu cuenta del sitio o con un agente anónimo. Ciclo automático: pull (no toca archivos con
+cambios locales sin subir) y push (etag viejo → conflicto, nunca pisa). Ver `desktop/README.md`.
+
+**Login con la cuenta (loopback)**: Google rechaza el OAuth dentro de webviews embebidos, así
+que la app abre el navegador del sistema en `/?desktop=<puerto>&state=<nonce>` (página
+`src/DesktopLink.tsx`), y esa página le devuelve el refresh token a un servidor local efímero
+en `127.0.0.1`. Es el patrón de `gh auth login`. Requiere deployar el sitio con el `connect-src`
+de `http://127.0.0.1:*` en el CSP (`firebase.json`).
+
+**Documentación para agentes**: `/agent.md` (publicado desde `public/`, servido como
+`text/plain`) con instalación, login y todos los comandos, más `/llms.txt` como índice. Es la
+referencia que se le pasa a un agente en vez de un prompt ad-hoc.
+
+**Agentes conectados**: cada sesión que entra con la cuenta se registra en `agents/{id}`
+(`agent/agents.mjs`) y aparece en la app (menú de cuenta → *Agentes conectados*), donde se
+puede renombrar; `mdfire name` hace lo mismo desde la terminal. El registro no concede
+permisos: desde que la sesión entra con la cuenta del usuario, ya tiene los suyos. El pareado
+por uid (`login --agent`) sigue disponible para el modelo anónimo.
 
 ---
 

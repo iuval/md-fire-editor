@@ -1,0 +1,29 @@
+# FireMD
+
+> FireMD es un editor de notas markdown colaborativo (React + Firestore) con una CLI y un
+> servidor MCP para que un agente de IA lea y edite las notas del usuario. Las reglas de
+> seguridad de Firestore se aplican igual que para una persona: no hay claves de servicio
+> ni bypass. La CLI devuelve texto plano, nunca JSON.
+
+## Para agentes
+
+- [Guía completa de la CLI](https://firemd.app/agent.md): instalación, login, todos los
+  comandos, permisos y códigos de salida. **Empezá por acá.**
+- [Repositorio](https://github.com/iuval/md-fire-editor): código de la CLI en `agent/`.
+
+## Lo mínimo
+
+1. Instalar: `git clone https://github.com/iuval/md-fire-editor.git && cd md-fire-editor && npm ci`
+2. Entrar: `node agent/cli.mjs login` (abre el navegador con la cuenta del usuario)
+3. Leer: `node agent/cli.mjs ls`, `node agent/cli.mjs cat <id>`
+4. Editar: `node agent/cli.mjs patch <id> --etag <etag> --find <texto> --replace <texto>`
+
+## Servidor MCP
+
+`node agent/mcp.mjs` expone siete tools de texto: `notes_list`, `notes_read`,
+`notes_patch`, `notes_append`, `notes_search`, `notes_create`, `folders_list`. Comparte las
+credenciales de la CLI.
+
+## Sitio
+
+- [Editor](https://firemd.app): la aplicación web.
