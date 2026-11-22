@@ -60,7 +60,7 @@ describe('sync detail', () => {
   })
 
   it('reassures instead of alarming when the connection drops', () => {
-    expect(syncDetail(status({ offline: true }))).toMatch(/se sincronizan al reconectar/)
+    expect(syncDetail(status({ offline: true }))).toMatch(/sync when you reconnect/)
   })
 
   it('passes the reason of a real error through', () => {

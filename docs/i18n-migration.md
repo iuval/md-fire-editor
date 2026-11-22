@@ -1,7 +1,7 @@
 # i18n migration
 
 Status: **in progress**. The runtime, the English catalogue and the shell (sign-in,
-sidebar, rail, tabs, pane bar, crash screen) are migrated. 326 strings in 46 files are
+sidebar, rail, tabs, pane bar, crash screen) are migrated. 320 strings in 46 files are
 still inline Spanish.
 
 ## How it works
@@ -51,12 +51,11 @@ plural(n, { one: '{count} note', other: '{count} notes' })
 | `src/lib/theme.ts` | 14 |
 | `src/components/ThemeDialog.tsx` | 14 |
 | `src/components/AgentsDialog.tsx` | 14 |
-| `src/lib/acl.ts` | 13 |
 | `src/lib/notes.ts` | 10 |
 | `src/components/NotePane.tsx` | 10 |
 | `src/components/NotePanels.tsx` | 9 |
 | `src/components/CanvasCard.tsx` | 9 |
-| `src/lib/syncStatus.ts` | 6 |
+| `src/lib/acl.ts` | 7 |
 | `src/lib/errors.ts` | 6 |
 | `src/firebase.ts` | 6 |
 | `src/lib/vault.ts` | 5 |
@@ -69,6 +68,8 @@ plural(n, { one: '{count} note', other: '{count} notes' })
 | `src/lib/unzip.ts` | 4 |
 | `src/lib/properties.ts` | 4 |
 | `src/lib/export.ts` | 4 |
+| `src/i18n/en.ts` | 4 |
+| `src/lib/syncStatus.ts` | 3 |
 | `src/lib/browser.ts` | 3 |
 | `src/lib/agents.ts` | 3 |
 | `src/components/PaneDropTarget.tsx` | 3 |
@@ -84,7 +85,6 @@ plural(n, { one: '{count} note', other: '{count} notes' })
 | `src/lib/entitlements.ts` | 1 |
 | `src/lib/collab/transportError.ts` | 1 |
 | `src/lib/canvas/files.ts` | 1 |
-| `src/i18n/en.ts` | 1 |
 | `src/components/UpgradeDialog.tsx` | 1 |
 | `src/components/RenameTagDialog.tsx` | 1 |
 | `src/components/Modal.tsx` | 1 |
