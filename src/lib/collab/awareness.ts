@@ -23,9 +23,13 @@ export interface AwarenessUser extends CollabUser {
 
 // Presence is the cheapest thing to over-write and the least valuable to send
 // often: a caret does not need 200 ms resolution. Measured cost, not taste.
-const HEARTBEAT_MS = 20_000
+//
+// The heartbeat sets how long a closed tab keeps a ghost caret on screen, so it
+// is a UX number as much as a cost one: one beat of 10 s plus margin bounds the
+// ghost at 25 s instead of 50 s, at the price of 6 writes a minute instead of 3.
+const HEARTBEAT_MS = 10_000
 const WRITE_THROTTLE_MS = 1_200
-const STALE_AFTER_MS = 50_000
+const STALE_AFTER_MS = 25_000
 
 /**
  * `y-protocols` Awareness-compatible object whose transport is a Firestore
@@ -52,6 +56,18 @@ export class FirestoreAwareness {
   private onVisibility = () => {
     this.hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
     if (!this.hidden) this.scheduleWrite()
+  }
+  /**
+   * Closing a tab rarely unmounts the React tree, so `destroy()` alone left a
+   * caret behind for the whole stale window. `pagehide` fires on close, on
+   * back/forward cache and on mobile app switching.
+   */
+  private onPageHide = () => {
+    this.remove()
+  }
+  /** Back/forward cache brought the page back: say hello again immediately. */
+  private onPageShow = () => {
+    if (!this.destroyed) void this.write({ force: true })
   }
   private destroyed = false
   private readonly fs: Firestore | null
@@ -108,6 +124,8 @@ export class FirestoreAwareness {
 
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', this.onVisibility)
+      document.addEventListener('pagehide', this.onPageHide)
+      document.addEventListener('pageshow', this.onPageShow)
       this.hidden = document.visibilityState === 'hidden'
     }
 
@@ -162,15 +180,21 @@ export class FirestoreAwareness {
     this.destroyed = true
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.onVisibility)
+      document.removeEventListener('pagehide', this.onPageHide)
+      document.removeEventListener('pageshow', this.onPageShow)
     }
     if (this.heartbeat) clearInterval(this.heartbeat)
     if (this.writeTimer) clearTimeout(this.writeTimer)
     this.unsub?.()
     this.listeners.clear()
     this.userListeners.clear()
-    if (this.fs) {
-      void deleteDoc(doc(this.fs, 'notes', this.noteId, 'presence', this.uid)).catch(() => undefined)
-    }
+    this.remove()
+  }
+
+  /** Best effort: the delete is queued even while the page is going away. */
+  private remove(): void {
+    if (!this.fs) return
+    void deleteDoc(doc(this.fs, 'notes', this.noteId, 'presence', this.uid)).catch(() => undefined)
   }
 
   private scheduleWrite() {
