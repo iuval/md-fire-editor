@@ -139,15 +139,25 @@ export function useWorkspace(uid: string | undefined) {
    * afterwards; each note is attempted at most once per session so a rejected
    * write cannot turn into a loop.
    */
-  const attemptedBodies = useRef(new Set<string>())
+  const attemptedBodies = useRef(new Map<string, number>())
   useEffect(() => {
     if (!uid) return
+    // Twice per note is enough: a permission error (rules newer than the deploy)
+    // is not worth a retry storm, but a transient one does get another chance.
     const legacy = notes.filter(
-      (note) => (note.markdown ?? '') !== '' && note.markdownBytes === undefined && !attemptedBodies.current.has(note.id)
+      (note) =>
+        (note.markdown ?? '') !== '' &&
+        note.markdownBytes === undefined &&
+        (attemptedBodies.current.get(note.id) ?? 0) < 2
     )
     if (legacy.length === 0) return
-    legacy.forEach((note) => attemptedBodies.current.add(note.id))
-    void migrateNoteBodies(legacy).catch(() => undefined)
+    legacy.forEach((note) => attemptedBodies.current.set(note.id, (attemptedBodies.current.get(note.id) ?? 0) + 1))
+    void migrateNoteBodies(legacy)
+      .then(({ migrated }) => {
+        // Only the ones that made it are done; the rest stay retryable.
+        migrated.forEach((id) => attemptedBodies.current.set(id, Number.POSITIVE_INFINITY))
+      })
+      .catch(() => undefined)
   }, [notes, uid])
 
   // v1 → v2 migration, once per browser.

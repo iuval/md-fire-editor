@@ -1409,6 +1409,14 @@ button {
   color: light-dark(var(--color-muted), var(--color-muted-dark));
 }
 
+.usage-section-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
 .usage-sep {
   height: 1px;
   background: light-dark(var(--color-border), var(--color-border-dark));

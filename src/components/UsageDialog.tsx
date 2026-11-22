@@ -11,12 +11,26 @@ import {
   type UsageTotals,
 } from '../lib/usage'
 
+export interface Diagnostics {
+  /** V8 heap of this tab, and the ceiling that would crash it. */
+  usedHeap: number | null
+  heapLimit: number | null
+  domNodes: number
+  openNoteSessions: number
+  /** Bodies still travelling in the workspace list (pre-split notes). */
+  pendingBodies: { count: number; characters: number }
+  storage: { usage: number; quota: number } | null
+}
+
 interface UsageDialogProps {
   usage: UsageTotals | null
   credits: Credits | null
   paid: boolean
   notes: number
   folders: number
+  diagnostics: Diagnostics
+  onRefreshDiagnostics: () => void
+  onMigrateBodies: () => void
   onClose: () => void
 }
 
@@ -24,7 +38,17 @@ interface UsageDialogProps {
  * The one number people open this for is the cost, so it leads; everything else
  * is the receipt behind it. Two groups instead of three nested boxes.
  */
-export function UsageDialog({ usage, credits, paid, notes, folders, onClose }: UsageDialogProps) {
+export function UsageDialog({
+  usage,
+  credits,
+  paid,
+  notes,
+  folders,
+  diagnostics,
+  onRefreshDiagnostics,
+  onMigrateBodies,
+  onClose,
+}: UsageDialogProps) {
   const totals: UsageTotals = usage ?? {
     month: '',
     writes: 0,
@@ -59,6 +83,49 @@ export function UsageDialog({ usage, credits, paid, notes, folders, onClose }: U
         <Row label="Lecturas de sync" value={totals.reads.toLocaleString('es')} />
         <Row label="Transferido (envío)" value={formatBytes(totals.bytesWritten)} />
         <Row label="Transferido (recepción)" value={formatBytes(totals.bytesRead)} />
+      </div>
+
+      <div className="usage-sep" />
+
+      {/*
+        Memory lives here because "the app is using 1 GB" is normally the
+        browser (every tab, the GPU process, every extension) or a dev build,
+        not the notes. These numbers come from inside this tab.
+      */}
+      <p className="usage-section-title">Esta pestaña</p>
+      <div className="usage-grid">
+        <Row
+          label="Heap en uso"
+          value={
+            diagnostics.usedHeap === null
+              ? 'no disponible en este navegador'
+              : `${formatBytes(diagnostics.usedHeap)}${diagnostics.heapLimit ? ` de ${formatBytes(diagnostics.heapLimit)}` : ''}`
+          }
+        />
+        <Row label="Nodos del DOM" value={diagnostics.domNodes.toLocaleString('es')} />
+        <Row label="Notas abiertas (sesión Yjs)" value={String(diagnostics.openNoteSessions)} />
+        <Row
+          label="Cuerpos sin migrar"
+          value={
+            diagnostics.pendingBodies.count === 0
+              ? 'ninguno'
+              : `${diagnostics.pendingBodies.count} · ${formatBytes(diagnostics.pendingBodies.characters * 2)} en el listado`
+          }
+        />
+        <Row
+          label="Cache del navegador"
+          value={diagnostics.storage ? formatBytes(diagnostics.storage.usage) : 'no disponible'}
+        />
+      </div>
+      <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+        {diagnostics.pendingBodies.count > 0 && (
+          <button className="btn ghost" onClick={onMigrateBodies}>
+            Migrar cuerpos ahora
+          </button>
+        )}
+        <button className="btn ghost" onClick={onRefreshDiagnostics}>
+          Actualizar
+        </button>
       </div>
 
       <div className="usage-sep" />

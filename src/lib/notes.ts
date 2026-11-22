@@ -767,11 +767,12 @@ const MIGRATION_FLAG = 'mdfire-migrated-v2'
 export async function migrateNoteBodies(
   notes: Note[],
   { onProgress, chunkSize = 20 }: { onProgress?: (done: number) => void; chunkSize?: number } = {}
-): Promise<number> {
-  if (!db) return 0
+): Promise<{ migrated: string[]; failed: string[] }> {
+  if (!db) return { migrated: [], failed: [] }
   const database = db
   const legacy = notes.filter((note) => (note.markdown ?? '') !== '' && note.markdownBytes === undefined)
-  let migrated = 0
+  const migrated: string[] = []
+  const failed: string[] = []
 
   for (let start = 0; start < legacy.length; start += chunkSize) {
     const chunk = legacy.slice(start, start + chunkSize)
@@ -785,7 +786,7 @@ export async function migrateNoteBodies(
     })
     try {
       await batch.commit()
-      migrated += chunk.length
+      migrated.push(...chunk.map((note) => note.id))
     } catch {
       // Try them one by one so a single rejection does not stall the rest.
       for (const note of chunk) {
@@ -797,16 +798,18 @@ export async function migrateNoteBodies(
             markdownBytes: note.markdown.length,
           })
           await single.commit()
-          migrated++
+          migrated.push(note.id)
         } catch {
-          /* leave it inline; the fallback keeps working */
+          // Leave it inline: the fallback keeps working, and the caller decides
+          // whether to try again (a permission error is not worth a retry storm).
+          failed.push(note.id)
         }
       }
     }
-    onProgress?.(migrated)
+    onProgress?.(migrated.length)
   }
 
-  return migrated
+  return { migrated, failed }
 }
 
 export async function migrateLegacyNotes(uid: string): Promise<number> {

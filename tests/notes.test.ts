@@ -9,9 +9,11 @@ import {
   reserveFolderId,
   reserveNoteId,
   type Folder,
+  type Note,
 } from '../src/lib/notes'
 import { DEFAULT_SORT } from '../src/lib/sorting'
 import { serverTimestamp } from 'firebase/firestore'
+import { pendingBodies } from '../src/lib/diagnostics'
 
 describe('note patches', () => {
   it('never writes a field the caller did not send', () => {
@@ -152,5 +154,32 @@ describe('optimistic folder', () => {
     const second = reserveFolderId()
     expect(typeof first).toBe('string')
     expect(first).not.toBe(second)
+  })
+})
+
+describe('how much of the vault is still in the list', () => {
+  const base = {
+    ownerId: 'u1',
+    folderId: null,
+    aclSource: 'own' as const,
+    memberIds: ['u1'],
+    roles: { u1: 'owner' as const },
+    access: 'restricted' as const,
+    title: 'Nota',
+    tags: [],
+    order: 0,
+    version: 1,
+  }
+
+  it('counts only the notes whose body still travels in the list', () => {
+    const notes: Note[] = [
+      { ...base, id: 'migrated', markdown: '', markdownBytes: 12_000 },
+      { ...base, id: 'empty', markdown: '' },
+      { ...base, id: 'legacy', markdown: 'x'.repeat(500) },
+      { ...base, id: 'legacy2', markdown: 'y'.repeat(300) },
+    ]
+
+    expect(pendingBodies(notes)).toEqual({ count: 2, characters: 800 })
+    expect(pendingBodies([])).toEqual({ count: 0, characters: 0 })
   })
 })

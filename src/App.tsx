@@ -26,6 +26,7 @@ import { download, noteToMarkdown, safeFileName } from './lib/export'
 import { buildVault, planVault, streamVaultNotes } from './lib/vault'
 import { track } from './lib/analytics'
 import { currentBrowser, embeddedBrowserHint } from './lib/browser'
+import { memoryReport, pendingBodies, storageEstimate, type MemoryReport } from './lib/diagnostics'
 import { buildTagTree, extractTags, matchesTagFilter, parseTagInput } from './lib/tags'
 import { flattenFolders, folderPath, sharedFolderOf } from './lib/folders'
 import { applyOrder, setFolderSort, setRootSort, subscribeUserSettings } from './lib/notes'
@@ -79,6 +80,7 @@ import type { SyncStats } from './lib/collab/provider'
 import {
   fetchNoteBodies,
   importNotes,
+  migrateNoteBodies,
   isAclOwner,
   optimisticFolder,
   moveNoteTo,
@@ -306,6 +308,9 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const [usage, setUsage] = useState<UsageTotals | null>(null)
   const [credits, setCredits] = useState<Credits | null>(null)
+  /** Read from inside the tab, so "the app uses 1 GB" can be checked. */
+  const [memory, setMemory] = useState<MemoryReport | null>(null)
+  const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null)
   const lastStats = useRef<SyncStats | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
@@ -566,6 +571,35 @@ function App() {
   }, [expanded])
 
   const noteOwner = !!user && !!activeNote && activeNote.ownerId === user.uid
+
+  const refreshDiagnostics = useCallback(() => {
+    setMemory(memoryReport())
+    void storageEstimate().then(setStorage)
+  }, [])
+
+  const handleMigrateBodies = useCallback(async () => {
+    const legacy = notes.filter(
+      (note) => (note.markdown ?? '') !== '' && note.markdownBytes === undefined
+    )
+    if (legacy.length === 0) return
+    setNotice(`Migrando ${legacy.length} cuerpos…`)
+    try {
+      const { migrated, failed } = await migrateNoteBodies(legacy)
+      setNotice(
+        failed.length === 0
+          ? `Migrados ${migrated.length} cuerpos.`
+          : `Migrados ${migrated.length}. Fallaron ${failed.length}: revisá que las reglas estén desplegadas.`
+      )
+    } catch {
+      setNotice('No se pudo migrar los cuerpos.')
+    }
+    refreshDiagnostics()
+  }, [notes, refreshDiagnostics])
+
+  useEffect(() => {
+    if (dialog.kind === 'usage') refreshDiagnostics()
+  }, [dialog.kind, refreshDiagnostics])
+
 
   const handleExportAll = useCallback(async () => {
     if (notes.length === 0) return
@@ -1656,6 +1690,16 @@ function App() {
           paid={paid}
           notes={notes.length}
           folders={folders.length}
+          diagnostics={{
+            usedHeap: memory?.usedHeap ?? null,
+            heapLimit: memory?.heapLimit ?? null,
+            domNodes: memory?.domNodes ?? 0,
+            openNoteSessions: memory?.openNoteSessions ?? 0,
+            pendingBodies: pendingBodies(notes),
+            storage,
+          }}
+          onRefreshDiagnostics={refreshDiagnostics}
+          onMigrateBodies={() => void handleMigrateBodies()}
           onClose={() => setDialog({ kind: 'none' })}
         />
       )}
