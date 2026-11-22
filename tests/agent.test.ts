@@ -96,9 +96,15 @@ beforeEach(async () => {
       roles: { [OWNER]: 'owner', [editorUid]: 'editor' },
       access: 'restricted',
       title: 'Ideas de producto',
-      markdown: '# Ideas\n\n- uno\n- dos\n',
       version: 3,
       createdAt: now,
+      updatedAt: now,
+    })
+    // The body lives in its own document since the split; the app never writes
+    // `notes.markdown` any more.
+    await setDoc(doc(db, 'notes', 'noteideas01', 'body', 'main'), {
+      markdown: '# Ideas\n\n- uno\n- dos\n',
+      version: 3,
       updatedAt: now,
     })
     await setDoc(doc(db, 'notes', 'notesecret1'), {
@@ -109,9 +115,13 @@ beforeEach(async () => {
       roles: { [OWNER]: 'owner' },
       access: 'restricted',
       title: 'Secreto',
-      markdown: 'no deberías ver esto\n',
       version: 1,
       createdAt: now,
+      updatedAt: now,
+    })
+    await setDoc(doc(db, 'notes', 'notesecret1', 'body', 'main'), {
+      markdown: 'no deberías ver esto\n',
+      version: 1,
       updatedAt: now,
     })
   })
@@ -187,6 +197,34 @@ describe('agent reads through the rules', () => {
     const db = await core.openStore()
     expect(await core.searchNotes(db, 'uno')).toContain('noteidea')
     expect(await core.searchNotes(db, 'no deberías')).toBe('')
+  })
+
+  // Body documents are fetched with a field mask, so their text is not in hand
+  // when the listing arrives. A note written before the split must still be found.
+  it('search finds a note whose body never moved to its own document', async () => {
+    // Created here instead of in the fixture: a second visible note would make
+    // every other assertion about exact lists ambiguous.
+    const now = new Date()
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const { setDoc, doc } = await import('firebase/firestore')
+      await setDoc(doc(ctx.firestore(), 'notes', 'notelegacy1'), {
+        ownerId: OWNER,
+        folderId: 'folder-work',
+        aclSource: 'folder',
+        memberIds: [OWNER, editorUid],
+        roles: { [OWNER]: 'owner', [editorUid]: 'editor' },
+        access: 'restricted',
+        title: 'Vieja',
+        markdown: '# Vieja\n\n- legado con palabras\n',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+    })
+
+    asAgent(editorToken)
+    const db = await core.openStore()
+    expect(await core.searchNotes(db, 'legado')).toContain('notelega')
   })
 })
 

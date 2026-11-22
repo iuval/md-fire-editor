@@ -285,7 +285,12 @@ export async function listFolders(db) {
 export async function readNoteBody(db, note) {
   const body = await db.get(`notes/${note.id}/body`, 'main').catch(() => null)
   if (body) return String(body.data.markdown ?? '')
-  return String(note.data.markdown ?? '')
+  if (typeof note.data?.markdown === 'string') return note.data.markdown
+  // A field-masked listing (search) arrives without the body, and a note written
+  // before the body/document split keeps its text on the note document. Fetch it
+  // instead of reporting an empty body, which silently hides the note from search.
+  const full = await db.get('notes', note.id).catch(() => null)
+  return String(full?.data?.markdown ?? '')
 }
 
 function isCanvasDoc(doc) {
