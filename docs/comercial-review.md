@@ -21,7 +21,7 @@ de $4 tiene margen holgado.
 | 1 | "Markdown local, archivos .md en disco" es falso: la fuente de verdad es Firestore | no hay acceso a filesystem ni export; "abrir la misma carpeta" (§7.3) no existe | (a) construir vault local (File System Access API, solo Chromium; o app de escritorio) o (b) reposicionar a "markdown exportable" + Export .md/ZIP e Import |
 | 2 | "E2E encryption" | no existe; incompatible con búsqueda server-side, agentes y ACLs actuales | quitarlo del copy |
 | 3 | "Exportable siempre" | no hay export | Export por nota y ZIP de todo (implementado) |
-| 4 | Sin monetización: ni planes, ni cuotas, ni checkout | cero código de billing | flat (Free / $4 / $12) + entitlements en reglas (implementado), metering después |
+| 4 | Sin monetización completa: cuota y créditos implementados, checkout pendiente | el medidor, la cuota gratuita y el saldo prepago existen; no hay pasarela ni débito automático | cuota gratuita permanente + créditos prepagos; checkout con MoR o MercadoPago/dLocal |
 | 5 | Stripe no opera desde Uruguay | stripe.com/global lista Brasil, México, España; no Uruguay | MoR (Paddle/Lemon Squeezy/Polar ~5% + $0.50) o entidad US/EU; MercadoPago/dLocal local |
 | 6 | $0.05–0.10 por sesión | fee mínimo $0.30 → 300% del precio | mínimo de cobro $3 prepago, o sesiones dentro del plan team |
 | 7 | Sin analítica: los KPIs de §7.4 son inmedibles | no hay eventos | 5–7 eventos (implementado) |
@@ -51,6 +51,11 @@ Con el perfil medido del sync v2 (2,7 escrituras/s de tipeo, presencia cada 1,2 
 
 **Exposición principal: el free tier sin medidor.** 1.000 usuarios heavy = **$513/mes** sin
 ingresos. Hace falta límite duro de uso o mover el canal caliente a RTDB.
+
+> **Resuelto en el diseño**: [`prepaid-usage-model.md`](prepaid-usage-model.md) reemplaza los
+> precios flat de esta tabla por un tarifario único por uso medido, con cuota gratuita
+> mensual (100 MB + 20.000 ops) y un proxy como único escritor. La columna «Precio» de arriba
+> ($4/$12/$15) queda como registro de la propuesta anterior.
 
 Dos errores conceptuales:
 

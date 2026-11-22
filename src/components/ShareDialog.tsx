@@ -10,6 +10,7 @@ import {
 } from '../lib/notes'
 import { getProfileName, lookupByEmail } from '../lib/directory'
 import { Modal } from './Modal'
+import { useT } from '../i18n/index.ts'
 
 export interface ShareTarget {
   kind: 'note' | 'folder'
@@ -42,6 +43,7 @@ export function ShareDialog({
   currentUid,
   onClose,
 }: ShareDialogProps) {
+  const t = useT()
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,7 +82,7 @@ export function ShareDialog({
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      setError('No se pudo copiar el enlace')
+      setError(t('share.copyFailed'))
     }
   }
 
@@ -94,7 +96,7 @@ export function ShareDialog({
         const message = (e as Error).message
         setError(
           message.includes('inherits')
-            ? 'Esta nota hereda los permisos de su carpeta.'
+            ? t('share.inheritsPermission')
             : message
         )
       } finally {
@@ -112,11 +114,11 @@ export function ShareDialog({
     try {
       const entry = await lookupByEmail(value)
       if (!entry) {
-        setError('Esa persona tiene que entrar al menos una vez con Google para poder agregarla.')
+        setError(t('share.noAccount'))
         return
       }
       if (members.some((m) => m.uid === entry.uid)) {
-        setError('Ya tiene acceso.')
+        setError(t('share.alreadyHasAccess'))
         return
       }
       setNames((prev) => ({ ...prev, [entry.uid]: entry.name }))
@@ -133,9 +135,12 @@ export function ShareDialog({
     <Modal labelledBy="share-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="share-heading">
-            Compartir {target.kind === 'folder' ? 'carpeta' : 'nota'} «{target.name || 'Sin título'}»
+            {t('share.heading', {
+              kind: target.kind === 'folder' ? t('share.folder') : t('share.note'),
+              name: target.name || t('app.untitled'),
+            })}
           </h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
+          <button className="icon-btn" onClick={onClose} aria-label={t('share.close')}>
             <X size={15} />
           </button>
         </div>
@@ -143,12 +148,11 @@ export function ShareDialog({
         {inherited ? (
           <>
             <p className="share-hint-box">
-              Esta nota hereda los permisos de la carpeta «{target.inheritedFrom!.name}». Para
-              cambiar quién puede leerla o editarla, compartí la carpeta.
+              {t('share.inheritedBox', { folder: target.inheritedFrom!.name })}
             </p>
             {onOpenFolder && (
               <button className="btn ghost" onClick={() => onOpenFolder(target.inheritedFrom!.id)}>
-                <Link2 size={13} /> Compartir la carpeta
+                <Link2 size={13} /> {t('share.shareFolder')}
               </button>
             )}
           </>
@@ -160,7 +164,7 @@ export function ShareDialog({
                 disabled={busy}
                 icon={<Lock size={14} />}
                 title={accessLabel('restricted')}
-                description="Solo las personas de la lista."
+                description={t('share.restrictedHint')}
                 onClick={() => void run(() => onChangeAccess('restricted'))}
               />
               <AccessOption
@@ -168,7 +172,7 @@ export function ShareDialog({
                 disabled={busy}
                 icon={<Globe size={14} />}
                 title={accessLabel('link-view')}
-                description="Cualquiera con el enlace puede leer, nadie puede escribir."
+                description={t('share.linkViewHint')}
                 onClick={() => void run(() => onChangeAccess('link-view'))}
               />
               <AccessOption
@@ -176,7 +180,7 @@ export function ShareDialog({
                 disabled={busy}
                 icon={<Pencil size={14} />}
                 title={accessLabel('link-edit')}
-                description="Cualquiera con el enlace puede editar en tiempo real."
+                description={t('share.linkEditHint')}
                 onClick={() => void run(() => onChangeAccess('link-edit'))}
               />
             </div>
@@ -188,22 +192,21 @@ export function ShareDialog({
                   readOnly
                   value={link}
                   onFocus={(e) => e.currentTarget.select()}
-                  aria-label="Enlace para compartir"
+                  aria-label={t('share.linkLabel')}
                 />
                 <button className="btn" onClick={() => void copy()}>
                   {copied ? <Check size={13} /> : <Copy size={13} />}
-                  {copied ? 'Copiado' : 'Copiar'}
+                  {copied ? t('share.copied') : t('share.copy')}
                 </button>
               </div>
             ) : (
               <p className="share-hint-box">
-                Las notas de esta carpeta heredan estos permisos. Compartí el enlace de una nota
-                para que alguien entre a editarla.
+                {t('share.folderInherits')}
               </p>
             )}
 
             <div>
-              <p className="hint" style={{ marginBottom: 4 }}>Personas con acceso</p>
+              <p className="hint" style={{ marginBottom: 4 }}>{t('share.members')}</p>
               <div className="member-list">
                 {members.map(({ uid, role }) => {
                   const isOwner = role === 'owner'
@@ -214,7 +217,7 @@ export function ShareDialog({
                       </span>
                       <span className="member-name" title={uid}>
                         {names[uid] ?? uid.slice(0, 8)}
-                        {uid === currentUid ? ' (vos)' : ''}
+                        {uid === currentUid ? ` (${t('share.you')})` : ''}
                       </span>
                       {isOwner ? (
                         <span className="hint">{roleLabel('owner')}</span>
@@ -223,7 +226,7 @@ export function ShareDialog({
                           <select
                             className="role-select"
                             value={role}
-                            aria-label={`Permiso de ${names[uid] ?? uid}`}
+                            aria-label={t('share.roleOf', { name: names[uid] ?? uid })}
                             disabled={busy}
                             onChange={(e) =>
                               void run(() => onSetRole(uid, e.target.value as Role))
@@ -234,7 +237,7 @@ export function ShareDialog({
                           </select>
                           <button
                             className="icon-btn icon-btn--sm"
-                            aria-label={`Quitar acceso a ${names[uid] ?? uid}`}
+                            aria-label={t('share.removeAccess', { name: names[uid] ?? uid })}
                             disabled={busy}
                             onClick={() => void run(() => onRemoveMember(uid))}
                           >
@@ -254,7 +257,7 @@ export function ShareDialog({
                 type="email"
                 placeholder="persona@gmail.com"
                 value={email}
-                aria-label="Agregar persona por email"
+                aria-label={t('share.addByEmail')}
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') void addByEmail()
@@ -263,20 +266,19 @@ export function ShareDialog({
               <select
                 className="role-select"
                 value={newRole}
-                aria-label="Permiso para la nueva persona"
+                aria-label={t('share.newPersonRole')}
                 onChange={(e) => setNewRole(e.target.value as Role)}
               >
                 <option value="viewer">{roleLabel('viewer')}</option>
                 <option value="editor">{roleLabel('editor')}</option>
               </select>
               <button className="btn" disabled={busy || !email.trim()} onClick={() => void addByEmail()}>
-                Agregar
+                {t('share.add')}
               </button>
             </div>
 
             <p className="hint">
-              Lector: puede abrir y ver. Escritura: puede editar, y en notas compartidas también
-              escribe en tiempo real.
+              {t('share.rolesHelp')}
             </p>
           </>
         )}

@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.ts'
 import {
   collection,
   deleteField,
@@ -74,8 +75,8 @@ interface Timestampish {
 }
 
 export const MAX_MARKDOWN_BYTES = 250_000
-const DEFAULT_TITLE = 'Sin título'
-const DEFAULT_CANVAS_TITLE = 'Canvas sin título'
+const defaultTitle = () => t('app.untitled')
+const defaultCanvasTitle = () => t('app.untitledCanvas')
 export const MAX_TITLE_LENGTH = 300
 export const MAX_FOLDER_NAME = 120
 
@@ -297,7 +298,7 @@ export function newNoteDraft(
     aclSource: folder ? 'folder' : 'own',
     ...acl,
     kind,
-    title: kind === 'canvas' ? DEFAULT_CANVAS_TITLE : DEFAULT_TITLE,
+    title: kind === 'canvas' ? defaultCanvasTitle() : defaultTitle(),
     markdown: '',
     tags: [],
     order: 0,
@@ -311,7 +312,7 @@ export async function createNote(
   id?: string,
   kind: NoteKind = 'note'
 ): Promise<Note> {
-  if (!db) throw new Error('Firebase no está configurado')
+  if (!db) throw new Error(t('error.firebaseNotConfigured'))
   const ref = id ? doc(db, 'notes', id) : doc(collection(db, 'notes'))
   const now = serverTimestamp()
   const acl: Acl = folder
@@ -326,7 +327,7 @@ export async function createNote(
     aclSource: folder ? 'folder' : 'own',
     ...(kind === 'canvas' ? { kind } : {}),
     ...acl,
-    title: kind === 'canvas' ? DEFAULT_CANVAS_TITLE : DEFAULT_TITLE,
+    title: kind === 'canvas' ? defaultCanvasTitle() : defaultTitle(),
     markdownBytes: body.length,
     tags: [],
     version: 1,
@@ -434,7 +435,7 @@ export function buildNoteDocument(
     folderId: input.folder ? input.folder.id : null,
     aclSource: input.folder ? 'folder' : 'own',
     ...acl,
-    title: (input.title || 'Sin título').slice(0, MAX_TITLE_LENGTH),
+    title: (input.title || defaultTitle()).slice(0, MAX_TITLE_LENGTH),
     ...(input.kind === 'canvas' ? { kind: 'canvas' as const } : {}),
     markdownBytes: Math.min(input.markdown.length, MAX_MARKDOWN_BYTES),
     tags: input.tags,
@@ -459,7 +460,7 @@ export async function importNotes(
   notes: NewNoteInput[],
   { onProgress }: { onProgress?: (written: number) => void } = {}
 ): Promise<{ created: string[]; failed: number }> {
-  if (!db) throw new Error('Firebase no está configurado')
+  if (!db) throw new Error(t('error.firebaseNotConfigured'))
   const database = db
   const created: string[] = []
   let failed = 0
@@ -581,7 +582,7 @@ export async function deleteNote(noteId: string): Promise<void> {
 // ---------- folders ----------
 
 export function cleanFolderName(name: string): string {
-  return name.trim().slice(0, MAX_FOLDER_NAME) || 'Carpeta'
+  return name.trim().slice(0, MAX_FOLDER_NAME) || t('app.folderName')
 }
 
 /**
@@ -623,7 +624,7 @@ export async function createFolder(
   options: { sort?: SortMode; order?: number } = {},
   id?: string
 ): Promise<Folder> {
-  if (!db) throw new Error('Firebase no está configurado')
+  if (!db) throw new Error(t('error.firebaseNotConfigured'))
   const ref = id ? doc(db, 'folders', id) : doc(collection(db, 'folders'))
   const now = serverTimestamp()
   const clean = cleanFolderName(name)
@@ -725,7 +726,7 @@ export async function updateFolderTags(folderId: string, tags: string[]): Promis
 export async function renameFolder(folderId: string, name: string): Promise<void> {
   if (!db) return
   await updateDoc(doc(db, 'folders', folderId), {
-    name: name.trim().slice(0, MAX_FOLDER_NAME) || 'Carpeta',
+    name: name.trim().slice(0, MAX_FOLDER_NAME) || t('app.folderName'),
     updatedAt: serverTimestamp(),
   })
 }
@@ -788,7 +789,7 @@ export async function updateNoteSharing(
 ): Promise<void> {
   if (!db) return
   if (note.aclSource === 'folder') {
-    throw new Error('Esta nota hereda los permisos de su carpeta. Cambiá el acceso de la carpeta.')
+    throw new Error(t('error.folderInheritedAcl'))
   }
 
   let next: Acl = { memberIds: note.memberIds, roles: note.roles, access: note.access }
@@ -923,7 +924,7 @@ export async function migrateLegacyNotes(uid: string): Promise<number> {
         memberIds: [uid],
         roles: { [uid]: 'owner' },
         access: 'restricted',
-        title: String(data.title ?? 'Sin título').slice(0, MAX_TITLE_LENGTH),
+        title: String(data.title ?? defaultTitle()).slice(0, MAX_TITLE_LENGTH),
         markdownBytes: body.length,
         version: 1,
         createdAt: now,

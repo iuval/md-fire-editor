@@ -37,7 +37,7 @@ describe('markdown export', () => {
 
   it('sanitizes file names', () => {
     expect(safeFileName('a/b:c*d?')).toBe('a-b-c-d-')
-    expect(safeFileName('   ')).toBe('sin-titulo')
+    expect(safeFileName('   ')).toBe('untitled')
   })
 
   it('groups files by folder and de-duplicates names', () => {

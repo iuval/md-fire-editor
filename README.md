@@ -40,12 +40,17 @@ directorio y el panel lo avisa.
 
 ## Roadmap
 
-Las features pedidas y todavía no implementadas (vault de Obsidian, sync local, auto top-up,
-medición server-side) están especificadas en [`docs/roadmap.md`](docs/roadmap.md), con modelo
+Las features pedidas y todavía no implementadas (vault de Obsidian, sync local, cobro
+automático del top-up, medición server-side) están especificadas en [`docs/roadmap.md`](docs/roadmap.md), con modelo
 de datos, cambios de reglas, riesgos y orden sugerido. La revisión del plan comercial está en
 [`docs/comercial-review.md`](docs/comercial-review.md) y el modelo de costos de Firestore y
 precios en [`docs/pricing.md`](docs/pricing.md) (números reproducibles con
 `node scripts/pricing-model.mjs`).
+
+El modelo comercial vigente —uso prepago, cuota gratuita permanente, el proxy que mide y debita,
+y qué pasa cuando se termina la cuota— está en
+[`docs/prepaid-usage-model.md`](docs/prepaid-usage-model.md). Ese documento reemplaza el
+modelo de precios de `pricing.md` §4 y §7.
 
 ## Cómo funciona la colaboración
 

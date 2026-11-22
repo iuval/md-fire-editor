@@ -1,7 +1,7 @@
 # i18n migration
 
 Status: **in progress**. The runtime, the English catalogue and the shell (sign-in,
-sidebar, rail, tabs, pane bar, crash screen) are migrated. 320 strings in 46 files are
+sidebar, rail, tabs, pane bar, crash screen) are migrated. 110 strings in 13 files are
 still inline Spanish.
 
 ## How it works
@@ -44,52 +44,19 @@ plural(n, { one: '{count} note', other: '{count} notes' })
 
 | File | Strings |
 |---|---|
-| `src/AppTree.tsx` | 49 |
-| `src/components/UsageDialog.tsx` | 35 |
-| `src/components/CanvasSurface.tsx` | 26 |
-| `src/components/ShareDialog.tsx` | 21 |
-| `src/lib/theme.ts` | 14 |
-| `src/components/ThemeDialog.tsx` | 14 |
-| `src/components/AgentsDialog.tsx` | 14 |
-| `src/lib/notes.ts` | 10 |
+| `src/AppTree.tsx` | 33 |
+| `src/components/CanvasSurface.tsx` | 23 |
+| `src/components/UsageDialog.tsx` | 22 |
 | `src/components/NotePane.tsx` | 10 |
-| `src/components/NotePanels.tsx` | 9 |
-| `src/components/CanvasCard.tsx` | 9 |
-| `src/lib/acl.ts` | 7 |
-| `src/lib/errors.ts` | 6 |
-| `src/firebase.ts` | 6 |
-| `src/lib/vault.ts` | 5 |
-| `src/lib/sorting.ts` | 5 |
-| `src/lib/credits.ts` | 5 |
-| `src/lib/collab/provider.ts` | 5 |
-| `src/lib/canvas/model.ts` | 5 |
-| `src/components/SortDialog.tsx` | 5 |
-| `src/DesktopLink.tsx` | 5 |
-| `src/lib/unzip.ts` | 4 |
-| `src/lib/properties.ts` | 4 |
-| `src/lib/export.ts` | 4 |
-| `src/i18n/en.ts` | 4 |
-| `src/lib/syncStatus.ts` | 3 |
-| `src/lib/browser.ts` | 3 |
-| `src/lib/agents.ts` | 3 |
-| `src/components/PaneDropTarget.tsx` | 3 |
-| `src/components/EditorToolbar.tsx` | 3 |
-| `src/components/ColorField.tsx` | 3 |
-| `src/lib/folders.ts` | 2 |
-| `src/lib/editor/extensions.ts` | 2 |
-| `src/lib/canvas/markdownCard.ts` | 2 |
-| `src/hooks/useFirebase.ts` | 2 |
-| `src/components/MoveDialog.tsx` | 2 |
-| `src/components/ErrorBoundary.tsx` | 2 |
-| `src/lib/markdown.ts` | 1 |
-| `src/lib/entitlements.ts` | 1 |
-| `src/lib/collab/transportError.ts` | 1 |
-| `src/lib/canvas/files.ts` | 1 |
-| `src/components/UpgradeDialog.tsx` | 1 |
-| `src/components/RenameTagDialog.tsx` | 1 |
+| `src/components/NotePanels.tsx` | 6 |
+| `src/components/CanvasCard.tsx` | 6 |
+| `src/DesktopLink.tsx` | 4 |
+| `src/lib/vault.ts` | 1 |
+| `src/lib/errors.ts` | 1 |
+| `src/lib/collab/provider.ts` | 1 |
+| `src/lib/canvas/model.ts` | 1 |
+| `src/firebase.ts` | 1 |
 | `src/components/Modal.tsx` | 1 |
-| `src/components/InputDialog.tsx` | 1 |
-| `src/components/DocCrumbs.tsx` | 1 |
 
 ## Guard on the boot chunk
 

@@ -20,13 +20,13 @@ describe('prepaid credits', () => {
   it('rejects invalid settings', () => {
     expect(
       validateCreditSettings({ thresholdUsd: -1, topUpUsd: 5, autoTopUp: false })
-    ).toMatch(/negativo/)
+    ).toMatch(/negative/)
     expect(
       validateCreditSettings({ thresholdUsd: 1, topUpUsd: 1, autoTopUp: false })
-    ).toMatch(/mínima/)
+    ).toMatch(/minimum/i)
     expect(
       validateCreditSettings({ thresholdUsd: 5, topUpUsd: 5, autoTopUp: true })
-    ).toMatch(/superar el umbral/)
+    ).toMatch(/above the threshold/i)
     expect(
       validateCreditSettings({ thresholdUsd: 2, topUpUsd: 5, autoTopUp: true })
     ).toBeNull()

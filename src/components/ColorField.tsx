@@ -1,4 +1,5 @@
 import { RotateCcw } from 'lucide-react'
+import { t } from '../i18n/index.ts'
 
 /**
  * Ready-made colors under a picker. A fondo wants neutrals; an acento wants
@@ -43,12 +44,12 @@ export function ColorField({ label, value, onChange, hint, onReset, suggestions 
       </label>
       <span className="color-field-value">{value}</span>
       {onReset && (
-        <button type="button" className="icon-btn icon-btn--sm" onClick={onReset} aria-label={`Volver al color original de ${label}`} title="Volver al original">
+        <button type="button" className="icon-btn icon-btn--sm" onClick={onReset} aria-label={t('themeDialog.resetToken', { label })} title={t('themeDialog.resetTokenShort')}>
           <RotateCcw size={13} />
         </button>
       )}
       {suggestions && (
-        <div className="color-swatches" role="group" aria-label={`Colores sugeridos para ${label}`}>
+        <div className="color-swatches" role="group" aria-label={t('themeDialog.suggested', { label })}>
           {SUGGESTIONS[suggestions].map((swatch) => (
             <button
               key={swatch}

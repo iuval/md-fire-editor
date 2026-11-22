@@ -210,6 +210,11 @@ $5/$15/$50, la configuración de auto top-up (el dueño la edita sin tocar el sa
 solicitudes de recarga en `credits/{uid}/topups`. Falta el backend que debite saldo y
 acredite recargas, y el proveedor de pagos.
 
+> **Superado** por [`prepaid-usage-model.md`](prepaid-usage-model.md) D6: la gratuidad pasa a
+> ser una **cuota mensual renovable de 100 MB + 20.000 operaciones** (mismo contador para
+> humanos y agentes), y el tiempo real pasa a ser pago (D1). `quota.ts` deja de ser decorativo
+> recién cuando el proxy es el único escritor (§3.2 de ese documento).
+
 ---
 
 ## 5. Auto top-up de créditos (mínimo $2) — 🟡 modelo, UI y solicitudes listos, falta el cobro
@@ -240,8 +245,9 @@ acredite recargas, y el proveedor de pagos.
 - Requisitos no obvios: **SCA/3DS** en el primer cobro, política de reintentos, tope de
   recargas por día, notificación al usuario, y reembolsos.
 
-**Tamaño**: L · **Depende de**: Blaze + Cloud Functions, proveedor de pagos elegido,
-punto 4 (medición real) y planes (ya hay `entitlements`).
+**Tamaño**: L · **Depende de**: Blaze + el proxy de [`prepaid-usage-model.md`](prepaid-usage-model.md)
+§3 (es el que debita y acredita), proveedor de pagos elegido y punto 4 (medición real).
+Ya **no** depende de `entitlements`: ese eje se retira (D8 de ese documento).
 
 **Hecho**: `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (regla: **≥ $2**),
 `autoTopUp` y libro mayor `ledger/` **inmutable**; el usuario solo lee, un admin escribe (un

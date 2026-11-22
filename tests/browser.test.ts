@@ -25,8 +25,8 @@ describe('embedded browser detection', () => {
 
   it('explains each case', () => {
     expect(embeddedBrowserHint('electron')).toMatch(/Electron/i)
-    expect(embeddedBrowserHint('webview')).toMatch(/navegador interno/i)
-    expect(embeddedBrowserHint('automation')).toMatch(/automatizado/i)
+    expect(embeddedBrowserHint('webview')).toMatch(/built-in browser/i)
+    expect(embeddedBrowserHint('automation')).toMatch(/automated/i)
     expect(embeddedBrowserHint(null)).toMatch(/Electron/i)
   })
 })

@@ -1,6 +1,10 @@
 # Costos de Firestore y modelo de precios — FireMD
 
 **Estado**: propuesta. El cobro no está implementado; la medición y la UI sí (ver §6).
+**Modelo comercial superado**: §4 y §7 los reemplaza
+[`prepaid-usage-model.md`](prepaid-usage-model.md) (uso prepago + cuota gratuita mensual
+renovable). Este documento sigue siendo la fuente de los costos (§1-§3), de la medición
+(§6) y de las salvaguardas (§5).
 **Fecha**: 22-nov-2026. **Fuente de los números**: `scripts/pricing-model.mjs`
 (reproducible con `node scripts/pricing-model.mjs`; no depende de Firebase).
 
@@ -116,6 +120,14 @@ tabla queda como registro del diagnóstico original, no como estado actual.
 
 ## 4. Modelo comercial (decidido)
 
+> **Superado por dos decisiones posteriores** (ver
+> [`prepaid-usage-model.md`](prepaid-usage-model.md) D1 y D6): el **tiempo real pasa a ser
+> pago**, así que la «colaboración ilimitada» de §4A deja de ser gratuita; y la gratuidad
+> pasa de **permanente** a **cuota mensual renovable** (100 MB + 20.000 operaciones).
+> El saldo prepago de §4B se mantiene, pero con: débito real por operación medida, fee de
+> $0,50/mes por cuenta con actividad, mínimo de recarga $5 y vencimiento a 24 meses.
+> Lo demás de esta sección sigue siendo el registro de la decisión anterior.
+
 **Decisión:** cuota gratuita permanente + saldo prepago con top-up. La edición humana no
 se cobra; se cobra el volumen (agentes, storage extra, historial). Ver §6 para lo que ya
 está implementado.
@@ -194,8 +206,8 @@ aceptar $2 como mínimo configurable.
 | Cuota gratuita | `src/lib/quota.ts` + `src/components/UsageDialog.tsx` | `FREE_TIER` con 250 MB y 10.000 operaciones de agente/mes; `quotaLine()` calcula uso, tope y aviso (80% suave, 100% duro); el diálogo muestra barras de storage y operaciones. |
 | Saldo prepago | `src/lib/credits.ts` + `src/components/UsageDialog.tsx` | Packs de $5/$15/$50 que no vencen; `updateCreditSettings()` guarda umbral/monto/auto top-up; `requestTopUp()` crea una solicitud pendiente en `credits/{uid}/topups`. El saldo sigue siendo del servidor. |
 | Créditos (modelo) | `src/lib/usage.ts:182-208` + `firestore.rules:587-631` | `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (≥ $2), `autoTopUp`; el dueño edita solo la configuración (el saldo no cambia); ledger inmutable; solicitudes de recarga en `topups`. |
-| Entitlements | `src/lib/entitlements.ts` + `firestore.rules:502-512` | `entitlements/{uid}` con `plan: free|paid`; `hasPaidPlan()` en reglas. |
-| Gating de plan | `src/AppTree.tsx:1261,1352,1691` | Compartir y agentes piden plan pago; `UpgradeDialog` muestra $4/$12. |
+| Entitlements (legado) | `firestore.rules:502-512` | `entitlements/{uid}` sigue existiendo para grants manuales y registros viejos, pero ya no condiciona compartir ni agentes. El cliente dejó de leerlo. |
+| Gating flat | retirado | `sharingUnlocked` y `UpgradeDialog` se eliminaron: compartir y agentes son parte del free tier. El cobro es por uso (cuota + créditos). |
 | Reglas de uso y créditos | `firestore.rules:531-631` | Solo el dueño escribe el bucket mensual (id `YYYY-MM`, enteros ≥ 0, campos con lista blanca, `agentOps` incluido); en `credits`, el dueño edita configuración sin tocar el saldo y pide recargas; saldo y ledger, solo admin. |
 | Tests | `tests/usage.test.ts`; `tests/quota.test.ts`; `tests/credits.test.ts`; `tests/agent-rate-limit.test.ts`; `tests/agent.test.ts`; `tests/firestore.rules.test.ts:1089+` | Tarifas, desglose, rollover de mes, cuota, créditos, rate limiter y presupuesto; metering del agente contra el emulador; reglas del bucket, `credits` y `topups`. |
 | Backups / PITR | README §Operación | Activos en producción. |
@@ -203,17 +215,16 @@ aceptar $2 como mínimo configurable.
 ### Falta (por prioridad)
 
 Los ítems 2, 3, 4, 6 y 11 del listado original ya están hechos (borrados contados, costo
-completo, bucket mensual, rate limit y PITR/backup en el costo), y el metering de agentes
-se agregó después. Queda:
+completo, bucket mensual, rate limit y PITR/backup en el costo), el metering de agentes
+se agregó después y el gating flat se retiró. Queda:
 
 | # | Falta | Evidencia del hueco | Tamaño |
 |---|---|---|---|
 | 1 | **Medición confiable server-side** | El bucket lo escribe el cliente (y ahora también la CLI/MCP) y las reglas lo permiten (`firestore.rules:531-631`): sirve para mostrar, no para cobrar. El propio código lo dice (`usage.ts:15-18`). | L — Cloud Function + contadores. |
 | 2 | **Tope duro de storage** | La cuota de 250 MB se muestra y se avisa, pero no se bloquea: el storage lo calcula el cliente y las reglas no lo verifican. | M — reglas + contador server-side. |
 | 3 | **Consumo de créditos** | `credits` y `topups` existen, pero nada debita el saldo ni acredita una recarga; el ledger es inmutable desde el cliente. | M — backend. |
-| 4 | **Checkout / proveedor** | `UpgradeDialog` es "escribinos"; no hay pasarela. Stripe no opera en UY. | L — MoR o MercadoPago/dLocal. |
-| 5 | **Retirar el gating flat** | `sharingUnlocked` y `UpgradeDialog` siguen pidiendo plan pago para compartir/agentes, contra el modelo free tier + créditos. | S/M — reglas + UI + tests. |
-| 6 | **Throttle 500–600 ms** | Sigue en 350 ms (`provider.ts:25`). Es una decisión de UX, no un bug: medir la latencia antes de cambiarlo. | S — una constante + medir. |
+| 4 | **Checkout / proveedor** | La solicitud de recarga queda pendiente; no hay pasarela. Stripe no opera en UY. | L — MoR o MercadoPago/dLocal. |
+| 5 | **Throttle 500–600 ms** | Sigue en 350 ms (`provider.ts:25`). Es una decisión de UX, no un bug: medir la latencia antes de cambiarlo. | S — una constante + medir. |
 
 ### Deriva de documentación (corregida)
 
@@ -228,6 +239,10 @@ se agregó después. Queda:
 
 ## 7. Plan sugerido (orden)
 
+> **Superado** por [`prepaid-usage-model.md`](prepaid-usage-model.md) §7: el orden cambia —
+> la medición server-side (el proxy) va **antes** que la cuota, y el corte en reglas se
+> retira hasta que exista degradación a borrador local durable.
+
 1. ~~**Completar el medidor**~~ (hecho): borrados, bucket mensual, costo con deletes +
    storage + PITR/backup + egress, y desglose en el diálogo.
 2. ~~**Rate limit del agente**~~ (hecho): ventana por minuto y presupuesto por corrida.
@@ -240,7 +255,7 @@ se agregó después. Queda:
 7. **Medición server-side** (L): Cloud Function que agregue eventos y escriba el bucket;
    el cliente pasa a solo lectura. Recién ahí el cobro es posible.
 8. **Checkout** (L): MoR o MercadoPago/dLocal, webhook idempotente, ledger, factura.
-9. **Retirar el gating flat** (S/M): compartir y agentes dejan de pedir plan pago.
+9. ~~**Retirar el gating flat**~~ (hecho): compartir y agentes ya no piden plan pago.
 
-Los pasos 1–6 ya están hechos y no dependen de Blaze ni del proveedor de pagos. El paso 7
-depende de Cloud Functions; el 8, de elegir pasarela; el 9 es una limpieza de producto.
+Los pasos 1–6 y 9 ya están hechos y no dependen de Blaze ni del proveedor de pagos. El paso 7
+depende de Cloud Functions; el 8, de elegir pasarela.

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { Modal } from './Modal'
+import { useT } from '../i18n/index.ts'
 
 interface RenameTagDialogProps {
   current: string
@@ -11,6 +12,7 @@ interface RenameTagDialogProps {
 
 /** Renames (or merges) a tag across every note the user can write. */
 export function RenameTagDialog({ current, knownTags, onRename, onClose }: RenameTagDialogProps) {
+  const t = useT()
   const [from, setFrom] = useState(current)
   const [to, setTo] = useState('')
 
@@ -26,7 +28,7 @@ export function RenameTagDialog({ current, knownTags, onRename, onClose }: Renam
     <Modal labelledBy="rename-tag-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="rename-tag-heading">Renombrar etiqueta</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
+          <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
             <X size={15} />
           </button>
         </div>

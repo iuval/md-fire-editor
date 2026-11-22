@@ -24,6 +24,17 @@
 `notes_patch`, `notes_append`, `notes_search`, `notes_create`, `folders_list`. Comparte las
 credenciales de la CLI.
 
+## Planes y cuota
+
+- Cuota gratuita permanente: 250 MB de almacenamiento y 10.000 operaciones de agente por mes.
+- Saldo prepago con recarga (top-up) en packs de USD 5, 15 y 50. Sin suscripción obligatoria.
+- [Planes y uso](https://firemd.app/planes): detalle de la cuota, los packs y las preguntas
+  frecuentes.
+- La app muestra el consumo y el costo estimado. El cobro con tarjeta todavía no está
+  habilitado: la recarga se solicita desde la app y se acredita al confirmarse.
+
 ## Sitio
 
 - [Editor](https://firemd.app): la aplicación web.
+- [Planes y uso](https://firemd.app/planes): cuota gratuita, saldo prepago y FAQ.
+- [Guía para agentes](https://firemd.app/agent.md): CLI y servidor MCP.

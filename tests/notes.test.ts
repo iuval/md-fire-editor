@@ -160,7 +160,7 @@ describe('optimistic note (the tab paints before the write lands)', () => {
       order: draft.order,
       kind: 'canvas',
     })
-    expect(draft.title).toBe('Canvas sin título')
+    expect(draft.title).toBe('Untitled canvas')
     // An empty body, so the pane renders an empty document instead of waiting.
     expect(draft.markdown).toBe('')
   })
@@ -213,7 +213,7 @@ describe('optimistic folder', () => {
 
   it('falls back to the default name and sort', () => {
     const folder = optimisticFolder('u1', 'f9', '   ', null)
-    expect(folder.name).toBe('Carpeta')
+    expect(folder.name).toBe('Folder')
     expect(folder.sort).toBe(DEFAULT_SORT)
     expect(folder.parentId).toBeNull()
   })

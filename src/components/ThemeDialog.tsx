@@ -1,3 +1,4 @@
+import { useT, type MessageKey } from '../i18n/index.ts'
 import { useMemo } from 'react'
 import { Palette as PaletteIcon, X } from 'lucide-react'
 import { Modal } from './Modal'
@@ -28,46 +29,47 @@ import {
  * panel repaints as you pick, because a palette is a thing you look at.
  */
 
-const TOKEN_LABELS: Record<ThemeToken, string> = {
-  bg: 'Fondo general',
-  bg2: 'Paneles',
-  bg3: 'Rieles y campos',
-  page: 'Hoja de la nota',
-  text: 'Texto',
-  muted: 'Texto secundario',
-  border: 'Bordes',
-  accent: 'Acento',
-  accentInk: 'Acento en texto',
-  accentSolid: 'Botones llenos',
-  danger: 'Errores',
-  success: 'Confirmaciones',
-  warning: 'Avisos',
+const TOKEN_LABEL_KEYS: Record<ThemeToken, MessageKey> = {
+  bg: 'themeDialog.tokenLabels.bg',
+  bg2: 'themeDialog.tokenLabels.bg2',
+  bg3: 'themeDialog.tokenLabels.bg3',
+  page: 'themeDialog.tokenLabels.page',
+  text: 'themeDialog.tokenLabels.text',
+  muted: 'themeDialog.tokenLabels.muted',
+  border: 'themeDialog.tokenLabels.border',
+  accent: 'themeDialog.tokenLabels.accent',
+  accentInk: 'themeDialog.tokenLabels.accentInk',
+  accentSolid: 'themeDialog.tokenLabels.accentSolid',
+  danger: 'themeDialog.tokenLabels.danger',
+  success: 'themeDialog.tokenLabels.success',
+  warning: 'themeDialog.tokenLabels.warning',
 }
 
-const TOKEN_HINTS: Partial<Record<ThemeToken, string>> = {
-  bg2: 'Lista lateral, barras y tarjetas.',
-  bg3: 'Filas activas, campos y pestañas.',
-  page: 'El papel donde escribís.',
-  text: 'Títulos y párrafos.',
-  muted: 'Fechas, ayudas y etiquetas apagadas.',
-  border: 'Separadores y contornos.',
-  accent: 'Selección, foco y enlaces.',
-  accentInk: 'El acento cuando es texto.',
-  accentSolid: 'El acento de fondo, con letra blanca.',
-  danger: 'Borrar, errores y fallos de conexión.',
-  success: 'Guardado y confirmaciones.',
-  warning: 'Avisos y límites.',
+const TOKEN_HINT_KEYS: Partial<Record<ThemeToken, MessageKey>> = {
+  bg2: 'themeDialog.tokenHints.bg2',
+  bg3: 'themeDialog.tokenHints.bg3',
+  page: 'themeDialog.tokenHints.page',
+  text: 'themeDialog.tokenHints.text',
+  muted: 'themeDialog.tokenHints.muted',
+  border: 'themeDialog.tokenHints.border',
+  accent: 'themeDialog.tokenHints.accent',
+  accentInk: 'themeDialog.tokenHints.accentInk',
+  accentSolid: 'themeDialog.tokenHints.accentSolid',
+  danger: 'themeDialog.tokenHints.danger',
+  success: 'themeDialog.tokenHints.success',
+  warning: 'themeDialog.tokenHints.warning',
 }
 
-const FAMILIES: Array<{ title: string; tokens: ThemeToken[] }> = [
-  { title: 'Superficies', tokens: ['bg2', 'bg3', 'page'] },
-  { title: 'Texto', tokens: ['text', 'muted'] },
-  { title: 'Bordes', tokens: ['border'] },
-  { title: 'Acento', tokens: ['accentInk', 'accentSolid'] },
-  { title: 'Estados', tokens: ['danger', 'success', 'warning'] },
+const FAMILIES: Array<{ titleKey: MessageKey; tokens: ThemeToken[] }> = [
+  { titleKey: 'themeDialog.families.surfaces', tokens: ['bg2', 'bg3', 'page'] },
+  { titleKey: 'themeDialog.families.text', tokens: ['text', 'muted'] },
+  { titleKey: 'themeDialog.families.borders', tokens: ['border'] },
+  { titleKey: 'themeDialog.families.accent', tokens: ['accentInk', 'accentSolid'] },
+  { titleKey: 'themeDialog.families.states', tokens: ['danger', 'success', 'warning'] },
 ]
 
 export function ThemeDialog({ onClose }: { onClose: () => void }) {
+  const t = useT()
   const state = useTheme()
   const appearance = useSystemAppearance()
   // Two palettes on purpose: the fields edit the design (so a tweak always
@@ -89,24 +91,24 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h2 id="theme-heading" className="row" style={{ gap: 7 }}>
           <PaletteIcon size={15} />
-          Apariencia
+          {t('themeDialog.heading')}
         </h2>
-        <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
+        <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
           <X size={15} />
         </button>
       </div>
 
       <div className="theme-preview-wrap">
-        <span className="theme-section-title">Así se ve</span>
+        <span className="theme-section-title">{t('themeDialog.preview')}</span>
         <ThemeThumb palette={preview} />
         <p className="hint">
-          {state.edited ? `«${chosen.name}», ajustado a tu gusto.` : chosen.hint}
+          {state.edited ? t('theme.adjusted', { name: t(chosen.nameKey) }) : t(chosen.hintKey)}
         </p>
       </div>
 
       <div className="theme-section">
-        <span className="theme-section-title">Temas listos</span>
-        <div className="theme-grid" role="group" aria-label="Temas">
+        <span className="theme-section-title">{t('themeDialog.presets')}</span>
+        <div className="theme-grid" role="group" aria-label={t('themeDialog.presetsGroup')}>
           {PRESETS.map((preset) => (
             <button
               key={preset.id}
@@ -117,8 +119,8 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
             >
               <SeedSquares canvas={preset.seeds.canvas} accent={preset.seeds.accent} />
               <span className="theme-card-text">
-                <span className="theme-card-name">{preset.name}</span>
-                <span className="theme-card-hint">{preset.hint}</span>
+                <span className="theme-card-name">{t(preset.nameKey)}</span>
+                <span className="theme-card-hint">{t(preset.hintKey)}</span>
               </span>
             </button>
           ))}
@@ -126,30 +128,30 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="theme-section">
-        <span className="theme-section-title">Tus colores</span>
+        <span className="theme-section-title">{t('themeDialog.own')}</span>
         <ColorField
-          label="Fondo"
-          hint="El color base de las barras y la lista."
+          label={t('themeDialog.background')}
+          hint={t('themeDialog.backgroundHint')}
           value={seeds.canvas}
           suggestions="neutrals"
           onChange={(canvas) => setThemeState(updateSeed(state, { ...seeds, canvas }))}
         />
         <ColorField
-          label="Acento"
-          hint="Selección, enlaces y botones."
+          label={t('themeDialog.accent')}
+          hint={t('themeDialog.accentHint')}
           value={seeds.accent}
           suggestions="accents"
           onChange={(accent) => setThemeState(updateSeed(state, { ...seeds, accent }))}
         />
 
         {FAMILIES.map((family) => (
-          <div key={family.title} className="theme-family">
-            <span className="theme-family-title">{family.title}</span>
+          <div key={t(family.titleKey)} className="theme-family">
+            <span className="theme-family-title">{t(family.titleKey)}</span>
             {family.tokens.map((token) => (
               <ColorField
                 key={token}
-                label={TOKEN_LABELS[token]}
-                hint={TOKEN_HINTS[token]}
+                label={t(TOKEN_LABEL_KEYS[token])}
+                hint={TOKEN_HINT_KEYS[token] ? t(TOKEN_HINT_KEYS[token]) : undefined}
                 value={palette[token]}
                 onReset={() => setThemeState(setTokenOverride(state, token, null))}
                 onChange={(hex) => setThemeState(setTokenOverride(state, token, hex))}
@@ -173,10 +175,10 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
 
       <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
         <button type="button" className="btn ghost" onClick={() => setThemeState(resetToPreset(state))}>
-          Restablecer «{chosen.name}»
+          {t('themeDialog.reset', { name: t(chosen.nameKey) })}
         </button>
         <button type="button" className="btn" onClick={onClose}>
-          Listo
+          {t('themeDialog.done')}
         </button>
       </div>
     </Modal>

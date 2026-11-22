@@ -46,7 +46,7 @@ describe('frontmatter splitting', () => {
   it('derives a title ignoring the frontmatter', () => {
     expect(titleFromMarkdown(withFrontmatter)).toBe('Nota')
     expect(titleFromMarkdown('---\na: 1\n---\n\nprimera línea\n')).toBe('primera línea')
-    expect(titleFromMarkdown('---\na: 1\n---\n')).toBe('Sin título')
+    expect(titleFromMarkdown('---\na: 1\n---\n')).toBe('Untitled')
   })
 })
 

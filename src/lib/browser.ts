@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.ts'
 /**
  * Detects browsers where Google refuses to complete the OAuth flow.
  *
@@ -31,10 +32,10 @@ export function currentBrowser(): BrowserInfo {
 /** Human explanation used on the sign-in screen. */
 export function embeddedBrowserHint(reason: BrowserInfo['reason']): string {
   if (reason === 'automation') {
-    return 'Parece un navegador automatizado. Google bloquea el login ahí.'
+    return t('signIn.automated')
   }
   if (reason === 'webview') {
-    return 'Estás en el navegador interno de otra app. Google bloquea el login con Google dentro de esas vistas.'
+    return t('signIn.webview')
   }
-  return 'Estás en el navegador integrado de una app de escritorio (Electron). Google bloquea el login con Google ahí.'
+  return t('signIn.electron')
 }

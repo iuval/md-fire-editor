@@ -1,3 +1,4 @@
+import { t } from '../../i18n/index.ts'
 import * as Y from 'yjs'
 import type { Firestore } from 'firebase/firestore'
 import {
@@ -182,7 +183,7 @@ export class FirestoreYjsProvider {
     }
 
     if (!this.fs) {
-      this.setStatus({ connected: false, offline: true, error: 'Firebase no está configurado' })
+      this.setStatus({ connected: false, offline: true, error: t('error.firebaseNotConfigured') })
       return
     }
 
@@ -304,9 +305,7 @@ export class FirestoreYjsProvider {
       this.queuedBytes = 0
       this.setStatus({
         pendingWrites: 0,
-        error: `El último cambio es demasiado grande para sincronizarse (${Math.round(
-          merged.byteLength / 1024
-        )} KB)`,
+        error: t('error.updateTooLarge', { kb: Math.round(merged.byteLength / 1024) }),
       })
       return
     }
@@ -361,7 +360,7 @@ export class FirestoreYjsProvider {
       bytes = base64ToBytes(block.data)
     } catch {
       this.stats.rejectedBlocks++
-      this.setStatus({ error: 'Se descartó un cambio dañado de otro dispositivo' })
+      this.setStatus({ error: t('error.corruptBlockFromPeer') })
       return
     }
 
@@ -370,7 +369,7 @@ export class FirestoreYjsProvider {
       if (expected !== block.hash) {
         // Tampered or truncated block: refuse it, keep the rest flowing.
         this.stats.rejectedBlocks++
-        this.setStatus({ error: 'Se descartó un cambio que no coincide con su firma' })
+        this.setStatus({ error: t('error.blockHashMismatch') })
         return
       }
     }

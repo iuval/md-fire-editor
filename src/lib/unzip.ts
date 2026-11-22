@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.ts'
 /**
  * Minimal ZIP reader, no dependencies.
  *
@@ -25,7 +26,7 @@ function findEocd(view: DataView): number {
 
 async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream === 'undefined') {
-    throw new Error('este navegador no soporta descomprimir ZIP')
+    throw new Error(t('error.zipUnsupported'))
   }
   const stream = new Blob([new Uint8Array(bytes)]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
   const buffer = await new Response(stream).arrayBuffer()
@@ -56,11 +57,11 @@ function* centralEntries(
   const bytes = new Uint8Array(input)
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const eocd = findEocd(view)
-  if (eocd === -1) throw new Error('el archivo no es un ZIP válido')
+  if (eocd === -1) throw new Error(t('error.zipInvalid'))
 
   const entries = view.getUint16(eocd + 10, true)
   const centralOffset = view.getUint32(eocd + 16, true)
-  if (entries > maxEntries) throw new Error(`el ZIP tiene demasiados archivos (${entries})`)
+  if (entries > maxEntries) throw new Error(t('error.zipTooManyFiles', { count: entries }))
 
   let cursor = centralOffset
 
@@ -135,7 +136,7 @@ export async function* unzipEach(
     }
 
     total += content.byteLength
-    if (total > maxBytes) throw new Error('el ZIP es demasiado grande')
+    if (total > maxBytes) throw new Error(t('error.zipTooLarge'))
     yield { path: entry.path, bytes: content }
   }
 }

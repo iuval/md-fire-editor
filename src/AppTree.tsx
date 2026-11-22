@@ -23,7 +23,6 @@ import { ShareDialog } from './components/ShareDialog'
 import { MoveDialog } from './components/MoveDialog'
 import { InputDialog } from './components/InputDialog'
 import { AgentsDialog } from './components/AgentsDialog'
-import { UpgradeDialog } from './components/UpgradeDialog'
 import { UsageDialog } from './components/UsageDialog'
 import { ThemeDialog } from './components/ThemeDialog'
 import { useAgents, useAuth, useWorkspace } from './hooks/useFirebase'
@@ -45,7 +44,7 @@ import { flattenFolders, folderPath, sharedFolderOf } from './lib/folders'
 import { applyOrder, setFolderSort, setRootSort, subscribeUserSettings } from './lib/notes'
 import {
   DEFAULT_SORT,
-  SORT_LABELS,
+  sortLabel,
   moveOrder,
   nextOrder,
   orderKey,
@@ -82,7 +81,6 @@ import {
   type SplitDirection,
 } from './lib/panes'
 import { RenameTagDialog } from './components/RenameTagDialog'
-import { isPaid, subscribeEntitlement } from './lib/entitlements'
 import { renameAgent } from './lib/agents'
 import {
   recordUsage,
@@ -93,6 +91,12 @@ import {
   type UsageTotals,
 } from './lib/usage'
 import { requestTopUp, updateCreditSettings } from './lib/credits'
+import { GuestWorkspace } from './components/GuestWorkspace'
+import { GuestDraftDialog } from './components/GuestDraftDialog'
+import { clearGuestDraft, readGuestDraft, isMigratable, guestDraftTitle, type GuestDraft } from './lib/guestDraft'
+import { migrateGuestDraft } from './lib/guestMigration'
+import { shouldShowGuestView } from './lib/guestMode'
+import { flushGuestEvents } from './lib/guestAnalytics'
 import { useT } from './i18n/index.ts'
 import type { ProviderStatus, SyncStats } from './lib/collab/provider'
 import {
@@ -168,7 +172,6 @@ type Dialog =
   | { kind: 'rename-folder'; folderId: string }
   | { kind: 'folder-tags'; folderId: string }
   | { kind: 'agents' }
-  | { kind: 'upgrade' }
   | { kind: 'usage' }
   | { kind: 'sort'; folderId: string | null }
   | { kind: 'rename-tag' }
@@ -343,12 +346,17 @@ function AppTree() {
     updateCount: 0,
     error: null as string | null,
   })
-  const [paid, setPaid] = useState(false)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [rootSort, setRootSortState] = useState<SortMode>(DEFAULT_SORT)
   const [notice, setNotice] = useState<string | null>(null)
   const [usage, setUsage] = useState<UsageTotals | null>(null)
   const [credits, setCredits] = useState<Credits | null>(null)
+  /** A guest draft waiting to be offered after sign-in. */
+  const [guestDraft, setGuestDraft] = useState<GuestDraft | null>(null)
+  const [guestSaving, setGuestSaving] = useState(false)
+  const [guestSaveError, setGuestSaveError] = useState<string | null>(null)
+  /** The offer is one-shot per session, even if the auth token refreshes. */
+  const guestOffered = useRef(false)
   /** Read from inside the tab, so "the app uses 1 GB" can be checked. */
   const [memory, setMemory] = useState<MemoryReport | null>(null)
   const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null)
@@ -489,14 +497,6 @@ function AppTree() {
   }, [user, notes])
 
   useEffect(() => {
-    if (!user) {
-      setPaid(false)
-      return
-    }
-    return subscribeEntitlement(user.uid, (entitlement) => setPaid(isPaid(entitlement)))
-  }, [user])
-
-  useEffect(() => {
     if (!user) return
     track('app_open', user.uid, { platform: isMobile ? 'mobile' : 'desktop' })
   }, [user, isMobile])
@@ -505,6 +505,22 @@ function AppTree() {
     if (!user || presence.length === 0) return
     track('collab_session', user.uid, { peers: presence.length })
   }, [user, presence.length])
+
+  // A visitor who signs in keeps the funnel events collected before the login
+  // and gets one offer to save the draft. Both are one-shot: the draft is
+  // cleared after the migration and the counter after the flush.
+  useEffect(() => {
+    if (!user) {
+      setGuestDraft(null)
+      guestOffered.current = false
+      return
+    }
+    flushGuestEvents(user.uid)
+    if (guestOffered.current) return
+    guestOffered.current = true
+    const draft = readGuestDraft()
+    if (isMigratable(draft)) setGuestDraft(draft)
+  }, [user])
 
   // Only *visible* notes cost a subscription, and it is a body subscription: the
   // metadata already arrives with the workspace list, so a tab no longer holds a
@@ -654,6 +670,33 @@ function AppTree() {
     if (dialog.kind === 'usage') refreshDiagnostics()
   }, [dialog.kind, refreshDiagnostics])
 
+
+  const handleSaveGuestDraft = useCallback(async () => {
+    if (!user || !guestDraft) return
+    setGuestSaving(true)
+    setGuestSaveError(null)
+    try {
+      const noteId = await migrateGuestDraft(user.uid, guestDraft)
+      clearGuestDraft()
+      setGuestDraft(null)
+      setNotice(t('guest.saved'))
+      setWorkspace((current) => ({
+        layout: openTab(current.layout, focusedPaneId, noteId, newId('tab')),
+        focusedPaneId,
+      }))
+      track('guest_draft_saved', user.uid, { source: 'migration' })
+    } catch {
+      setGuestSaveError(t('guest.saveFailed'))
+    } finally {
+      setGuestSaving(false)
+    }
+  }, [user, guestDraft, focusedPaneId, t])
+
+  const handleDiscardGuestDraft = useCallback(() => {
+    clearGuestDraft()
+    setGuestDraft(null)
+    setGuestSaveError(null)
+  }, [])
 
   const handleExportAll = useCallback(async () => {
     if (notes.length === 0) return
@@ -1268,11 +1311,9 @@ function AppTree() {
             icon: <Link2 size={14} />,
             onSelect: () =>
               setDialog(
-                !paid
-                  ? { kind: 'upgrade' }
-                  : inherited
-                    ? { kind: 'share-folder', folderId: inherited.id }
-                    : { kind: 'share-note', noteId: note.id }
+                inherited
+                  ? { kind: 'share-folder', folderId: inherited.id }
+                  : { kind: 'share-note', noteId: note.id }
               ),
           })
         }
@@ -1334,7 +1375,7 @@ function AppTree() {
           onSelect: () => setDialog({ kind: 'folder-tags', folderId: folderMenu.folder.id }),
         },
         {
-          label: `Orden: ${SORT_LABELS[folderMenu.folder.sort ?? resolveSort(folderMenu.folder.parentId ?? null, foldersById, rootSort)]}…`,
+          label: `${t('menu.sortOrder')}: ${sortLabel(folderMenu.folder.sort ?? resolveSort(folderMenu.folder.parentId ?? null, foldersById, rootSort))}…`,
           icon: <ArrowDownWideNarrow size={14} />,
           onSelect: () => setDialog({ kind: 'sort', folderId: folderMenu!.folder.id }),
         },
@@ -1358,9 +1399,7 @@ function AppTree() {
                 label: 'Compartir…',
                 icon: <Link2 size={14} />,
                 onSelect: () =>
-                  setDialog(
-                    paid ? { kind: 'share-folder', folderId: folderMenu!.folder.id } : { kind: 'upgrade' }
-                  ),
+                  setDialog({ kind: 'share-folder', folderId: folderMenu!.folder.id }),
               },
             ]
           : []),
@@ -1463,6 +1502,13 @@ function AppTree() {
   if (authLoading) return <div className="empty">{t('app.loading')}</div>
 
   if (!user) {
+    // A shared-note link still needs a session: the visitor has no access to
+    // that document, so the guest editor would be a dead end. Everywhere else,
+    // the visitor writes first and signs in only when they want to keep it.
+    if (shouldShowGuestView({ hasUser: false, hasSharedNote: noteFromUrl() !== null })) {
+      return <GuestWorkspace onSignIn={() => void doGoogleSignIn()} authError={authError} />
+    }
+
     const browser = currentBrowser()
     const appUrl = typeof window !== 'undefined' ? window.location.origin : ''
 
@@ -1699,9 +1745,9 @@ function AppTree() {
                 onSelect: () => importRef.current?.click(),
               },
               {
-                label: paid ? 'Agentes de IA…' : 'Agentes de IA (plan pago)…',
+                label: 'Agentes de IA…',
                 icon: <Bot size={14} />,
-                onSelect: () => setDialog(paid ? { kind: 'agents' } : { kind: 'upgrade' }),
+                onSelect: () => setDialog({ kind: 'agents' }),
                 separatorBefore: true,
               },
               {
@@ -1711,7 +1757,7 @@ function AppTree() {
                 separatorBefore: true,
               },
               {
-                label: `Orden de la lista: ${SORT_LABELS[rootSort]}…`,
+                label: `${t('menu.listOrder')}: ${sortLabel(rootSort)}…`,
                 icon: <ArrowDownWideNarrow size={14} />,
                 onSelect: () => setDialog({ kind: 'sort', folderId: null }),
               },
@@ -1827,11 +1873,21 @@ function AppTree() {
         />
       )}
 
+      {guestDraft && (
+        <GuestDraftDialog
+          title={guestDraftTitle(guestDraft)}
+          busy={guestSaving}
+          error={guestSaveError}
+          onSave={() => void handleSaveGuestDraft()}
+          onDiscard={handleDiscardGuestDraft}
+          onClose={() => setGuestDraft(null)}
+        />
+      )}
+
       {dialog.kind === 'usage' && (
         <UsageDialog
           usage={usage}
           credits={credits}
-          paid={paid}
           notes={notes.length}
           folders={folders.length}
           diagnostics={{
@@ -1852,10 +1908,6 @@ function AppTree() {
           }}
           onClose={() => setDialog({ kind: 'none' })}
         />
-      )}
-
-      {dialog.kind === 'upgrade' && (
-        <UpgradeDialog onClose={() => setDialog({ kind: 'none' })} onExport={handleExportAll} />
       )}
 
       <input

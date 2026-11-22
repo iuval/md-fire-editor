@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.ts'
 /**
  * Typed labels, a subset of Obsidian's frontmatter properties.
  *
@@ -15,12 +16,16 @@ export interface Property {
   value: string | number | boolean | string[]
 }
 
-export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
-  text: 'Texto',
-  number: 'Número',
-  date: 'Fecha',
-  checkbox: 'Sí/No',
-  list: 'Lista',
+/** Ordered for the dropdown; labels are resolved at render time. */
+export const PROPERTY_TYPES = ['text', 'number', 'date', 'checkbox', 'list'] as const
+
+/** Labels for the UI; the serialized `sí`/`no` below is data, not text. */
+export function propertyTypeLabel(type: PropertyType): string {
+  if (type === 'number') return t('property.number')
+  if (type === 'date') return t('property.date')
+  if (type === 'checkbox') return t('property.checkbox')
+  if (type === 'list') return t('property.list')
+  return t('property.text')
 }
 
 /** Keys that belong to the tag system, not to generic properties. */

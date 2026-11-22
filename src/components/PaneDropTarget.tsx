@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { t } from '../i18n/index.ts'
 import {
   currentTabDrag,
   dropZoneAt,
@@ -8,12 +9,12 @@ import {
 } from '../lib/tabDrag'
 
 /** What the highlighted area promises, in the same words as the split buttons. */
-const DROP_LABELS: Record<DropZone, string> = {
-  left: 'Dividir a la izquierda',
-  right: 'Dividir a la derecha',
-  top: 'Dividir arriba',
-  bottom: 'Dividir abajo',
-  center: 'Mover acá',
+function dropLabel(zone: DropZone): string {
+  if (zone === 'left') return t('drop.left')
+  if (zone === 'right') return t('drop.right')
+  if (zone === 'top') return t('drop.top')
+  if (zone === 'center') return t('drop.center')
+  return t('drop.down')
 }
 
 interface PaneDropTargetProps {
@@ -86,7 +87,7 @@ export function PaneDropTarget({
         onDrop(source, next)
       }}
     >
-      {zone && <span className="pane-drop-hint">{DROP_LABELS[zone]}</span>}
+      {zone && <span className="pane-drop-hint">{dropLabel(zone)}</span>}
     </div>
   )
 }

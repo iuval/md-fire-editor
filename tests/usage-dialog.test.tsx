@@ -40,7 +40,6 @@ function mount(
       <UsageDialog
         usage={usage}
         credits={{ balanceUsd: 3.5, thresholdUsd: 1, topUpUsd: 5, autoTopUp: false }}
-        paid={false}
         notes={12}
         folders={3}
         diagnostics={{

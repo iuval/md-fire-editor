@@ -66,17 +66,17 @@ describe('lista de agentes', () => {
 
   it('explica qué hacer cuando no hay ninguno', () => {
     mount([])
-    expect(document.body.textContent).toContain('Todavía no hay agentes')
+    expect(document.body.textContent).toContain('No agents yet')
     expect(document.body.textContent).toContain('firemd login')
   })
 
   it('renombra por el callback y sale del modo edición', async () => {
     const { onRename } = mount([agent()])
-    const pencil = document.querySelector<HTMLButtonElement>('[aria-label="Renombrar MacBook de Ana"]')
+    const pencil = document.querySelector<HTMLButtonElement>('[aria-label="Rename MacBook de Ana"]')
     expect(pencil).not.toBeNull()
 
     act(() => pencil!.click())
-    const input = document.querySelector<HTMLInputElement>('[aria-label="Nombre de MacBook de Ana"]')
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Name of MacBook de Ana"]')
     expect(input).not.toBeNull()
 
     act(() => {
@@ -85,27 +85,27 @@ describe('lista de agentes', () => {
       input!.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => {
-      document.querySelector<HTMLButtonElement>('[aria-label="Guardar nombre"]')!.click()
+      document.querySelector<HTMLButtonElement>('[aria-label="Save name"]')!.click()
     })
 
     expect(onRename).toHaveBeenCalledWith('3f9a1c2b', 'Notebook')
-    expect(document.querySelector('[aria-label="Nombre de MacBook de Ana"]')).toBeNull()
+    expect(document.querySelector('[aria-label="Name of MacBook de Ana"]')).toBeNull()
   })
 
   it('no renombra a vacío', async () => {
     const { onRename } = mount([agent()])
-    act(() => document.querySelector<HTMLButtonElement>('[aria-label="Renombrar MacBook de Ana"]')!.click())
-    const input = document.querySelector<HTMLInputElement>('[aria-label="Nombre de MacBook de Ana"]')!
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="Rename MacBook de Ana"]')!.click())
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Name of MacBook de Ana"]')!
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
       setter.call(input, '   ')
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => {
-      document.querySelector<HTMLButtonElement>('[aria-label="Guardar nombre"]')!.click()
+      document.querySelector<HTMLButtonElement>('[aria-label="Save name"]')!.click()
     })
     expect(onRename).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('El nombre no puede quedar vacío')
+    expect(document.body.textContent).toContain('The name cannot be empty')
   })
 
   it('deja el pareado anónimo plegado', () => {
@@ -113,17 +113,17 @@ describe('lista de agentes', () => {
     const details = document.querySelector('details')
     expect(details).not.toBeNull()
     expect(details!.open).toBe(false)
-    expect(details!.textContent).toContain('Vincular un agente anónimo')
+    expect(details!.textContent).toContain('Link an anonymous agent')
   })
 
   it('avisa cuando el listener falla', () => {
     mount([], undefined, 'Missing or insufficient permissions')
-    expect(document.body.textContent).toContain('No se pudo cargar la lista')
-    expect(document.body.textContent).toContain('reglas')
+    expect(document.body.textContent).toContain('The list could not load')
+    expect(document.body.textContent).toContain('rules')
   })
 
   it('muestra el último uso en lenguaje humano', () => {
     mount([agent({ lastSeenAt: new Date(Date.now() - 5 * 60_000) })])
-    expect(document.body.textContent).toContain('hace 5 min')
+    expect(document.body.textContent).toContain('5 min ago')
   })
 })

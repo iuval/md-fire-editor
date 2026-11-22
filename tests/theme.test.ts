@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest'
+import { t } from '../src/i18n/index.ts'
 import {
   DEFAULT_PRESET_ID,
   PRESETS,
@@ -39,7 +40,7 @@ describe('presets', () => {
 
   it('is one design per preset: a fondo and an acento', () => {
     for (const preset of PRESETS) {
-      expect(preset.name.length).toBeGreaterThan(0)
+      expect(t(preset.nameKey).length).toBeGreaterThan(0)
       expect(preset.seeds.canvas, preset.id).toMatch(HEX)
       expect(preset.seeds.accent, preset.id).toMatch(HEX)
       expect(Object.keys(preset.seeds).sort()).toEqual(['accent', 'canvas'])

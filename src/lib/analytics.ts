@@ -17,6 +17,13 @@ export const EVENTS = [
   'agent_linked',
   'export',
   'import',
+  // Funnel events. A guest has no uid, so they are counted locally and flushed
+  // into the account's collection on the first sign-in (see guestAnalytics.ts).
+  'landing_viewed',
+  'pricing_viewed',
+  'guest_draft_started',
+  'guest_signin_clicked',
+  'guest_draft_saved',
 ] as const
 
 export type EventName = (typeof EVENTS)[number]

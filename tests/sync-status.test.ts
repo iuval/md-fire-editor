@@ -74,7 +74,7 @@ describe('transport error classification', () => {
   it('treats a permission failure as an error with a readable reason', () => {
     const seen = classifyTransportError(new Error('Missing or insufficient permissions.'))
     expect(seen.offline).toBe(false)
-    expect(seen.error).toBe('No tenés permiso para editar esta nota')
+    expect(seen.error).toBe('You do not have permission to edit this note')
   })
 
   it('treats an unreachable backend as offline, not as an error', () => {

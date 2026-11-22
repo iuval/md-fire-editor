@@ -1,4 +1,5 @@
 import type { Folder, Note } from './notes'
+import { localeTag } from '../i18n/index.ts'
 
 export const MAX_FOLDER_DEPTH = 6
 
@@ -50,7 +51,7 @@ export function flattenFolders(folders: Folder[]): FolderNode[] {
       path: folderPath(folder.id, new Map(folders.map((f) => [f.id, f]))),
       children: [] as FolderNode[],
     }))
-    .sort((a, b) => a.path.localeCompare(b.path, 'es'))
+    .sort((a, b) => a.path.localeCompare(b.path, localeTag()))
 }
 
 /** Nested tree, roots first, with orphans treated as roots. */
@@ -71,7 +72,7 @@ export function buildFolderTree(folders: Folder[]): FolderNode[] {
   }
 
   const assign = (list: FolderNode[], depth: number, prefix: string) => {
-    list.sort((a, b) => a.folder.name.localeCompare(b.folder.name, 'es'))
+    list.sort((a, b) => a.folder.name.localeCompare(b.folder.name, localeTag()))
     for (const node of list) {
       node.depth = depth
       node.path = prefix ? `${prefix}/${node.folder.name}` : node.folder.name

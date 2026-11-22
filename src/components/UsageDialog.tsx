@@ -33,7 +33,6 @@ export interface Diagnostics {
 interface UsageDialogProps {
   usage: UsageTotals | null
   credits: Credits | null
-  paid: boolean
   notes: number
   folders: number
   diagnostics: Diagnostics
@@ -51,7 +50,6 @@ interface UsageDialogProps {
 export function UsageDialog({
   usage,
   credits,
-  paid,
   notes,
   folders,
   diagnostics,
@@ -227,7 +225,7 @@ export function UsageDialog({
 
       <p className="usage-section-title">Saldo prepago</p>
       <div className="usage-grid">
-        <Row label="Plan" value={paid ? 'Pago' : 'Gratuito'} />
+        <Row label="Plan" value="Gratuito + créditos" />
         <Row label="Saldo" value={credits ? formatUsd(credits.balanceUsd) : 'sin cargar'} />
       </div>
 

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   assertFails,
   assertSucceeds,
@@ -111,12 +111,6 @@ afterEach(async () => {
 
 afterAll(async () => {
   await env.cleanup()
-})
-
-beforeEach(async () => {
-  // Sharing is a paid feature; tests exercise it by default.
-  await grantPaid(OWNER)
-  await grantPaid(EDITOR)
 })
 
 describe('notes: create', () => {
@@ -942,12 +936,12 @@ describe('tags', () => {
   })
 })
 
-describe('plans gate sharing', () => {
-  it('a free owner cannot change the ACL of a note', async () => {
+describe('sharing is not gated by plan', () => {
+  it('a free owner can change the ACL of a note', async () => {
     await grantPaid(OWNER, 'free')
     await seedNote('n1')
-    await assertFails(updateDoc(doc(db(OWNER), 'notes', 'n1'), { access: 'link-view', updatedAt: ts() }))
-    await assertFails(
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { access: 'link-view', updatedAt: ts() }))
+    await assertSucceeds(
       updateDoc(doc(db(OWNER), 'notes', 'n1'), {
         memberIds: [OWNER, VIEWER],
         roles: { [OWNER]: 'owner', [VIEWER]: 'viewer' },
@@ -963,14 +957,14 @@ describe('plans gate sharing', () => {
     await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { title: 'Otro', updatedAt: ts() }))
   })
 
-  it('a free owner cannot reshare a folder, but can rename it', async () => {
+  it('a free owner can reshare a folder and rename it', async () => {
     await grantPaid(OWNER, 'free')
     await seedFolder('f1')
-    await assertFails(updateDoc(doc(db(OWNER), 'folders', 'f1'), { access: 'link-view', updatedAt: ts() }))
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'folders', 'f1'), { access: 'link-view', updatedAt: ts() }))
     await assertSucceeds(updateDoc(doc(db(OWNER), 'folders', 'f1'), { name: 'Nuevo', updatedAt: ts() }))
   })
 
-  it('an expired plan behaves like free', async () => {
+  it('an expired plan does not block sharing either', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'entitlements', OWNER), {
         plan: 'paid',
@@ -980,7 +974,7 @@ describe('plans gate sharing', () => {
       })
     })
     await seedNote('n1')
-    await assertFails(updateDoc(doc(db(OWNER), 'notes', 'n1'), { access: 'link-view', updatedAt: ts() }))
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), { access: 'link-view', updatedAt: ts() }))
   })
 
   it('a client cannot grant itself a plan', async () => {
@@ -1040,6 +1034,20 @@ describe('analytics events', () => {
 
   it('a user can log a known event on their own path', async () => {
     await assertSucceeds(addDoc(collection(db(OWNER), 'analytics', OWNER, 'events'), event()))
+  })
+
+  it('accepts the guest funnel events flushed after sign-in', async () => {
+    for (const name of [
+      'landing_viewed',
+      'pricing_viewed',
+      'guest_draft_started',
+      'guest_signin_clicked',
+      'guest_draft_saved',
+    ]) {
+      await assertSucceeds(
+        addDoc(collection(db(OWNER), 'analytics', OWNER, 'events'), event({ name }))
+      )
+    }
   })
 
   it('rejects unknown event names and foreign paths', async () => {

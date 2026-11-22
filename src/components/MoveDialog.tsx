@@ -1,6 +1,7 @@
 import { Folder, X } from 'lucide-react'
 import { Modal } from './Modal'
 import type { Folder as FolderType } from '../lib/notes'
+import { useT } from '../i18n/index.ts'
 
 interface MoveDialogProps {
   noteTitle: string
@@ -11,11 +12,12 @@ interface MoveDialogProps {
 }
 
 export function MoveDialog({ noteTitle, folders, currentFolderId, onMove, onClose }: MoveDialogProps) {
+  const t = useT()
   return (
     <Modal labelledBy="move-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h2 id="move-heading">Mover «{noteTitle || 'Sin título'}»</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
+          <h2 id="move-heading">{t('move.heading', { name: noteTitle || t('app.untitled') })}</h2>
+          <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
             <X size={15} />
           </button>
         </div>

@@ -15,6 +15,7 @@ import {
   persistentMultipleTabManager,
 } from 'firebase/firestore'
 import firebaseConfig from './firebaseConfig'
+import { t } from './i18n/index.ts'
 
 let app: FirebaseApp | null = null
 let authInstance: ReturnType<typeof getAuth> | null = null
@@ -92,23 +93,23 @@ function classifySignInError(error: unknown): { failure: SignInFailure; message:
     return {
       failure: 'blocked-referer',
       message:
-        'Este origen no está autorizado en la API key de Firebase. Agregá este puerto a los referrers de la key (ver README).',
+        t('signIn.blockedReferer'),
     }
   }
   if (code === 'auth/popup-blocked') {
-    return { failure: 'popup-blocked', message: 'El navegador bloqueó la ventana de Google. Permití popups para este sitio.' }
+    return { failure: 'popup-blocked', message: t('signIn.popupBlocked') }
   }
   if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-    return { failure: 'cancelled', message: 'Se cerró la ventana de Google antes de terminar.' }
+    return { failure: 'cancelled', message: t('signIn.cancelled') }
   }
   if (code === 'auth/operation-not-supported-in-this-environment') {
-    return { failure: 'unsupported', message: 'Este navegador no permite el login con Google.' }
+    return { failure: 'unsupported', message: t('signIn.unsupported') }
   }
   return { failure: 'unknown', message }
 }
 
 export async function signInWithGoogle(): Promise<SignInResult> {
-  if (!auth) return { user: null, failure: 'unknown', message: 'Firebase no está configurado' }
+  if (!auth) return { user: null, failure: 'unknown', message: t('error.firebaseNotConfigured') }
   try {
     const cred = await signInWithPopup(auth, provider)
     return { user: cred.user, failure: null, message: null }

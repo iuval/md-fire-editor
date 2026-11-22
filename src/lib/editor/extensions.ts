@@ -8,6 +8,7 @@ import type { Extensions } from '@tiptap/core'
 import type * as Y from 'yjs'
 import { TagHighlight } from '../../components/extensions/tagHighlight'
 import type { CollabUser } from '../collab/awareness'
+import { t } from '../../i18n/index.ts'
 
 /** The subset of y-protocols Awareness that CollaborationCaret talks to. */
 interface AwarenessLike {
@@ -24,7 +25,7 @@ const caretRender = (user: { name?: string; color?: string }) => {
   cursor.className = 'collaboration-caret'
   cursor.style.borderLeft = `2px solid ${user.color ?? '#c25e00'}`
   const label = document.createElement('span')
-  label.textContent = user.name ?? 'Anónimo'
+  label.textContent = user.name ?? t('app.anonymous')
   label.style.cssText = `background:${user.color ?? '#c25e00'};color:#fff;font-size:10px;padding:1px 4px;border-radius:3px;position:absolute;top:-16px;left:-2px;white-space:nowrap;`
   cursor.appendChild(label)
   return cursor
@@ -53,7 +54,7 @@ export function buildEditorExtensions(options: {
     // these nodes a GFM table is flattened into a paragraph on load and the
     // flattened text is what gets written back.
     TableKit.configure({ table: { resizable: false } }),
-    Placeholder.configure({ placeholder: options.placeholder ?? 'Empezá a escribir…' }),
+    Placeholder.configure({ placeholder: options.placeholder ?? t('app.editorPlaceholder') }),
     TagHighlight,
     Markdown.configure({ html: false, transformPastedText: true }),
   ]

@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.ts'
 /**
  * The editor owns the body; the frontmatter is kept aside and re-attached.
  *
@@ -33,7 +34,7 @@ export function joinFrontmatter(frontmatter: string, body: string): string {
 }
 
 /** Title derived from the first H1, else the first non-empty line. */
-export function titleFromMarkdown(markdown: string, fallback = 'Sin título'): string {
+export function titleFromMarkdown(markdown: string, fallback = t('app.untitled')): string {
   const { body } = splitFrontmatter(markdown)
   for (const line of body.split('\n')) {
     const clean = line

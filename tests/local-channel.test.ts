@@ -157,7 +157,7 @@ describe('same-browser hot path', () => {
     provider.connect()
 
     expect(states.at(-1)?.offline).toBe(true)
-    expect(states.at(-1)?.error).toBe('Firebase no está configurado')
+    expect(states.at(-1)?.error).toBe('Firebase is not configured')
     provider.destroy()
     doc.destroy()
   })

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { ChevronRight, Plus, X } from 'lucide-react'
 import {
-  PROPERTY_TYPE_LABELS,
+  propertyTypeLabel,
+  PROPERTY_TYPES,
   formatPropertyValue,
   type Property,
   type PropertyType,
@@ -137,9 +138,9 @@ export function NotePanels({
                       })
                     }
                   >
-                    {Object.entries(PROPERTY_TYPE_LABELS).map(([type, label]) => (
+                    {PROPERTY_TYPES.map((type) => (
                       <option key={type} value={type}>
-                        {label}
+                        {propertyTypeLabel(type)}
                       </option>
                     ))}
                   </select>
@@ -176,9 +177,9 @@ export function NotePanels({
                 aria-label="Tipo de la nueva propiedad"
                 onChange={(e) => setNewType(e.target.value as PropertyType)}
               >
-                {Object.entries(PROPERTY_TYPE_LABELS).map(([type, label]) => (
+                {PROPERTY_TYPES.map((type) => (
                   <option key={type} value={type}>
-                    {label}
+                    {propertyTypeLabel(type)}
                   </option>
                 ))}
               </select>

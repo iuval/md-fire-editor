@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ThemeDialog } from '../src/components/ThemeDialog'
+import { t } from '../src/i18n/index.ts'
 import {
   PRESETS,
   THEME_TOKENS,
@@ -92,7 +93,7 @@ describe('theme dialog', () => {
     const labels = [...document.querySelectorAll('input[type="color"]')].map((input) =>
       input.getAttribute('aria-label'),
     )
-    for (const label of ['Fondo', 'Acento', 'Texto', 'Bordes', 'Errores', 'Confirmaciones']) {
+    for (const label of ['Background', 'Accent', 'Text', 'Borders', 'Errors', 'Confirmations']) {
       expect(labels).toContain(label)
     }
     expect([...document.querySelectorAll('button')].some((b) => b.textContent === 'Claro')).toBe(false)
@@ -102,7 +103,7 @@ describe('theme dialog', () => {
 
   it('re-derives the palette when the fondo swatch is picked', () => {
     mount(<ThemeDialog onClose={() => {}} />)
-    const fondo = document.querySelector<HTMLInputElement>('input[aria-label="Fondo"]')
+    const fondo = document.querySelector<HTMLInputElement>('input[aria-label="Background"]')
     expect(fondo).not.toBeNull()
 
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -131,7 +132,7 @@ describe('theme dialog', () => {
       mount(<ThemeDialog onClose={() => {}} />)
       // Obsidiana is a light design; on a dark screen the fields still show the
       // light half, so a tweak is never painted nowhere.
-      const paneles = document.querySelector<HTMLInputElement>('input[aria-label="Paneles"]')
+      const paneles = document.querySelector<HTMLInputElement>('input[aria-label="Panels"]')
       expect(paneles?.value).toBe(resolvePalette(presetState(PRESETS[0].id), 'light').bg2)
 
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -156,19 +157,19 @@ describe('theme dialog', () => {
     const preset = PRESETS[0]
     const original = resolvePalette(presetState(preset.id), 'light').bg
 
-    const swatch = document.querySelector<HTMLButtonElement>('.color-swatch[aria-label="Fondo: #1e1e1e"]')
+    const swatch = document.querySelector<HTMLButtonElement>('.color-swatch[aria-label="Background: #1e1e1e"]')
     expect(swatch).not.toBeNull()
     act(() => swatch!.click())
     expect(cssVar('--color-bg')).not.toBe(original)
 
-    act(() => buttonByText(`Restablecer «${preset.name}»`).click())
+    act(() => buttonByText(t('themeDialog.reset', { name: t(preset.nameKey) })).click())
     expect(cssVar('--color-bg')).toBe(original)
   })
 
   it('drops the per-color tweaks when asked', () => {
     mount(<ThemeDialog onClose={() => {}} />)
     const original = resolvePalette(presetState(PRESETS[0].id), 'light').bg2
-    const field = document.querySelector<HTMLInputElement>('input[aria-label="Paneles"]')
+    const field = document.querySelector<HTMLInputElement>('input[aria-label="Panels"]')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     act(() => {
       setter?.call(field, '#123456')
@@ -184,9 +185,9 @@ describe('theme dialog', () => {
     const onClose = vi.fn()
     mount(<ThemeDialog onClose={onClose} />)
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
-    expect(document.getElementById('theme-heading')?.textContent).toContain('Apariencia')
+    expect(document.getElementById('theme-heading')?.textContent).toContain('Appearance')
     expect(document.querySelector('.theme-thumb')).not.toBeNull()
-    act(() => buttonByText('Listo').click())
+    act(() => buttonByText('Done').click())
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

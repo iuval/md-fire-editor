@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { Modal } from './Modal'
-import { SORT_LABELS, isSortMode, type SortMode } from '../lib/sorting'
+import { isSortMode, sortLabel, type SortMode } from '../lib/sorting'
+import { useT } from '../i18n/index.ts'
 
 interface SortDialogProps {
   target: string
@@ -13,11 +14,12 @@ const MODES: SortMode[] = ['name', 'created', 'updated', 'manual']
 
 /** Ordering for one folder (or the root list). */
 export function SortDialog({ target, current, onChoose, onClose }: SortDialogProps) {
+  const t = useT()
   return (
     <Modal labelledBy="sort-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2 id="sort-heading">Ordenar «{target}»</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
+          <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
             <X size={15} />
           </button>
         </div>
@@ -35,15 +37,15 @@ export function SortDialog({ target, current, onChoose, onClose }: SortDialogPro
               }}
             >
               <span>
-                <span className="share-option-title">{SORT_LABELS[mode]}</span>
+                <span className="share-option-title">{sortLabel(mode)}</span>
                 <span className="share-option-desc" style={{ display: 'block' }}>
                   {mode === 'manual'
-                    ? 'Usá «Subir» y «Bajar» para mover carpetas y notas.'
+                    ? t('sortDialog.manualHint')
                     : mode === 'updated'
-                      ? 'Lo último que tocaste queda arriba.'
+                      ? t('sortDialog.updatedHint')
                       : mode === 'created'
-                        ? 'Lo más viejo primero.'
-                        : 'Orden alfabético.'}
+                        ? t('sortDialog.createdHint')
+                        : t('sortDialog.nameHint')}
                 </span>
               </span>
             </button>

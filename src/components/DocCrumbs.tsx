@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { folderChain } from '../lib/folders'
 import type { Folder } from '../lib/notes'
+import { t } from '../i18n/index.ts'
 
 interface DocCrumbsProps {
   /** The note's folder; `null` for a note at the root of the workspace. */
@@ -24,7 +25,7 @@ export function DocCrumbs({ folderId, folders }: DocCrumbsProps) {
   if (chain.length === 0) return null
 
   return (
-    <nav className="doc-crumbs" aria-label="Carpeta de la nota">
+    <nav className="doc-crumbs" aria-label={t('crumbs.folderOf')}>
       {chain.map((folder, index) => (
         <Fragment key={folder.id}>
           {index > 0 && (

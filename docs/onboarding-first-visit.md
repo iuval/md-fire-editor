@@ -1,11 +1,13 @@
 # Primer contacto: onboarding y revelación de producto
 
-**Estado**: propuesta. **Fecha**: 22-nov-2026. **Alcance**: qué ve alguien que abre
+**Estado**: propuesta con implementación inicial. **Fecha**: 22-nov-2026. **Alcance**: qué ve alguien que abre
 `firemd.app` por primera vez, qué falta hoy y en qué orden construirlo.
 
 Este documento responde al brief de "Editor Vivo + Capa de Descubrimiento No Invasiva".
-Documenta el estado real con evidencia (`archivo:línea`), enumera los gaps, y arma el plan.
-**No implementa nada.**
+Documenta el estado real con evidencia (`archivo:línea`), enumera los gaps y arma el plan.
+La sección 5b registra lo ya implementado; el resto sigue siendo plan. El veredicto de abajo
+describe el punto de partida (el muro de login) y se conserva como registro: el modo visitante
+ya existe y la sección 5b dice qué cambió.
 
 ---
 
@@ -110,6 +112,19 @@ desde el principio para no tener que corregirlo después.
 
 ## 3. Decisiones que hay que tomar (bloqueantes)
 
+> **Cerradas el 22-nov-2026.** El modelo comercial quedó definido por el usuario:
+> **cuota gratuita permanente + saldo prepago con top-up**. Eso resuelve D1 y
+> convierte el "flat ahora" de la recomendación original en una alternativa
+> descartada. Las cuatro decisiones se registran acá para que el código y el copy
+> no vuelvan a contradecirse.
+>
+> | # | Decisión | Implementación |
+> |---|---|---|
+> | D1 | **Cuota gratuita permanente + créditos prepagos** (no flat, no pay-per-use puro). | `src/lib/quota.ts`, `src/lib/credits.ts`, `docs/pricing.md` |
+> | D2 | **Borrador local-first** en `localStorage` (`firemd-guest-draft`), migrado al entrar. | `src/lib/guestDraft.ts`, `src/lib/guestMigration.ts` |
+> | D3 | **Página estática** `public/planes/index.html` con HTML prerenderizado y rewrite en `firebase.json`. | `public/planes/index.html`, `firebase.json` |
+> | D4 | **La franja y la landing solo en visitante sin sesión y sin nota compartida.** | `src/lib/guestMode.ts`, `src/AppTree.tsx` |
+
 **D1 — Modelo comercial: flat o pay-per-use.**
 Recomendación: **flat ahora, pay-per-use cuando el medidor sea confiable**. Razones:
 `docs/pricing.md` §6 dice que el cobro por uso requiere medición server-side (Blaze +
@@ -143,63 +158,53 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
 
 ### Fase 0 — Decisiones y copy (½ día)
 
-- [ ] Cerrar D1, D2, D3, D4 y anotarlas acá (decision log numerado).
-- [ ] Escribir el copy final de la nota de bienvenida y de la sección de beneficios, con la
+- [x] Cerrar D1, D2, D3, D4 y anotarlas acá (decision log numerado).
+- [x] Escribir el copy final de la nota de bienvenida y de la sección de beneficios, con la
       lista de claims **verificados** (ver §5). Cada claim con su evidencia o se borra.
-- [ ] Aceptación: documento con las 4 decisiones cerradas y el copy aprobado. Nada de código.
+- [x] Aceptación: documento con las 4 decisiones cerradas y el copy aprobado. Nada de código.
 
 ### Fase 1 — Modo visitante + borrador local (2–3 días)
 
-- [ ] Extraer un mínimo `NoteStore` con dos implementaciones: `localStore` (localStorage o
-      IndexedDB) y `cloudStore` (Firestore actual). No reescribir `notes.ts`: envolver lo que
-      el visitante necesita (crear, leer, escribir cuerpo, título) y dejar el resto como está.
-- [ ] `AppTree`: si no hay `user`, montar el editor con el store local y una nota de
-      bienvenida ya cargada. Sin modal, sin muro. El cursor listo.
-- [ ] Persistencia: guardar el borrador en cada cambio con debounce (mismo patrón que
-      `provider.ts`), y restaurarlo al recargar. Clave nueva `firemd-guest-draft`.
-- [ ] Migración al login: al entrar con Google, si hay borrador local, ofrecer "guardar esta
-      nota en tu cuenta" y crear la nota real con `createNote`. Borrar el borrador solo
-      después de que la escritura confirme.
-- [ ] Tests: `tests/guest-draft.test.ts` (persistencia, restauración, migración, borrador
-      vacío no se migra), `tests/guest-mode.test.tsx` (render sin sesión, editor enfocable,
-      sin modal).
-- [ ] Aceptación: abrir en incógnito → escribir → recargar → el texto sigue → entrar con
-      Google → la nota aparece en la cuenta y el borrador local se limpia.
+- [x] Interfaz mínima: `guestDraft.ts` (persistencia local) y `guestMigration.ts` (crear la
+      nota real con `createNote` + `saveNoteContent`). No se reescribió `notes.ts`.
+- [x] `AppTree`: si no hay `user` y no hay nota compartida, monta `GuestWorkspace` con el
+      editor local. Sin modal, sin muro. El cursor queda listo.
+- [x] Persistencia: guardado con debounce + flush en `beforeunload`/desmontaje. Clave
+      `firemd-guest-draft`.
+- [x] Migración al login: `GuestDraftDialog` ofrece guardar; el borrador se borra solo
+      después de que la escritura confirma.
+- [x] Tests: `tests/guest-draft.test.ts`, `tests/guest-mode.test.tsx`.
+- [ ] Aceptación end-to-end en incógnito contra producción (requiere deploy).
 
 ### Fase 2 — Capa de descubrimiento no invasiva (1–2 días)
 
-- [ ] Franja mínima (~36 px) en la vista de visitante: `¿Qué es FireMD?` + `Planes y uso` +
+- [x] Franja mínima (~36 px) en la vista de visitante: `¿Qué es FireMD?` + `Planes y uso` +
       `Guardar / Entrar con Google`. Sin hero encima del editor.
-- [ ] CTA progresivo: aparece al primer cambio real del borrador (no al teclear una tecla),
-      nunca como popup. Botón en la franja, no modal.
-- [ ] Nota de bienvenida: contenido breve con los 4 pilares y espacio para probar ahí mismo.
-      Se borra o se adapta al escribir (placeholder/seed, no texto intocable).
-- [ ] Regla D4 explícita: la franja y la landing solo se renderizan en
-      `!user && !sharedNote`. En sesión logueada y en nota compartida, no.
-- [ ] Tests: `tests/guest-strip.test.tsx` (no aparece con sesión, no aparece en nota
-      compartida, aparece con borrador), `tests/welcome-note.test.tsx`.
-- [ ] Aceptación: con sesión iniciada la franja no existe en el DOM; en nota compartida
-      tampoco; en incógnito aparece una sola vez.
+- [x] CTA progresivo: aparece al primer cambio real del borrador, nunca como popup. Botón en
+      la franja, no modal.
+- [x] Nota de bienvenida: placeholder editable con los 4 pilares y espacio para probar.
+- [x] Regla D4 explícita en `shouldShowGuestView()`: solo `!user && !sharedNote`.
+- [x] Tests: `tests/guest-mode.test.tsx` (render sin sesión, franja, CTA, restauración).
+- [ ] Aceptación en navegador real (requiere deploy).
 
 ### Fase 3 — `/planes` + landing informativa (1–2 días)
 
-- [ ] Según D3: página estática con su propio `<title>`, meta, canonical y HTML prerenderizado.
-- [ ] Contenido: propuesta de valor en una línea, 4 pilares, modelo de precios (según D1),
-      FAQ corta (borrador antes de login, revocación de acceso, CLI/MCP, control de gasto).
-- [ ] Enlazada desde la franja y desde el pie de la vista de visitante. Nunca desde el editor
-      en modo sesión.
-- [ ] Aceptación: `curl -s https://firemd.app/planes | grep -F "..."` devuelve el contenido
-      sin ejecutar JS; la página pasa `scripts/check-site.mjs` si se agrega a los hosts.
+- [x] Según D3: `public/planes/index.html` con `<title>`, meta, canonical y HTML prerenderizado.
+- [x] Contenido: propuesta de valor, 4 pilares, modelo de cuota + créditos, FAQ corta.
+- [x] Enlazada desde la franja y desde el pie de la vista de visitante. Nunca desde el editor
+      en sesión.
+- [ ] Aceptación contra producción: `curl -s https://firemd.app/planes | grep -F "..."` y
+      `scripts/check-site.mjs` con el host agregado.
 
 ### Fase 4 — SEO y medición (½–1 día)
 
-- [ ] `public/robots.txt` + `public/sitemap.xml` (con `/` y `/planes`).
-- [ ] Actualizar `public/llms.txt` con planes, cuota y ruta `/planes`.
-- [ ] Eventos del embudo: `landing_viewed`, `guest_draft_started`, `guest_signin_clicked`,
-      `guest_draft_saved`. Requiere una variante de `track` sin uid (contador local o
-      colección anónima con reglas propias). Decidir en D1/D2.
-- [ ] Aceptación: `curl -s https://firemd.app/robots.txt` y `/sitemap.xml` responden 200 con
-      contenido; los eventos nuevos están en la lista validada por reglas.
+- [x] `public/robots.txt` + `public/sitemap.xml` (con `/` y `/planes`).
+- [x] `public/llms.txt` actualizado con planes, cuota y ruta `/planes`.
+- [x] Eventos del embudo: `landing_viewed`, `pricing_viewed`, `guest_draft_started`,
+      `guest_signin_clicked`, `guest_draft_saved`. Contador local
+      (`firemd-guest-events`) y volcado a `analytics` al entrar; reglas actualizadas.
+- [ ] Aceptación contra producción: `curl -s https://firemd.app/robots.txt` y
+      `/sitemap.xml` responden 200 con contenido.
 
 ---
 
@@ -240,6 +245,42 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
   inmediato.
 - ¿Cómo funciona el CLI/MCP? Ver `agent.md`; la CLI devuelve texto plano y usa `etag`.
 - ¿Cómo controlo mi gasto? Ver página de uso; *(completar según D1)*.
+
+---
+
+## 5b. Implementación (22-nov-2026)
+
+Archivos nuevos:
+
+| Archivo | Qué hace |
+|---|---|
+| `src/lib/guestDraft.ts` | Persistencia local del borrador, validación y título derivado. |
+| `src/lib/guestMigration.ts` | Crea la nota real con `createNote` + `saveNoteContent`. |
+| `src/lib/guestMode.ts` | Condición única D4: `!user && !sharedNote`. |
+| `src/lib/guestAnalytics.ts` | Contador local del embudo y volcado a `analytics` al entrar. |
+| `src/components/GuestWorkspace.tsx` | Editor local + franja + CTA progresivo. |
+| `src/components/GuestDraftDialog.tsx` | Oferta de guardar el borrador al entrar. |
+| `public/planes/index.html` | Landing estática con SEO propio. |
+| `public/robots.txt`, `public/sitemap.xml` | Indexación. |
+
+Cambios:
+
+- `src/AppTree.tsx`: sin sesión y sin `?note=` monta `GuestWorkspace`; con sesión ofrece
+  migrar el borrador. Se retiró el gating flat (`UpgradeDialog`, `entitlements`) porque el
+  modelo decidido es cuota + créditos.
+- `firestore.rules`: compartir dejó de exigir plan pago; eventos de embudo agregados a la
+  lista validada.
+- `firebase.json`: rewrite `/planes` → `public/planes/index.html`.
+- `public/llms.txt`: planes, cuota y `/planes`.
+
+Pendiente y por qué:
+
+1. **Aceptación en navegador/incógnito y contra producción**: requiere deploy.
+2. **Tope duro de la cuota gratuita**: se muestra y se avisa, pero bloquear escrituras
+   necesita medición server-side (Cloud Functions), que no existe.
+3. **Cobro real y débito de créditos**: requiere checkout y backend.
+4. **Eventos del visitante en servidor**: hoy son locales y se vuelcan al entrar; una
+   colección anónima con reglas propias es la alternativa si se quiere medir sin login.
 
 ---
 

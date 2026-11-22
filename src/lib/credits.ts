@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.ts'
 import { addDoc, collection, doc, serverTimestamp, setDoc, type Firestore } from 'firebase/firestore'
 import { db } from '../firebase'
 import { MIN_TOP_UP_USD, type Credits } from './usage'
@@ -35,13 +36,13 @@ export interface TopUpRequest {
 /** Devuelve el primer problema de la configuración, o null si es válida. */
 export function validateCreditSettings(settings: CreditSettings): string | null {
   if (!Number.isFinite(settings.thresholdUsd) || settings.thresholdUsd < 0) {
-    return 'El umbral no puede ser negativo.'
+    return t('error.negativeThreshold')
   }
   if (!Number.isFinite(settings.topUpUsd) || settings.topUpUsd < MIN_TOP_UP_USD) {
-    return `La recarga mínima es $${MIN_TOP_UP_USD}.`
+    return t('error.topUpMinimum', { amount: MIN_TOP_UP_USD })
   }
   if (settings.autoTopUp && settings.topUpUsd <= settings.thresholdUsd) {
-    return 'La recarga tiene que superar el umbral, si no se repite en cada compra.'
+    return t('error.topUpBelowThreshold')
   }
   return null
 }
@@ -52,7 +53,7 @@ export async function updateCreditSettings(
   settings: CreditSettings,
   firestore: Firestore | null = db
 ): Promise<void> {
-  if (!firestore) throw new Error('Firestore no está disponible.')
+  if (!firestore) throw new Error(t('error.firestoreUnavailable'))
   const problem = validateCreditSettings(settings)
   if (problem) throw new Error(problem)
   await setDoc(
@@ -73,9 +74,9 @@ export async function requestTopUp(
   amountUsd: number,
   firestore: Firestore | null = db
 ): Promise<string> {
-  if (!firestore) throw new Error('Firestore no está disponible.')
+  if (!firestore) throw new Error(t('error.firestoreUnavailable'))
   if (!Number.isFinite(amountUsd) || amountUsd < MIN_TOP_UP_USD) {
-    throw new Error(`La recarga mínima es $${MIN_TOP_UP_USD}.`)
+    throw new Error(t('error.topUpMinimum', { amount: MIN_TOP_UP_USD }))
   }
   const ref = await addDoc(collection(firestore, 'credits', uid, 'topups'), {
     amountUsd,

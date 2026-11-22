@@ -1,3 +1,4 @@
+import { t } from '../../i18n/index.ts'
 /**
  * What a transport failure means to the person typing.
  *
@@ -20,7 +21,7 @@ export function classifyTransportError(err: unknown): TransportFailure {
   const raw = err instanceof Error ? err.message : String(err)
 
   if (PERMISSION.test(raw)) {
-    return { offline: false, error: 'No tenés permiso para editar esta nota' }
+    return { offline: false, error: t('error.noPermissionEdit') }
   }
   if (OFFLINE.test(raw)) {
     return { offline: true, error: null }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Modal } from './Modal'
+import { t } from '../i18n/index.ts'
 
 interface InputDialogProps {
   title: string
@@ -15,7 +16,7 @@ export function InputDialog({
   title,
   label,
   initialValue = '',
-  confirmLabel = 'Guardar',
+  confirmLabel = t('common.save'),
   maxLength = 120,
   onConfirm,
   onClose,

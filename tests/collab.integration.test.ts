@@ -340,7 +340,7 @@ describe('real-time collaboration over Firestore', () => {
     await new Promise((r) => setTimeout(r, 1200))
     expect(doc.getText('content').toString()).not.toContain('INYECTADO')
     // The message is written for a person, not for a log: it says what happened.
-    expect(error).toMatch(/firma/i)
+    expect(error).toMatch(/signature/i)
     expect(provider.stats.rejectedBlocks).toBeGreaterThan(0)
 
     provider.destroy()

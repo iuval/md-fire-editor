@@ -18,6 +18,7 @@ import {
 } from '../lib/notes'
 import { publishOwnDirectoryEntry } from '../lib/directory'
 import { subscribeMyAgents, type Agent } from '../lib/agents'
+import { t } from '../i18n/index.ts'
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
@@ -27,7 +28,7 @@ export function useAuth() {
   useEffect(() => {
     if (!auth) {
       setLoading(false)
-      setError('Firebase no está configurado')
+      setError(t('error.firebaseNotConfigured'))
       return
     }
     const unsub = onAuthStateChanged(
@@ -58,7 +59,7 @@ export function useAuth() {
 
   const doGoogleSignIn = useCallback(async () => {
     const result = await signInWithGoogle()
-    setError(result.user ? null : (result.message ?? 'No se pudo iniciar sesión con Google'))
+    setError(result.user ? null : (result.message ?? t('error.signInFailed')))
     return result.user
   }, [])
 

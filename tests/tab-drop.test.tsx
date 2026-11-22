@@ -62,26 +62,26 @@ describe('dropping a dragged tab on a pane', () => {
     const { surface, zone } = target()
     fire(surface, 'dragover', 20, 200)
     expect(zone()).toBe('left')
-    expect(surface.textContent).toBe('Dividir a la izquierda')
+    expect(surface.textContent).toBe('Split left')
 
     fire(surface, 'dragover', 780, 200)
     expect(zone()).toBe('right')
-    expect(surface.textContent).toBe('Dividir a la derecha')
+    expect(surface.textContent).toBe('Split right')
 
     fire(surface, 'dragover', 400, 20)
     expect(zone()).toBe('top')
-    expect(surface.textContent).toBe('Dividir arriba')
+    expect(surface.textContent).toBe('Split top')
 
     fire(surface, 'dragover', 400, 380)
     expect(zone()).toBe('bottom')
-    expect(surface.textContent).toBe('Dividir abajo')
+    expect(surface.textContent).toBe('Split down')
   })
 
   it('highlights the whole pane for a move, and allows the browser drop', () => {
     const { surface, zone } = target()
     const event = fire(surface, 'dragover', 400, 200)
     expect(zone()).toBe('center')
-    expect(surface.textContent).toBe('Mover acá')
+    expect(surface.textContent).toBe('Move here')
     // Without preventDefault the browser refuses the drop altogether.
     expect(event.defaultPrevented).toBe(true)
   })

@@ -68,6 +68,6 @@ describe('mobile formatting toolbar', () => {
     expect(host.querySelector('.editor-toolbar')!.classList.contains('is-visible')).toBe(true)
 
     const labels = [...host.querySelectorAll('.editor-toolbar-btn')].map((b) => b.getAttribute('aria-label'))
-    expect(labels).toEqual(['Título 1', 'Título 2', 'Negrita', 'Itálica', 'Lista', 'Cita'])
+    expect(labels).toEqual(['Heading 1', 'Heading 2', 'Bold', 'Italic', 'List', 'Quote'])
   })
 })

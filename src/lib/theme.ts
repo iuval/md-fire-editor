@@ -13,6 +13,7 @@
  * No CSS text box anywhere: a theme is a set of colors, not a stylesheet.
  */
 import { useSyncExternalStore } from 'react'
+import type { MessageKey } from '../i18n/index.ts'
 
 export type Appearance = 'light' | 'dark'
 
@@ -51,9 +52,10 @@ export interface ThemeState {
 
 export interface ThemePreset {
   id: string
-  name: string
-  /** One line of Spanish for the card, never a color code. */
-  hint: string
+  /** Catalogue key, resolved with `t()` where the card is drawn. */
+  nameKey: MessageKey
+  /** One line for the card, never a color code. Also a catalogue key. */
+  hintKey: MessageKey
   /** The design itself: fondo + acento. The other appearance is mirrored. */
   seeds: Seeds
 }
@@ -347,12 +349,12 @@ export function derivePalette(seeds: Seeds, appearance: Appearance): Palette {
 
 /* ------------------------------------------------------------------ presets */
 
-const preset = (id: string, name: string, hint: string, seeds: Seeds): ThemePreset => ({
-  id,
-  name,
-  hint,
-  seeds,
-})
+const preset = (
+  id: string,
+  nameKey: MessageKey,
+  hintKey: MessageKey,
+  seeds: Seeds
+): ThemePreset => ({ id, nameKey, hintKey, seeds })
 
 /**
  * Twelve designs ready to use. Each one is fondo + acento; the eleven other
@@ -360,51 +362,51 @@ const preset = (id: string, name: string, hint: string, seeds: Seeds): ThemePres
  * design, so a preset is never "half a theme".
  */
 export const PRESETS: readonly ThemePreset[] = [
-  preset('obsidiana', 'Obsidiana', 'El violeta de siempre: frío, quieto, sin ruido.', {
+  preset('obsidiana', 'theme.obsidiana.name', 'theme.obsidiana.hint', {
     canvas: '#ffffff',
     accent: '#6f5ce0',
   }),
-  preset('grafito', 'Grafito', 'Gris neutro, sin color propio. Para leer y nada más.', {
+  preset('grafito', 'theme.grafito.name', 'theme.grafito.hint', {
     canvas: '#fbfbfc',
     accent: '#55606f',
   }),
-  preset('papel', 'Papel', 'Crema cálido, como una libreta abierta al sol.', {
+  preset('papel', 'theme.papel.name', 'theme.papel.hint', {
     canvas: '#faf6ee',
     accent: '#a35a2a',
   }),
-  preset('bosque', 'Bosque', 'Verde profundo, con acento de hoja nueva.', {
+  preset('bosque', 'theme.bosque.name', 'theme.bosque.hint', {
     canvas: '#f4f8f3',
     accent: '#2f7d4f',
   }),
-  preset('oceano', 'Océano', 'Azul de agua fría: el más tranquilo de la lista.', {
+  preset('oceano', 'theme.oceano.name', 'theme.oceano.hint', {
     canvas: '#f2f7fb',
     accent: '#1f6fb2',
   }),
-  preset('iris', 'Iris', 'Malva suave con un violeta profundo de acento.', {
+  preset('iris', 'theme.iris.name', 'theme.iris.hint', {
     canvas: '#faf6ff',
     accent: '#7b3fe4',
   }),
-  preset('atardecer', 'Atardecer', 'Naranja terroso sobre arena: cálido y vivo.', {
+  preset('atardecer', 'theme.atardecer.name', 'theme.atardecer.hint', {
     canvas: '#fff5ec',
     accent: '#b8490f',
   }),
-  preset('menta', 'Menta', 'Verde azulado fresco, casi clínico.', {
+  preset('menta', 'theme.menta.name', 'theme.menta.hint', {
     canvas: '#f0fbf9',
     accent: '#0f766e',
   }),
-  preset('cereza', 'Cereza', 'Rosa profundo con acento frambuesa.', {
+  preset('cereza', 'theme.cereza.name', 'theme.cereza.hint', {
     canvas: '#fff6f8',
     accent: '#c2255c',
   }),
-  preset('nordico', 'Nórdico', 'Azul pizarra, el clásico de escritorio frío.', {
+  preset('nordico', 'theme.nordico.name', 'theme.nordico.hint', {
     canvas: '#eef1f6',
     accent: '#4c6a92',
   }),
-  preset('sepia', 'Sepia', 'Papel viejo, letra oscura: sin brillo en la pantalla.', {
+  preset('sepia', 'theme.sepia.name', 'theme.sepia.hint', {
     canvas: '#f6efdf',
     accent: '#8a6a2f',
   }),
-  preset('consola', 'Consola', 'Verde fósforo sobre negro, como una terminal.', {
+  preset('consola', 'theme.consola.name', 'theme.consola.hint', {
     canvas: '#080d09',
     accent: '#4ade80',
   }),

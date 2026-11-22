@@ -116,6 +116,12 @@
           }
         ]
       }
+    ],
+    "rewrites": [
+      {
+        "source": "/planes",
+        "destination": "/planes/index.html"
+      }
     ]
   },
   "emulators": {

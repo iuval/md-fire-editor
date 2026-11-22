@@ -1,4 +1,5 @@
 import type { Folder, Note } from './notes'
+import { t } from '../i18n/index.ts'
 
 /**
  * Export/import in plain markdown — no dependencies.
@@ -128,7 +129,7 @@ export function zipStoredBlob(entries: ZipEntry[], now = new Date()): Blob {
   return new Blob(buildZip(entries, now).chunks, { type: 'application/zip' })
 }
 
-export function safeFileName(name: string, fallback = 'sin-titulo'): string {
+export function safeFileName(name: string, fallback = t('app.untitledFile')): string {
   const clean = String(name)
     .normalize('NFC')
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
@@ -155,7 +156,7 @@ export interface ExportedFile {
 
 /** One `.md` per note, inside a folder per folder, de-duplicating file names. */
 /** Folder names may carry a nested path (`GUIONES/V3`); keep the segments. */
-export function safePath(name: string, fallback = 'carpeta'): string {
+export function safePath(name: string, fallback = t('app.folderFile')): string {
   return String(name)
     .split('/')
     .map((segment) => safeFileName(segment, fallback))
@@ -164,13 +165,13 @@ export function safePath(name: string, fallback = 'carpeta'): string {
 }
 
 export function notesToFiles(notes: Note[], folders: Folder[]): ExportedFile[] {
-  const folderName = new Map(folders.map((f) => [f.id, safeFileName(f.name, 'carpeta')]))
+  const folderName = new Map(folders.map((f) => [f.id, safeFileName(f.name, t('app.folderFile'))]))
   const used = new Set<string>()
   const files: ExportedFile[] = []
 
   const ordered = [...notes].sort((a, b) => (a.title || '').localeCompare(b.title || ''))
   for (const note of ordered) {
-    const dir = note.folderId ? `${folderName.get(note.folderId) ?? 'carpeta'}/` : ''
+    const dir = note.folderId ? `${folderName.get(note.folderId) ?? t('app.folderFile')}/` : ''
     const base = safeFileName(note.title)
     let name = `${dir}${base}.md`
     let counter = 2

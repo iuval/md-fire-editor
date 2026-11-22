@@ -79,25 +79,13 @@ service cloud.firestore {
       return signedIn() && acl.ownerId == uid();
     }
 
-    // ---------- plans ----------
-    // Plans are granted by an admin (no payment integration yet), so a client
-    // can never upgrade itself. An absent entitlement means the free plan.
+    // ---------- admins ----------
+    // `entitlements` stays as an admin-only collection for manual grants and
+    // legacy records, but it no longer gates sharing or agents: the product
+    // model is a permanent free tier plus prepaid usage credits.
 
     function isAdmin() {
       return signedIn() && exists(/databases/$(database)/documents/admins/$(uid()));
-    }
-
-    function hasPaidPlan(user) {
-      let path = /databases/$(database)/documents/entitlements/$(user);
-      return exists(path)
-        && get(path).data.plan == 'paid'
-        && (!get(path).data.keys().hasAny(['expiresAt'])
-          || get(path).data.expiresAt == null
-          || get(path).data.expiresAt > request.time);
-    }
-
-    function sharingUnlocked() {
-      return signedIn() && hasPaidPlan(uid());
     }
 
     // ---------- shared validation ----------
@@ -178,8 +166,7 @@ service cloud.firestore {
         && validFolder(request.resource.data, folderId)
         && (
           (isAclOwner(resource.data)
-            && aclUpdateValid(resource.data, request.resource.data)
-            && (nameOnlyChange() || sharingUnlocked()))
+            && aclUpdateValid(resource.data, request.resource.data))
           || (canWrite(resource.data) && nameOnlyChange())
         );
 
@@ -276,11 +263,10 @@ service cloud.firestore {
         && validNote(request.resource.data)
         && ownershipUnchanged(resource.data, request.resource.data)
         && (
-          // Owner: sharing, moving between folders, or content. Changing who can
-          // access a note is a paid feature; content edits are not gated.
+          // Owner: sharing, moving between folders, or content. Sharing is part
+          // of the free tier; the paid part is usage, not access.
           (isAclOwner(resource.data)
-            && ownerUpdateValid(resource.data, request.resource.data)
-            && (contentOnlyChange() || sharingUnlocked()))
+            && ownerUpdateValid(resource.data, request.resource.data))
           // Editor / link-editor: content only.
           || (canWrite(aclOf(resource.data)) && contentOnlyChange())
           // Any writer of the folder may resync an inheriting note's ACL copy
@@ -642,7 +628,9 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'props', 'at'])
         && request.resource.data.name in [
             'app_open', 'note_created', 'note_shared', 'collab_session',
-            'agent_linked', 'export', 'import', 'app_error'
+            'agent_linked', 'export', 'import', 'app_error',
+            'landing_viewed', 'pricing_viewed', 'guest_draft_started',
+            'guest_signin_clicked', 'guest_draft_saved'
           ]
         && request.resource.data.props is map
         && request.resource.data.props.size() <= 5

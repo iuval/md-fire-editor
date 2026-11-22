@@ -1,12 +1,13 @@
 import type { Folder, Note } from './notes'
+import { localeTag, t } from '../i18n/index.ts'
 
 export type SortMode = 'name' | 'created' | 'updated' | 'manual'
 
-export const SORT_LABELS: Record<SortMode, string> = {
-  name: 'Nombre (A-Z)',
-  created: 'Fecha de creación',
-  updated: 'Fecha de modificación',
-  manual: 'Manual',
+export function sortLabel(mode: SortMode): string {
+  if (mode === 'created') return t('sort.created')
+  if (mode === 'updated') return t('sort.updated')
+  if (mode === 'manual') return t('sort.manual')
+  return t('sort.name')
 }
 
 export const DEFAULT_SORT: SortMode = 'name'
@@ -45,7 +46,7 @@ export function compareByMode(
   b: { name: string; createdAt?: { seconds: number } | null; updatedAt?: { seconds: number } | null; order?: number },
   mode: SortMode
 ): number {
-  const byName = a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })
+  const byName = a.name.localeCompare(b.name, localeTag(), { sensitivity: 'base' })
 
   if (mode === 'manual') {
     const byOrder = (a.order ?? 0) - (b.order ?? 0)
@@ -71,8 +72,8 @@ export function sortFolders(folders: Folder[], mode: SortMode): Folder[] {
 export function sortNotes(notes: Note[], mode: SortMode): Note[] {
   return [...notes].sort((a, b) =>
     compareByMode(
-      { ...a, name: a.title || 'Sin título' },
-      { ...b, name: b.title || 'Sin título' },
+      { ...a, name: a.title || t('app.untitled') },
+      { ...b, name: b.title || t('app.untitled') },
       mode
     )
   )

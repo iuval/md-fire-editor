@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import { useEditorState } from '@tiptap/react'
 import { Bold, Heading1, Heading2, Italic, List, Quote } from 'lucide-react'
+import { useT } from '../i18n/index.ts'
 
 interface EditorToolbarProps {
   editor: Editor
@@ -14,6 +15,7 @@ interface EditorToolbarProps {
  * and it only exists while the editor is focused.
  */
 export function EditorToolbar({ editor, visible }: EditorToolbarProps) {
+  const t = useT()
   const active = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -28,37 +30,37 @@ export function EditorToolbar({ editor, visible }: EditorToolbarProps) {
 
   const actions = [
     {
-      label: 'Título 1',
+      label: t('editor.heading1'),
       on: active?.h1,
       run: () => editor.chain().focus().toggleHeading({ level: 1 }).run(),
       icon: <Heading1 size={17} />,
     },
     {
-      label: 'Título 2',
+      label: t('editor.heading2'),
       on: active?.h2,
       run: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
       icon: <Heading2 size={17} />,
     },
     {
-      label: 'Negrita',
+      label: t('editor.bold'),
       on: active?.bold,
       run: () => editor.chain().focus().toggleBold().run(),
       icon: <Bold size={17} />,
     },
     {
-      label: 'Itálica',
+      label: t('editor.italic'),
       on: active?.italic,
       run: () => editor.chain().focus().toggleItalic().run(),
       icon: <Italic size={17} />,
     },
     {
-      label: 'Lista',
+      label: t('editor.list'),
       on: active?.bullet,
       run: () => editor.chain().focus().toggleBulletList().run(),
       icon: <List size={17} />,
     },
     {
-      label: 'Cita',
+      label: t('editor.quote'),
       on: active?.quote,
       run: () => editor.chain().focus().toggleBlockquote().run(),
       icon: <Quote size={17} />,
@@ -66,7 +68,7 @@ export function EditorToolbar({ editor, visible }: EditorToolbarProps) {
   ]
 
   return (
-    <div className={`editor-toolbar${visible ? ' is-visible' : ''}`} role="toolbar" aria-label="Formato">
+    <div className={`editor-toolbar${visible ? ' is-visible' : ''}`} role="toolbar" aria-label={t('editor.toolbar')}>
       {actions.map((action) => (
         <button
           key={action.label}

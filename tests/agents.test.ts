@@ -23,6 +23,6 @@ describe('nombre de agente', () => {
 
 describe('renameAgent', () => {
   it('rechaza un nombre vacío antes de tocar Firestore', async () => {
-    await expect(renameAgent('abc123', '   ')).rejects.toThrow('El nombre no puede quedar vacío')
+    await expect(renameAgent('abc123', '   ')).rejects.toThrow('The name cannot be empty')
   })
 })

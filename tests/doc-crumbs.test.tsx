@@ -69,7 +69,7 @@ describe('note breadcrumbs', () => {
     const host = mount(<DocCrumbs folderId="lm" folders={folders} />)
     const nav = host.querySelector('nav')
     expect(nav).not.toBeNull()
-    expect(nav!.getAttribute('aria-label')).toBe('Carpeta de la nota')
+    expect(nav!.getAttribute('aria-label')).toBe('Note folder')
     expect(crumbsOf(host)).toEqual(['ObsidianVault', 'GUIONES', 'Los Muchachos - Feature Film'])
   })
 
