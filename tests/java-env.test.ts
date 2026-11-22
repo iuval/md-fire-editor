@@ -31,3 +31,31 @@ describe('java discovery', () => {
     if (java.home) expect(java.home.length).toBeGreaterThan(0)
   })
 })
+
+describe('java minimum version', () => {
+  // firebase-tools refuses to start the Firestore emulator below 21. A JAVA_HOME
+  // pointing at an older JDK must be reported, not used silently.
+  it('skips a JAVA_HOME that is too old and says so', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, chmodSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+
+    const fake = mkdtempSync(join(tmpdir(), 'fake-jdk-'))
+    mkdirSync(join(fake, 'bin'))
+    const bin = join(fake, 'bin', 'java')
+    writeFileSync(bin, '#!/bin/sh\necho \'openjdk version "17.0.1" 2021-10-19\' >&2\n')
+    chmodSync(bin, 0o755)
+
+    const previous = process.env.JAVA_HOME
+    process.env.JAVA_HOME = fake
+    try {
+      const java = findJava()
+      expect(java.skipped.some((entry: string) => entry.includes('Java 17'))).toBe(true)
+      // Whatever it ends up using, it is never the 17.
+      if (java.major !== null) expect(java.major).toBeGreaterThanOrEqual(MIN_JAVA_MAJOR)
+    } finally {
+      if (previous === undefined) delete process.env.JAVA_HOME
+      else process.env.JAVA_HOME = previous
+    }
+  })
+})
