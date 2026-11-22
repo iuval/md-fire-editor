@@ -268,10 +268,15 @@ function App() {
       const meta = notesByIdFromList.get(noteId) ?? notesById[noteId]
       if (!meta) return null
       const body = bodies[noteId]
-      // A legacy note still carries its text inline, so it is always ready.
-      if (body === undefined && !meta.markdown) return null
-      if (body === undefined || body === meta.markdown) return meta
-      return { ...meta, markdown: body }
+      const inline = meta.markdown ?? ''
+      // A note from before the split still carries its text on the document, so
+      // it renders without waiting for (or being able to read) its body.
+      if (body === undefined) return inline ? meta : null
+      // An empty body document never wins over inline text: that is a note whose
+      // migration has not run yet, or whose body read was rejected. Showing it
+      // empty would look like the note lost its content.
+      if (body === '' && inline) return meta
+      return body === inline ? meta : { ...meta, markdown: body }
     },
     [bodies, notesById, notesByIdFromList]
   )
