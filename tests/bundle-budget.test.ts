@@ -84,9 +84,12 @@ describe('boot graph', () => {
   })
 
   it('stays small enough to paint immediately', () => {
-    // main.tsx + App.tsx today. The bound is headroom for a splash component
-    // or a hook, not room for another dependency tree.
-    expect(staticGraph(entry).size).toBeLessThanOrEqual(6)
+    // main.tsx + App.tsx + theme + storage + desktopLink + legacyHost, all leaf
+    // modules (no imports of their own), plus index.css. `legacyHost` is the
+    // canonical-host guard: 12 lines, zero dependencies, and it has to run
+    // before the first paint. The bound is headroom for a splash component or a
+    // hook, not room for another dependency tree.
+    expect(staticGraph(entry).size).toBeLessThanOrEqual(7)
   })
 
   it('never reaches Firebase through a static import', () => {
