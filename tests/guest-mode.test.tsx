@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
- * The visitor editor: it renders without a session, keeps the draft in the
- * browser, and shows the discovery strip only in the guest context. The login
- * wall stays for shared-note links (see shouldShowGuestView).
+ * The visitor's editor: the real editor stack (Tiptap + Yjs + markdown) with no
+ * Firestore document behind it, the draft in the browser, and the discovery
+ * strip only in the guest context. The login wall stays for shared-note links
+ * (see shouldShowGuestView).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -16,26 +17,22 @@ import { readGuestDraft, writeGuestDraft } from '../src/lib/guestDraft'
 let root: Root | null = null
 let host: HTMLDivElement | null = null
 
-function mount(props: Partial<Parameters<typeof GuestWorkspace>[0]> = {}) {
+async function mount(props: Partial<Parameters<typeof GuestWorkspace>[0]> = {}) {
   const onSignIn = vi.fn()
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  act(() =>
-    root!.render(
-      <GuestWorkspace onSignIn={onSignIn} debounceMs={0} {...props} />
-    )
-  )
+  await act(async () => {
+    root!.render(<GuestWorkspace onSignIn={onSignIn} debounceMs={0} {...props} />)
+    await Promise.resolve()
+  })
   return { host, onSignIn }
 }
 
-function type(el: HTMLTextAreaElement | HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
-    'value'
-  )!.set!
+function type(el: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!
   act(() => {
-    setter.call(el, value)
+    setter.set!.call(el, value)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   })
 }
@@ -66,60 +63,63 @@ describe('shouldShowGuestView', () => {
 })
 
 describe('GuestWorkspace', () => {
-  it('renders an editable note without a modal', () => {
-    const { host } = mount()
-    const title = host.querySelector('input') as HTMLInputElement
-    const body = host.querySelector('textarea') as HTMLTextAreaElement
-    expect(title.placeholder).toBe('Untitled')
-    expect(body.placeholder).toContain('This is FireMD')
+  it('renders the real editor, not a textarea', async () => {
+    const { host } = await mount()
+    expect(host.querySelector('.ProseMirror')).not.toBeNull()
+    expect(host.querySelector('.md-editor-content')).not.toBeNull()
+    expect(host.querySelector('textarea')).toBeNull()
     expect(host.querySelector('[role="dialog"]')).toBeNull()
-    expect(body.disabled).toBe(false)
   })
 
-  it('links to the static plans page from the strip', () => {
-    const { host } = mount()
+  it('uses the app title style and the welcome placeholder', async () => {
+    const { host } = await mount()
+    const title = host.querySelector('input') as HTMLInputElement
+    expect(title.className).toContain('inline-title')
+    expect(title.placeholder).toBe('Untitled')
+
+    const placeholder = host.querySelector('[data-placeholder]')
+    expect(placeholder?.getAttribute('data-placeholder')).toContain('This is FireMD')
+  })
+
+  it('links to the static plans page from the strip', async () => {
+    const { host } = await mount()
     const links = [...host.querySelectorAll('a')].map((link) => link.getAttribute('href'))
     expect(links).toContain('/planes#que-es')
     expect(links).toContain('/planes#planes')
   })
 
-  it('offers to save only after the visitor writes something', () => {
-    const { host } = mount()
+  it('offers to save only after the visitor writes something', async () => {
+    const { host } = await mount()
     expect(host.textContent).not.toContain('Save to my account')
 
-    const body = host.querySelector('textarea') as HTMLTextAreaElement
-    type(body, 'Una idea')
+    const title = host.querySelector('input') as HTMLInputElement
+    type(title, 'Una idea')
 
     expect(host.textContent).toContain('Save to my account')
   })
 
-  it('keeps the draft in the browser after unmounting', () => {
-    const { host } = mount()
+  it('keeps the draft in the browser after unmounting', async () => {
+    const { host } = await mount()
     const title = host.querySelector('input') as HTMLInputElement
-    const body = host.querySelector('textarea') as HTMLTextAreaElement
     type(title, 'Mi nota')
-    type(body, 'Contenido que no se pierde')
 
     act(() => root?.unmount())
     root = null
 
-    expect(readGuestDraft()).toMatchObject({
-      title: 'Mi nota',
-      markdown: 'Contenido que no se pierde',
-    })
+    expect(readGuestDraft()).toMatchObject({ title: 'Mi nota' })
   })
 
-  it('restores a saved draft', () => {
+  it('restores a saved draft into the title and the editor', async () => {
     writeGuestDraft({ title: 'Guardada', markdown: 'Texto previo', savedAt: 1 })
-    const { host } = mount()
+    const { host } = await mount()
     expect((host.querySelector('input') as HTMLInputElement).value).toBe('Guardada')
-    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Texto previo')
+    expect(host.querySelector('.ProseMirror')?.textContent).toContain('Texto previo')
   })
 
-  it('signs in from the strip and records the click', () => {
-    const { host, onSignIn } = mount()
-    const button = [...host.querySelectorAll('button')].find((el) =>
-      el.textContent?.includes('Sign in with Google')
+  it('signs in from the strip and records the click', async () => {
+    const { host, onSignIn } = await mount()
+    const button = [...host.querySelectorAll('button')].find((node) =>
+      node.textContent?.includes('Sign in with Google')
     )
     expect(button).toBeTruthy()
     act(() => button!.click())

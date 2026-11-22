@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useT } from '../i18n/index.ts'
 import { readGuestDraft, writeGuestDraft, type GuestDraft } from '../lib/guestDraft'
 import { trackGuest } from '../lib/guestAnalytics'
+import { CollaborativeEditor } from './CollaborativeEditor'
+import type { Note } from '../lib/notes'
 
 interface GuestWorkspaceProps {
   onSignIn: () => void
@@ -10,20 +12,25 @@ interface GuestWorkspaceProps {
   debounceMs?: number
 }
 
+const noop = () => undefined
+
 /**
- * The visitor's editor: a title and a body, persisted in `localStorage`, with a
- * 36 px discovery strip. No modal, no login wall, no hero over the editor.
+ * The visitor's editor: the real editor stack (Tiptap + Yjs + the markdown
+ * serializer), with no Firestore document behind it. The body is persisted in
+ * `localStorage`; the note becomes real when the visitor signs in and accepts
+ * the migration.
  *
- * It is intentionally not the collaborative editor. A visitor has no document
- * to sync and no ACL to enforce; mounting the CRDT stack would mean writing a
- * Firestore provider for a note that does not exist. The note becomes real only
- * when the visitor signs in and accepts the migration.
+ * It is the same editor the app uses — same typography, same markdown, same
+ * formatting bar on phones — so the first screen is the product, not a
+ * teaser. The only difference is where the document lives.
  */
 export function GuestWorkspace({ onSignIn, authError, debounceMs = 400 }: GuestWorkspaceProps) {
   const t = useT()
-  const [draft, setDraft] = useState<GuestDraft>(
-    () => readGuestDraft() ?? { title: '', markdown: '', savedAt: 0 }
-  )
+  const [draft, setDraft] = useState<GuestDraft>(() => readGuestDraft() ?? { title: '', markdown: '', savedAt: 0 })
+  // The editor owns the document once mounted; the draft only records what it
+  // emits. Passing the live draft back as `body` would re-serialize and set the
+  // content on every keystroke.
+  const [initialBody] = useState(draft.markdown)
   const [dirty, setDirty] = useState(false)
   const latest = useRef(draft)
   const timer = useRef<number | null>(null)
@@ -41,13 +48,17 @@ export function GuestWorkspace({ onSignIn, authError, debounceMs = 400 }: GuestW
 
   useEffect(() => {
     trackGuest('landing_viewed')
-    const onBeforeUnload = () => flush()
-    window.addEventListener('beforeunload', onBeforeUnload)
     return () => {
-      window.removeEventListener('beforeunload', onBeforeUnload)
       flush()
     }
     // The flush closes over refs only; it is intentionally not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const onBeforeUnload = () => flush()
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -78,45 +89,66 @@ export function GuestWorkspace({ onSignIn, authError, debounceMs = 400 }: GuestW
     onSignIn()
   }
 
-  const visitPlans = () => trackGuest('pricing_viewed')
+  /** The document is in memory: the guest note never touches Firestore. */
+  const note: Note = {
+    id: 'guest-draft',
+    title: draft.title,
+    markdown: draft.markdown,
+    kind: 'note',
+    folderId: null,
+    ownerId: '',
+    aclSource: 'own',
+    memberIds: [],
+    roles: {},
+    access: 'restricted',
+    tags: [],
+    order: 0,
+    version: 1,
+  }
 
   return (
     <div className="guest">
-      <div className="guest-editor">
-        <input
-          className="guest-title"
-          value={draft.title}
-          onChange={(event) => change({ title: event.target.value })}
-          placeholder={t('guest.titlePlaceholder')}
-          aria-label={t('guest.titleLabel')}
-          spellCheck={false}
-        />
-        <textarea
-          className="guest-body"
-          autoFocus
-          value={draft.markdown}
-          onChange={(event) => change({ markdown: event.target.value })}
+      <div className="doc">
+        <div className="doc-header">
+          <input
+            className="inline-title"
+            value={draft.title}
+            onChange={(event) => change({ title: event.target.value })}
+            placeholder={t('guest.titlePlaceholder')}
+            aria-label={t('guest.titleLabel')}
+            spellCheck={false}
+          />
+        </div>
+        <CollaborativeEditor
+          key="guest-draft"
+          note={note}
+          body={initialBody}
+          uid=""
+          userName={t('app.anonymous')}
+          editable
+          local
           placeholder={t('guest.welcome')}
-          aria-label={t('guest.bodyLabel')}
-          spellCheck
+          onMarkdownChange={(markdown) => change({ markdown })}
+          onPresence={noop}
+          onStatus={noop}
         />
         {authError && <p className="hint tone-danger">{authError}</p>}
       </div>
 
       <div className="guest-strip" role="region" aria-label={t('guest.stripLabel')}>
-        <a className="guest-strip-link" href="/planes#que-es" onClick={visitPlans}>
+        <a className="guest-strip-link" href="/planes#que-es" onClick={() => trackGuest('pricing_viewed')}>
           {t('guest.whatIs')}
         </a>
-        <a className="guest-strip-link" href="/planes#planes" onClick={visitPlans}>
+        <a className="guest-strip-link" href="/planes#planes" onClick={() => trackGuest('pricing_viewed')}>
           {t('guest.plans')}
         </a>
         <span className="guest-strip-spacer" />
         {dirty && Boolean(draft.markdown.trim() || draft.title.trim()) && (
-          <button type="button" className="btn guest-strip-save" onClick={signIn}>
+          <button className="btn" onClick={signIn}>
             {t('guest.save')}
           </button>
         )}
-        <button type="button" className="btn ghost guest-strip-signin" onClick={signIn}>
+        <button className="btn ghost" onClick={signIn}>
           {t('guest.signIn')}
         </button>
       </div>

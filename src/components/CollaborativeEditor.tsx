@@ -33,6 +33,13 @@ interface CollaborativeEditorProps {
   onStats?: (stats: SyncStats) => void
   /** Phones get a formatting bar, since there are no markdown keys. */
   isMobile?: boolean
+  /**
+   * A visitor's draft: same editor, no Firestore document behind it. The
+   * document lives in memory and the body is persisted by the caller.
+   */
+  local?: boolean
+  /** Overrides the empty-document placeholder (the visitor's welcome text). */
+  placeholder?: string
 }
 
 export function CollaborativeEditor({
@@ -46,6 +53,8 @@ export function CollaborativeEditor({
   onStatus,
   onStats,
   isMobile = false,
+  local = false,
+  placeholder,
 }: CollaborativeEditorProps) {
   const [ready, setReady] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -74,7 +83,7 @@ export function CollaborativeEditor({
   // one document instead of syncing against each other. They exist on the first
   // render because the editor extensions need real instances.
   const owner = useId()
-  const [session] = useState(() => acquireNoteSession(note.id, uid, userInfo, owner))
+  const [session] = useState(() => acquireNoteSession(note.id, uid, userInfo, owner, local))
 
   useEffect(() => () => session.release(owner), [session, owner])
 
@@ -101,8 +110,14 @@ export function CollaborativeEditor({
   }, [session, onPresence, onStatus])
 
   const extensions = useMemo(
-    () => buildEditorExtensions({ doc: session.doc, awareness: session.awareness, user: userInfo }),
-    [session, userInfo]
+    () =>
+      buildEditorExtensions({
+        doc: session.doc,
+        awareness: session.awareness,
+        user: userInfo,
+        placeholder,
+      }),
+    [session, userInfo, placeholder]
   )
 
   const editor = useEditor(

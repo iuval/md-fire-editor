@@ -58,7 +58,15 @@ export function acquireNoteSession(
   noteId: string,
   uid: string,
   user: CollabUser,
-  owner: string
+  owner: string,
+  /**
+   * A visitor's draft has no Firestore document to sync against. The transport
+   * and the presence channel still exist, but with no database: the provider
+   * keeps the same-browser lane and reports offline, and the awareness channel
+   * is inert. The editor stack is identical, so the visitor sees the real
+   * editor instead of a textarea.
+   */
+  local = false
 ): NoteSession {
   const key = keyOf(uid, noteId)
   const existing = entries.get(key)
@@ -68,8 +76,8 @@ export function acquireNoteSession(
   }
 
   const doc = new Y.Doc()
-  const provider = new FirestoreYjsProvider(noteId, doc)
-  const awareness = new FirestoreAwareness(noteId, uid, user, doc)
+  const provider = new FirestoreYjsProvider(noteId, doc, local ? null : undefined)
+  const awareness = new FirestoreAwareness(noteId, uid, user, doc, local ? null : undefined)
   let seedAvailable = true
   let primary: string | null = null
   let canvas: YCanvas | null = null

@@ -1438,9 +1438,10 @@ body.tab-dragging .pane-drop {
 }
 
 /* ---------- guest view ----------
-   The visitor's editor is a plain title + textarea on the page surface. It is
-   deliberately not the collaborative shell: no sidebar, no panes, no hero. The
-   strip is 36 px at the bottom and only appears in this view. */
+   The visitor's editor is the real editor stack (Tiptap + Yjs + markdown) in
+   the app's reading column: same title, same typography, same formatting bar.
+   The only difference is where the document lives — localStorage, not
+   Firestore. The strip is 36 px at the bottom and only appears in this view. */
 
 .guest {
   display: flex;
@@ -1448,65 +1449,17 @@ body.tab-dragging .pane-drop {
   flex-direction: column;
   min-height: 100svh;
   width: 100%;
+  overflow-y: auto;
   background: light-dark(var(--color-page), var(--color-page-dark));
 }
 
-.guest-editor {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 8px;
-  width: min(100%, 760px);
-  margin: 0 auto;
-  padding: 40px 24px 24px;
-}
-
-.guest-title {
-  border: 0;
-  background: transparent;
-  color: light-dark(var(--color-text), var(--color-text-dark));
-  font: inherit;
-  font-size: 26px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  padding: 4px 0;
-  outline: none;
-}
-
-.guest-title::placeholder {
-  color: light-dark(var(--color-muted), var(--color-muted-dark));
-  opacity: 0.6;
-}
-
-.guest-title:focus-visible {
-  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
-  outline-offset: 2px;
-  border-radius: var(--radius-control);
-}
-
-.guest-body {
-  flex: 1;
-  min-height: 50svh;
-  resize: none;
-  border: 0;
-  background: transparent;
-  color: light-dark(var(--color-text), var(--color-text-dark));
-  font: inherit;
-  font-size: 15.5px;
+/* The welcome text is multi-line: the editor's placeholder rule clamps to one
+   line, so the visitor's copy gets its own. */
+.guest .md-editor-content p.is-editor-empty:first-child::before {
+  height: auto;
+  float: none;
+  white-space: pre-wrap;
   line-height: 1.7;
-  padding: 4px 0;
-  outline: none;
-}
-
-.guest-body::placeholder {
-  color: light-dark(var(--color-muted), var(--color-muted-dark));
-  opacity: 0.75;
-}
-
-.guest-body:focus-visible {
-  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
-  outline-offset: 2px;
-  border-radius: var(--radius-control);
 }
 
 .guest-strip {
@@ -1537,8 +1490,7 @@ body.tab-dragging .pane-drop {
   flex: 1;
 }
 
-.guest-strip-save,
-.guest-strip-signin {
+.guest-strip .btn {
   min-height: 26px;
   padding: 2px 10px;
   font-size: 12.5px;
