@@ -139,15 +139,23 @@ aunque el cliente lo intente a mano.
   domains*. Un origen que no esté ahí falla con `auth/unauthorized-domain` aunque la API
   key lo permita.
 - **Headers de seguridad** en Hosting: CSP (sin `unsafe-inline` en scripts, sin
-  `object-src`, `frame-ancestors 'none'`), HSTS, `X-Frame-Options: DENY`,
+  `object-src`, `frame-ancestors 'none'`), HSTS (`max-age=31536000; includeSubDomains;
+  preload`), `X-Frame-Options: DENY`,
   `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`,
   `Cross-Origin-Opener-Policy: same-origin-allow-popups` (necesario para el popup de Google).
 - **Cache**: assets hasheados inmutables; `index.html`, `sw.js` y el manifest sin cache
   (evita servir bundles viejos).
-- **App Check** listo: definí `VITE_APPCHECK_SITE_KEY` (reCAPTCHA v3) y después
-  *enforce* en la consola de Firebase. Sin la variable, la app funciona igual. La
+- **App Check** listo sólo para la web: definí `VITE_APPCHECK_SITE_KEY` (reCAPTCHA v3) y
+  después *enforce* en la consola de Firebase. Sin la variable, la app funciona igual. La
   site key de reCAPTCHA tiene que incluir **`firemd.app` y `www.firemd.app`**, si no las
   llamadas fallan en el dominio nuevo.
+
+  **No pasar a *enforced* todavía:** la CLI (`agent/`) y la app de escritorio
+  (`desktop/`) hablan con Identity Toolkit y Firestore por REST sin token de App Check
+  (`grep -r AppCheck agent desktop` no devuelve nada). Enforcing en Identity Toolkit
+  corta `firemd login` y el login del desktop; enforcing en Firestore corta todo
+  `mdfire ls/cat/patch`. Para enforcear hay que darle a esos clientes un provider
+  propio (token firmado por una Cloud Function) o dejarlos fuera.
 - **Auth**: solo Google. No hay usuario anónimo ni signup por email. La sesión se
   persiste en IndexedDB (`browserLocalPersistence`).
 - **XSS**: el contenido se edita como documento ProseMirror y se serializa con
@@ -321,6 +329,28 @@ Hosting → el dominio → Avanzado* y actualizá el `TXT`.
 Estado esperado cuando está todo bien: la API de Hosting devuelve `hostState: HOST_ACTIVE`,
 `ownershipState: OWNERSHIP_ACTIVE` y `cert.state: CERT_VALID`. El primer certificado es
 temporal (`TEMPORARY`); el definitivo (agrupado, vía Google Trust Services) se emite solo.
+
+### Correo
+
+El dominio **no recibe ni manda mail**: no hay registros `MX`. La postura es la del
+dominio que no manda correo, y es deliberada:
+
+| Registro | Valor | Efecto |
+|---|---|---|
+| `TXT @` | `v=spf1 -all` | ningún servidor está autorizado a mandar por el dominio |
+| `TXT _dmarc` | `v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s` | lo que no alinee exacto se rechaza, también en subdominios |
+| `MX` | — | no hay buzón al que escribir |
+
+Resultado: un `From: …@firemd.app` falsificado se rechaza en el receptor. Si algún día el
+producto manda correo real (soporte, novedades, un proveedor transaccional), hay que
+agregar su `SPF`/`DKIM` **antes** del primer envío y aflojar el DMARC a `p=quarantine`
+mientras se calienta la reputación, o esos envíos se rechazan.
+
+### Credenciales de DNS
+
+La API de GoDaddy vive en `~/.config/firemd/godaddy.env` (0600: `GODADDY_KEY`,
+`GODADDY_SECRET`) y se usa con `lexicon godaddy …` o `curl -H "Authorization: sso-key
+$GODADDY_KEY:$GODADDY_SECRET"`. Nada de eso va al repo.
 
 ### Al agregar otro dominio
 
