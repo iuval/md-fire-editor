@@ -11,11 +11,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { doc, setDoc, getDocs, collection } from 'firebase/firestore'
 import * as Y from 'yjs'
+import type { LocalChannelFactory } from '../src/lib/collab/localChannel'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const PROJECT_ID = 'demo-mdfire'
 const NOTE_ID = 'bench-note'
+
+// These tests must exercise the network path only: a real BroadcastChannel
+// would let the two clients agree locally and pass without Firestore.
+const NO_LOCAL_LANE: LocalChannelFactory = () => null
 const OWNER = 'bench-owner'
 
 let env: RulesTestEnvironment
@@ -75,8 +80,8 @@ describe('sync cost', () => {
 
     const aliceDoc = new Y.Doc()
     const bobDoc = new Y.Doc()
-    const alice = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs)
-    const bob = new FirestoreYjsProvider(NOTE_ID, bobDoc, bobFs)
+    const alice = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs, NO_LOCAL_LANE)
+    const bob = new FirestoreYjsProvider(NOTE_ID, bobDoc, bobFs, NO_LOCAL_LANE)
     alice.connect()
     bob.connect()
     await sleep(800)
@@ -107,7 +112,7 @@ describe('sync cost', () => {
 
     // Cold join: a third client that has nothing.
     const coldDoc = new Y.Doc()
-    const cold = new FirestoreYjsProvider(NOTE_ID, coldDoc, aliceFs)
+    const cold = new FirestoreYjsProvider(NOTE_ID, coldDoc, aliceFs, NO_LOCAL_LANE)
     const coldStart = Date.now()
     cold.connect()
     for (let i = 0; i < 100 && coldDoc.getText('content').length === 0; i++) await sleep(50)

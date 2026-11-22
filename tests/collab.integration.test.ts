@@ -8,6 +8,7 @@ import {
 import { doc, setDoc, updateDoc } from 'firebase/firestore'
 import * as Y from 'yjs'
 import { FirestoreYjsProvider } from '../src/lib/collab/provider'
+import type { LocalChannelFactory } from '../src/lib/collab/localChannel'
 import { FirestoreAwareness } from '../src/lib/collab/awareness'
 
 const PROJECT_ID = 'demo-mdfire'
@@ -15,6 +16,10 @@ const ALICE = 'alice-uid'
 const BOB = 'bob-uid'
 const VIEWER = 'viewer-uid'
 const NOTE_ID = 'shared-note'
+
+// These tests must exercise the network path only: a real BroadcastChannel
+// would let the two clients agree locally and pass without Firestore.
+const NO_LOCAL_LANE: LocalChannelFactory = () => null
 
 let env: RulesTestEnvironment
 
@@ -89,8 +94,8 @@ describe('real-time collaboration over Firestore', () => {
 
     const aliceDoc = new Y.Doc()
     const bobDoc = new Y.Doc()
-    const aliceProvider = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs)
-    const bobProvider = new FirestoreYjsProvider(NOTE_ID, bobDoc, bobFs)
+    const aliceProvider = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs, NO_LOCAL_LANE)
+    const bobProvider = new FirestoreYjsProvider(NOTE_ID, bobDoc, bobFs, NO_LOCAL_LANE)
 
     const statuses: string[] = []
     aliceProvider.onStatus((s) => statuses.push(`alice:${s.connected}`))
@@ -137,7 +142,7 @@ describe('real-time collaboration over Firestore', () => {
   it('a late joiner reconstructs the full document from the log', async () => {
     const carolFs = env.authenticatedContext(ALICE).firestore()
     const lateDoc = new Y.Doc()
-    const lateProvider = new FirestoreYjsProvider(NOTE_ID, lateDoc, carolFs)
+    const lateProvider = new FirestoreYjsProvider(NOTE_ID, lateDoc, carolFs, NO_LOCAL_LANE)
     lateProvider.connect()
 
     await waitFor(() => lateDoc.getText('content').toString().includes('Bruno'), 12_000, 'late joiner hydration')
@@ -195,7 +200,7 @@ describe('real-time collaboration over Firestore', () => {
   it('a viewer hydrates the document but every write is rejected', async () => {
     const viewerFs = env.authenticatedContext(VIEWER).firestore()
     const viewerDoc = new Y.Doc()
-    const viewerProvider = new FirestoreYjsProvider(NOTE_ID, viewerDoc, viewerFs)
+    const viewerProvider = new FirestoreYjsProvider(NOTE_ID, viewerDoc, viewerFs, NO_LOCAL_LANE)
     viewerProvider.connect()
 
     // Read path works: the viewer receives the shared text.
@@ -224,8 +229,8 @@ describe('real-time collaboration over Firestore', () => {
 
     const aliceDoc = new Y.Doc()
     const bobDoc = new Y.Doc()
-    const alice = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs)
-    const bob = new FirestoreYjsProvider(NOTE_ID, bobDoc, bobFs)
+    const alice = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs, NO_LOCAL_LANE)
+    const bob = new FirestoreYjsProvider(NOTE_ID, bobDoc, bobFs, NO_LOCAL_LANE)
     alice.connect()
     bob.connect()
     await waitFor(() => bobDoc.getText('content').length > 0, 12_000, 'initial hydration').catch(
@@ -264,7 +269,7 @@ describe('real-time collaboration over Firestore', () => {
     const { getDocs, collection, getDoc, doc: docRef } = await import('firebase/firestore')
 
     const aliceDoc = new Y.Doc()
-    const alice = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs)
+    const alice = new FirestoreYjsProvider(NOTE_ID, aliceDoc, aliceFs, NO_LOCAL_LANE)
     alice.connect()
     await new Promise((r) => setTimeout(r, 600))
 
@@ -291,7 +296,7 @@ describe('real-time collaboration over Firestore', () => {
 
     // A cold client still gets the whole document from the manifest.
     const coldDoc = new Y.Doc()
-    const cold = new FirestoreYjsProvider(NOTE_ID, coldDoc, aliceFs)
+    const cold = new FirestoreYjsProvider(NOTE_ID, coldDoc, aliceFs, NO_LOCAL_LANE)
     cold.connect()
     await waitFor(
       () => coldDoc.getText('content').toString() === text.toString(),
@@ -310,7 +315,7 @@ describe('real-time collaboration over Firestore', () => {
     const { addDoc, collection, serverTimestamp } = await import('firebase/firestore')
 
     const doc = new Y.Doc()
-    const provider = new FirestoreYjsProvider(NOTE_ID, doc, aliceFs)
+    const provider = new FirestoreYjsProvider(NOTE_ID, doc, aliceFs, NO_LOCAL_LANE)
     let error: string | null = null
     provider.onStatus((s) => {
       if (s.error) error = s.error

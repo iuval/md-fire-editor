@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db as defaultDb } from '../../firebase'
 import { base64ToBytes, bytesToBase64, sha256Hex } from './encoding'
+import { openLocalChannel, type LocalChannel, type LocalChannelFactory } from './localChannel'
 import { classifyTransportError } from './transportError'
 
 const REMOTE_ORIGIN = Symbol('firestore-remote')
@@ -106,6 +107,7 @@ export class FirestoreYjsProvider {
   private compacting = false
   private hydrated = false
   private destroyed = false
+  private channel: LocalChannel | null = null
   private listeners = new Set<(status: ProviderStatus) => void>()
   private status: ProviderStatus = {
     connected: false,
@@ -115,10 +117,19 @@ export class FirestoreYjsProvider {
     error: null,
   }
 
-  constructor(noteId: string, doc: Y.Doc = new Y.Doc(), firestore: Firestore | null = defaultDb) {
+  /** Test seam: the same-browser lane, defaulting to `BroadcastChannel`. */
+  private readonly channelFactory?: LocalChannelFactory
+
+  constructor(
+    noteId: string,
+    doc: Y.Doc = new Y.Doc(),
+    firestore: Firestore | null = defaultDb,
+    channelFactory?: LocalChannelFactory
+  ) {
     this.noteId = noteId
     this.doc = doc
     this.fs = firestore
+    this.channelFactory = channelFactory
   }
 
   onStatus(listener: (status: ProviderStatus) => void): () => void {
@@ -133,12 +144,20 @@ export class FirestoreYjsProvider {
   }
 
   connect(): void {
-    if (!this.fs || this.destroyed) {
-      this.setStatus({ error: 'Firebase no está configurado' })
-      return
-    }
+    if (this.destroyed) return
 
     this.doc.on('update', this.handleLocalUpdate)
+
+    // The fast lane opens before the network check: two tabs of one account
+    // keep working together even when Firebase is not configured.
+    this.channel = openLocalChannel(this.noteId, this.doc.clientID, this.channelFactory)
+    this.channel?.onMessage((update) => {
+      try {
+        Y.applyUpdate(this.doc, base64ToBytes(update.data), REMOTE_ORIGIN)
+      } catch {
+        // A malformed message from another tab cannot break this document.
+      }
+    })
 
     if (typeof window !== 'undefined') {
       window.addEventListener('online', this.handleOnline)
@@ -151,6 +170,11 @@ export class FirestoreYjsProvider {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         this.setStatus({ offline: true })
       }
+    }
+
+    if (!this.fs) {
+      this.setStatus({ connected: false, offline: true, error: 'Firebase no está configurado' })
+      return
     }
 
     const manifestRef = doc(this.fs, 'notes', this.noteId, 'collab', 'manifest')
@@ -229,6 +253,14 @@ export class FirestoreYjsProvider {
 
   private handleLocalUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === REMOTE_ORIGIN || this.destroyed) return
+    // Same-browser lane first: it is a postMessage, not a write, so it costs
+    // nothing and does not need the flush window. REMOTE_ORIGIN on the other
+    // side stops the receiver from echoing it back or writing it twice.
+    this.channel?.post({
+      noteId: this.noteId,
+      clientId: this.doc.clientID,
+      data: bytesToBase64(update),
+    })
     this.queued.push(update)
     this.queuedBytes += update.byteLength
     this.setStatus({ pendingWrites: this.queued.length })
@@ -419,6 +451,8 @@ export class FirestoreYjsProvider {
 
   destroy(): void {
     this.destroyed = true
+    this.channel?.close()
+    this.channel = null
     if (typeof window !== 'undefined') {
       window.removeEventListener('online', this.handleOnline)
       window.removeEventListener('offline', this.handleOffline)
