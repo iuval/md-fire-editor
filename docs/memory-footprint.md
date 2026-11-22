@@ -10,7 +10,7 @@ del bundle de producción.
 | --- | --- | --- | --- | --- |
 | H3 | Trabajo y basura por tecla | **hecho** | ~3,2 ms y ~1 MB de basura por tecla (100 KB) | 0 ms de serialización; ~0,3 ms de comparación por edición; 0 basura |
 | H2 | Un editor por panel, sin tope | **hecho (tope 4)** | paneles sin límite (4 paneles de 250 KB = 68 MB) | `MAX_PANES = 4`, acción deshabilitada con el presupuesto agotado |
-| H5 | Bundle entero sin split | **hecho** | 1.692.553 B en un chunk | 967 KB inicial + 729 KB diferido (`NotePane`) |
+| H5 | Bundle entero sin split | **hecho** | 1.692.553 B en un chunk | 76 KB gzip para el primer pintado; 208 KB (`AppTree`, Firebase) y 212 KB (`NotePane`, editor) diferidos |
 | H6 | Import/export con picos de 2-3× | **hecho** | todas las entradas infladas + todos los cuerpos decodificados | plan de rutas + un cuerpo a la vez; export vía `Blob` |
 | H4 | Cache de Firestore y contabilidad del log | **parcial** | LRU por defecto 40 MB; ids duplicados en `Set` + array | `cacheSizeBytes` 20 MB; un solo `Set` |
 | H1 | El listado retiene todos los cuerpos | **hecho** | 300 notas × 20.000 car. = +5,91 MB | +0,05 MB de metadata; el cuerpo se lee sólo para la nota abierta |
@@ -121,9 +121,31 @@ const NotePane = lazy(() =>
 con un `Suspense` que muestra `Cargando editor…` dentro del área de trabajo. `Workspace` sigue
 eager: son 146 líneas que sólo dependen de `panes.ts`.
 
-Lo siguiente, si se quiere seguir bajando: `firebase/firestore` (~400 kB) se puede diferir igual,
-pero para eso el árbol autenticado tiene que mudarse a su propio módulo lazy (App lo usa desde el
-primer snapshot del sidebar). Es un refactor mecánico, no de comportamiento.
+**Segunda pasada: Firebase fuera del arranque.** El chunk inicial seguía pesando 972 kB porque el
+SDK (Firestore + Auth) se importaba desde `App`, el primer módulo que toca React. El árbol
+autenticado se mudó a `src/AppTree.tsx` y `src/App.tsx` quedó como shell de ~40 líneas que lo pide
+con `lazy()`:
+
+| chunk | raw | gzip | brotli | cuándo |
+| --- | --- | --- | --- | --- |
+| `index-*.js` + `index-*.css` (shell) | 261 kB | **76 kB** | 66 kB | primer pintado |
+| `AppTree-*.js` (Firebase + lógica) | 699 kB | 208 kB | 176 kB | `modulepreload`, en paralelo |
+| `NotePane-*.js` (Tiptap + Yjs) | 635 kB | 212 kB | 178 kB | al abrir una nota |
+
+El primer pintado pasó de **296 kB gzip a 76 kB (−74 %)** y su parseo de 14,3 ms a 3,1 ms. Para que
+el `lazy()` no costara un round trip extra, `preloadAppTree()` en `vite.config.ts` inyecta un
+`<link rel="modulepreload">` al chunk de `AppTree`: los dos bajan en paralelo, así que el pintado es
+mucho más temprano y la interactividad no cambia.
+
+**`re2js`: 46 kB gzip de peso muerto.** `@firebase/firestore` lo importa con un `import 're2js'` de
+sólo efectos secundarios, que ningún bundler puede sacar por tree-shaking. Sus únicos tres usos son
+`RE2JS.compile` en los evaluadores de *Pipelines* (`regex_match`, `regex_contains`, `LIKE`), que
+esta app no usa, y cada llamada ya está en `try/catch`. `resolve.alias` lo reemplaza por
+`src/lib/vendor/re2js-stub.ts`, que tira un error explicando el motivo. Medido: 151 kB min / 46,7 kB
+gzip.
+
+`tests/bundle-budget.test.ts` camina el grafo de imports estáticos desde `main.tsx` y falla si
+Firebase vuelve a entrar por esa puerta, si el grafo de arranque crece, o si el alias desaparece.
 
 ## 6. H6 — import/export sin picos de 2-3× (hecho)
 
