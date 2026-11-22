@@ -166,30 +166,40 @@ aunque el cliente lo intente a mano.
 ## Agentes de IA
 
 Hay una CLI y un servidor MCP para que un agente lea y edite gastando lo mínimo. Ambos
-devuelven **texto, no JSON**, y el agente es **una cuenta propia** (anónima de Firebase),
-no la tuya: las reglas de seguridad se aplican igual que a una persona.
+devuelven **texto, no JSON**.
+
+La guía completa para agentes está publicada en **`/agent.md`** (con índice en
+`/llms.txt`): instalación, login, comandos, permisos y códigos de salida. Es la referencia
+que conviene darle a un agente.
 
 ```bash
-npm run mdfire -- login       # crea la identidad del agente
-npm run mdfire -- whoami      # imprime el uid a vincular en la web
+npm run mdfire -- login       # entra con tu cuenta (abre el navegador)
+npm run mdfire -- whoami      # email, agente y uid
+npm run mdfire -- agents      # sesiones conectadas a la cuenta
+npm run mdfire -- name "Notebook de Ana"
 npm run mdfire -- ls          # id	título	fecha	carpeta
-npm run mdfire -- cat 3f9a1c2b
+npm run mdfire -- cat 3f9a1c2b --etag
 npm run mdfire -- find harina
 npm run mdfire -- patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find '- dos' --replace '- dos
 - tres'
 npm run mdfire -- append 3f9a1c2b --text '- sal'
 ```
 
-**Vinculación (2 pasos):**
+**Cómo entra:**
 
-1. `mdfire login` → imprime el uid del agente. El refresh token queda en
-   `~/.config/mdfire/credentials.json` (0600) y se renueva solo.
-2. En la app: menú de cuenta → **Agentes de IA** → pegás el uid, elegís carpeta y rol
-   (**Lectura** o **Escritura**) → Vincular.
+`mdfire login` abre el navegador en el sitio; el usuario autoriza con Google y la sesión
+vuelve a la CLI por loopback. La CLI queda actuando **como la persona**, con sus permisos:
+no hay nada que pegar ni vincular. El refresh token se guarda en
+`~/.config/mdfire/credentials.json` (0600) y se renueva solo.
 
-A partir de ahí el agente solo ve esa carpeta. Quitarle el acceso es quitarlo de
-*Compartir* en la carpeta: el corte es inmediato porque la autoridad es el documento de la
-carpeta, no la copia en cada nota.
+Cada sesión se registra en `agents/{id}` y aparece en la app (menú de cuenta → **Agentes
+conectados**), donde se le puede poner nombre — o desde la terminal con `mdfire name`.
+Ese registro es sólo la lista de "quién está conectado": no concede permisos.
+
+`mdfire login --agent` sigue disponible para el modelo anterior: crea una cuenta anónima
+aparte que sólo ve la carpeta donde el dueño la agregue como miembro (rol **Lectura** o
+**Escritura**). Quitarle el acceso es quitarla de *Compartir*: el corte es inmediato porque
+la autoridad es el documento de la carpeta, no la copia en cada nota.
 
 ### Por qué es barato
 
@@ -226,13 +236,14 @@ Siete tools (`notes_list`, `notes_read`, `notes_patch`, `notes_append`, `notes_s
 
 ### Autenticación en detalle
 
-- `mdfire login` hace `accounts:signUp` con la API key web (pública) y guarda el refresh
-  token; los ID tokens se renuevan contra `securetoken.googleapis.com`.
+- `mdfire login` hace el handshake por loopback (servidor en `127.0.0.1`, nonce de un
+  solo uso, plazo de 2 min) y valida el refresh token contra `securetoken.googleapis.com`
+  antes de guardarlo. `mdfire login --agent` hace en cambio `accounts:signUp` anónimo. Los
+  ID tokens se renuevan contra `securetoken.googleapis.com`.
 - Como la API key está restringida por referrer, las llamadas mandan
   `Referer: https://md-sync-app.web.app/` (configurable con `MDFIRE_REFERER`).
-- Firestore se consume por **REST con el ID token del agente**, no con Admin SDK: si el
-  agente no tiene permiso, Firestore devuelve `PERMISSION_DENIED` y la CLI explica que
-  revise el rol.
+- Firestore se consume por **REST con el ID token de la sesión**, no con Admin SDK: si la
+  cuenta no tiene permiso, Firestore devuelve `PERMISSION_DENIED` y la CLI lo explica.
 - Para tests: `MDFIRE_ID_TOKEN` inyecta un token externo.
 
 ### Escrituras concurrentes

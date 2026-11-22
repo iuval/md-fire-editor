@@ -2,15 +2,19 @@
 // mdfire — token-lean CLI over FireMD notes, authenticated as the agent's own
 // Firebase account (paired from the web app). Security rules apply.
 
-import { login, logout, whoami, pairingCode } from './auth.mjs'
+import { login, loginWithBrowser, logout, whoami, pairingCode, saveAgentSession } from './auth.mjs'
 import { AgentError, openStore, listNotes, listFolders, listTags, readNote, patchNote, appendNote, createNote, deleteNote, searchNotes } from './core.mjs'
+import { defaultAgentName, formatAgents, listAgents, registerAgent, renameAgent } from './agents.mjs'
 import { parseArgs } from './args.mjs'
 import { defaultDir, pull, push } from './vault.mjs'
 
 const HELP = `mdfire — notas FireMD desde la terminal (con permisos del agente)
 
-  login                                     crea la identidad del agente
-  whoami                                    uid a vincular en la web app
+  login                                     entra con tu cuenta del sitio
+  login --agent                             crea en cambio un agente anónimo
+  whoami                                    quién soy (email, agente, uid)
+  agents                                    agentes conectados a esta cuenta
+  name <nombre>                             renombra este agente
   logout                                    revoca y borra credenciales
   ls [--folder <f|root>] [--limit n]         id\\ttítulo\\tfecha\\tcarpeta
   folders                                   id\\tnombre
@@ -25,9 +29,10 @@ const HELP = `mdfire — notas FireMD desde la terminal (con permisos del agente
   rm <id>
 
 ids: 8 caracteres (prefijo único alcanza). Salida en texto, nunca JSON.
-El agente solo ve lo que le compartieron: el dueño lo agrega como miembro de
-una carpeta con rol "Lectura" o "Escritura" y puede quitarlo cuando quiera.
-env: MDFIRE_API_KEY, MDFIRE_PROJECT, MDFIRE_ID_TOKEN (tests)`
+Al loguearte con tu cuenta sos vos: ves tus carpetas con tus permisos.
+login --agent crea una cuenta anónima aparte, que sólo ve lo que el dueño le
+comparta como miembro de una carpeta (rol "Lectura" o "Escritura").
+env: MDFIRE_API_KEY, MDFIRE_PROJECT, MDFIRE_ID_TOKEN (tests), MDFIRE_SITE`
 
 if (!process.argv[2] || ['-h', '--help', 'help'].includes(process.argv[2])) {
   process.stdout.write(`${HELP}\n`)
@@ -52,10 +57,21 @@ async function readStdin() {
 try {
   switch (command) {
     case 'login': {
-      const creds = await login()
+      if (args.agent === true) {
+        const creds = await login()
+        process.stdout.write(
+          `ok uid ${creds.uid}\ncodigo ${pairingCode(creds.uid)}\n\n` +
+            `Pegá el código en la app: menú de cuenta → "Agentes de IA", elegí carpeta y rol.\n`
+        )
+        break
+      }
+
+      const creds = await loginWithBrowser()
+      const db = await openStore()
+      const agent = await registerAgent(db, { id: creds.agentId, name: creds.agentName || defaultAgentName() })
+      await saveAgentSession(agent)
       process.stdout.write(
-        `ok uid ${creds.uid}\ncodigo ${pairingCode(creds.uid)}\n\n` +
-          `Pegá el código en la app: menú de cuenta → "Agentes de IA", elegí carpeta y rol.\n`
+        `ok ${agent.name}\n${creds.email ?? creds.uid}\nagente ${agent.id.slice(0, 8)}\n`
       )
       break
     }
@@ -63,7 +79,30 @@ try {
     case 'whoami': {
       const me = await whoami()
       if (!me) fail('no estás logueado: corré `mdfire login`', 3)
-      process.stdout.write(`${me.uid}\ncodigo ${pairingCode(me.uid)}\n`)
+      const lines = [me.email ?? me.uid]
+      if (me.agentName) lines.push(`agente ${me.agentName} ${me.agentId ? me.agentId.slice(0, 8) : ''}`.trim())
+      if (!me.email) lines.push(`codigo ${pairingCode(me.uid)}`)
+      process.stdout.write(`${lines.join('\n')}\n`)
+      break
+    }
+
+    case 'agents': {
+      const db = await openStore()
+      const me = await whoami()
+      const agents = await listAgents(db)
+      process.stdout.write(withNewline(formatAgents(agents, { currentId: me?.agentId })))
+      break
+    }
+
+    case 'name': {
+      const name = args._.join(' ').trim()
+      if (!name) fail('uso: mdfire name "MacBook de Ana"', 64)
+      const db = await openStore()
+      const me = await whoami()
+      if (!me?.agentId) fail('esta sesión no está registrada: corré `mdfire login`', 3)
+      const agent = await renameAgent(db, me.agentId, name)
+      await saveAgentSession({ id: agent.id, name: agent.name })
+      process.stdout.write(`ok ${agent.name}\n`)
       break
     }
 
