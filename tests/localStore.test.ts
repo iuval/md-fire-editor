@@ -42,7 +42,7 @@ describe('local workspace', () => {
 
     return createLocalNote(LOCAL_UID).then((note) => {
       expect(note.ownerId).toBe(LOCAL_UID)
-      expect(note.title).toBe('Sin título')
+      expect(note.title).toBe('Untitled')
       expect(seen).toEqual([0, 1])
       expect(localStoreSummary().notes).toBe(1)
       off()

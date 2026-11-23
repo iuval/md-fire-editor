@@ -1,4 +1,4 @@
-import { Folder, X } from 'lucide-react'
+import { Check, Folder, Inbox, X } from 'lucide-react'
 import { Modal } from './Modal'
 import type { Folder as FolderType } from '../lib/notes'
 import { useT } from '../i18n/index.ts'
@@ -22,35 +22,49 @@ export function MoveDialog({ noteTitle, folders, currentFolderId, onMove, onClos
           </button>
         </div>
 
-        <p className="hint">Al moverla, la nota pasa a usar los permisos de la carpeta destino.</p>
+        <p className="hint">{t('move.hint')}</p>
 
-        <div className="member-list">
+        <div className="move-list">
           <button
-            className="menu-item"
+            className={`move-card${currentFolderId === null ? ' is-current' : ''}`}
             onClick={() => {
               onMove(null)
               onClose()
             }}
             aria-current={currentFolderId === null ? 'true' : undefined}
           >
-            <Folder size={13} /> Sin carpeta (solo vos)
+            <span className="move-icon">
+              <Inbox size={15} />
+            </span>
+            <span className="move-text">
+              <span className="move-title">{t('move.noFolder')}</span>
+              <span className="move-hint">{t('move.noFolderHint')}</span>
+            </span>
+            {currentFolderId === null && <Check size={14} className="move-check" />}
           </button>
           {folders.map((folder) => (
             <button
               key={folder.id}
-              className="menu-item"
+              className={`move-card${currentFolderId === folder.id ? ' is-current' : ''}`}
               onClick={() => {
                 onMove(folder)
                 onClose()
               }}
               aria-current={currentFolderId === folder.id ? 'true' : undefined}
             >
-              <Folder size={13} /> {folder.name}
+              <span className="move-icon">
+                <Folder size={15} />
+              </span>
+              <span className="move-text">
+                <span className="move-title">{folder.name}</span>
+                <span className="move-hint">{t('move.folder')}</span>
+              </span>
+              {currentFolderId === folder.id && <Check size={14} className="move-check" />}
             </button>
           ))}
         </div>
 
-        {folders.length === 0 && <p className="hint">Todavía no tenés carpetas.</p>}
+        {folders.length === 0 && <p className="hint">{t('move.empty')}</p>}
     </Modal>
   )
 }

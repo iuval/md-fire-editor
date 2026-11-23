@@ -1,5 +1,22 @@
-import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Activity,
+  BookOpen,
+  Coins,
+  CreditCard,
+  Database,
+  Download,
+  FileText,
+  Folder,
+  Gauge,
+  HardDrive,
+  Pencil,
+  RefreshCw,
+  Server,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
 import { Modal } from './Modal'
 import {
   MAX_TOP_UP_USD,
@@ -8,21 +25,37 @@ import {
   RATE_DELETES_PER_100K,
   RATE_READS_PER_100K,
   RATE_WRITES_PER_100K,
-  chargeBreakdown,
-  costBreakdown,
   formatBytes,
   formatUsd,
+  type CostBreakdown,
   type Credits,
   type UsageTotals,
 } from '../lib/usage'
-import { FREE_TIER, dailyCharge, freeTierStatus, quotaWarning } from '../lib/quota'
+import {
+  FREE_TIER,
+  dailyCharge,
+  dailyChargeBreakdown,
+  dailyCostBreakdown,
+  freeTierStatus,
+  quotaWarning,
+} from '../lib/quota'
 import { proxyEnabled, startPortal } from '../lib/proxy'
+import { localeTag, useT, type MessageKey } from '../i18n/index.ts'
 import type { ServerAllowance } from '../lib/allowance'
 import {
   CREDIT_PACKS,
   validateCreditSettings,
   type CreditSettings,
 } from '../lib/credits'
+
+const TABS = ['usage', 'balance', 'diagnostics'] as const
+type UsageTab = (typeof TABS)[number]
+
+const TAB_LABELS: Record<UsageTab, MessageKey> = {
+  usage: 'usage.tabs.usage',
+  balance: 'usage.tabs.balance',
+  diagnostics: 'usage.tabs.diagnostics',
+}
 
 export interface Diagnostics {
   /** V8 heap of this tab, and the ceiling that would crash it. */
@@ -70,6 +103,7 @@ export function UsageDialog({
   onRequestTopUp,
   onClose,
 }: UsageDialogProps) {
+  const t = useT()
   const totals: UsageTotals = usage ?? {
     day: '',
     writes: 0,
@@ -80,9 +114,6 @@ export function UsageDialog({
     storageBytes: 0,
     agentOps: 0,
   }
-  const cost = costBreakdown(totals)
-  // Se cobra solo lo que pasa la cuota diaria; el uso dentro de la cuota es gratis.
-  const charge = chargeBreakdown(totals)
   // Cuando el proxy ya contó el día, su cuenta es la que se cobra: el contador
   // del cliente queda como referencia y para dispositivos sin proxy.
   const chargedTotals: UsageTotals = serverAllowance
@@ -93,6 +124,10 @@ export function UsageDialog({
         agentOps: Math.max(0, serverAllowance.opsUsed - serverAllowance.writes - serverAllowance.deletes),
       }
     : totals
+  // Se cobra solo lo que pasa la cuota diaria; el uso dentro de la cuota es gratis.
+  // El héroe y el detalle usan la misma base para no mostrar dos cifras distintas.
+  const charge = dailyChargeBreakdown(chargedTotals, isAdmin)
+  const cost = dailyCostBreakdown(chargedTotals, isAdmin)
   const todayCharge = dailyCharge(chargedTotals, isAdmin)
   const quota = freeTierStatus(totals, isAdmin)
   const [settings, setSettings] = useState<CreditSettings>({
@@ -104,6 +139,21 @@ export function UsageDialog({
   /** Monto libre: los presets son atajos, el input manda. */
   const [customAmount, setCustomAmount] = useState('')
   const settingsError = validateCreditSettings(settings)
+  /** Three tabs, because the receipt does not belong on the same page as the bill. */
+  const [tab, setTab] = useState<UsageTab>('usage')
+  const tabRefs = useRef(new Map<UsageTab, HTMLButtonElement | null>())
+
+  /** Arrow keys move between tabs, as the tablist pattern expects. */
+  const onTabKeyDown = (event: React.KeyboardEvent) => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+    const jump = event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length - 1 : null
+    if (!step && jump === null) return
+    event.preventDefault()
+    const index = TABS.indexOf(tab)
+    const next = jump ?? (index + step + TABS.length) % TABS.length
+    setTab(TABS[next])
+    tabRefs.current.get(TABS[next])?.focus()
+  }
 
   // `credits` llega por snapshot después de abrir el diálogo; cuando cambia,
   // reflejamos lo guardado en el formulario.
@@ -124,7 +174,7 @@ export function UsageDialog({
     }
     try {
       await onUpdateCredits(settings)
-      setFeedback({ tone: 'ok', text: 'Recarga automática guardada.' })
+      setFeedback({ tone: 'ok', text: t('usage.topUp.saved') })
     } catch (error) {
       setFeedback({ tone: 'error', text: String((error as Error)?.message ?? error) })
     }
@@ -144,290 +194,401 @@ export function UsageDialog({
       if (!Number.isFinite(amountUsd) || amountUsd < MIN_TOP_UP_USD || amountUsd > MAX_TOP_UP_USD) {
         setFeedback({
           tone: 'error',
-          text: `El monto tiene que estar entre ${formatUsd(MIN_TOP_UP_USD)} y ${formatUsd(MAX_TOP_UP_USD)}.`,
+          text: t('usage.topUp.range', {
+            min: formatUsd(MIN_TOP_UP_USD),
+            max: formatUsd(MAX_TOP_UP_USD),
+          }),
         })
         return
       }
       await onRequestTopUp(amountUsd)
-      setFeedback({ tone: 'ok', text: `Pedido de ${formatUsd(amountUsd)} enviado. Se acredita al confirmarse el pago.` })
+      setFeedback({
+        tone: 'ok',
+        text: t('usage.topUp.requested', { amount: formatUsd(amountUsd) }),
+      })
     } catch (error) {
       setFeedback({ tone: 'error', text: String((error as Error)?.message ?? error) })
     }
   }
 
   return (
-    <Modal labelledBy="usage-heading" onClose={onClose}>
+    <Modal labelledBy="usage-heading" onClose={onClose} className="share usage">
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h2 id="usage-heading">Uso de la cuenta</h2>
-        <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
+        <h2 id="usage-heading">{t('usage.heading')}</h2>
+        <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
           <X size={15} />
         </button>
       </div>
 
       <div className="usage-hero">
-        <span className="usage-hero-value">{formatUsd(todayCharge)}</span>
-        <span className="usage-hero-label">
-          Cargo de hoy{totals.day ? ` · ${totals.day}` : ''}
+        <div className="usage-hero-main">
+          <span className="usage-hero-value">{formatUsd(todayCharge)}</span>
+          <span className="usage-hero-label">
+            {t('usage.todayCharge')}
+            {totals.day ? ` · ${totals.day}` : ''}
+          </span>
+        </div>
+        <span className={`usage-badge${isAdmin ? ' is-admin' : ''}`}>
+          {isAdmin ? t('usage.badge.admin') : t('usage.badge.prepaid')}
         </span>
       </div>
 
-      <p className="usage-section-title">{isAdmin ? 'Cuota (admin)' : 'Cuota diaria'}</p>
-      <div className="usage-grid">
-        <QuotaBar
-          label="Almacenamiento"
-          used={formatBytes(quota.storage.used)}
-          limit={quota.storage.unlimited ? 'Sin límite' : formatBytes(FREE_TIER.storageBytes)}
-          percent={quota.storage.percent}
-          warning={quotaWarning(quota.storage)}
-        />
-        <QuotaBar
-          label="Operaciones"
-          used={quota.ops.used.toLocaleString('es')}
-          limit={quota.ops.unlimited ? 'Sin límite' : FREE_TIER.opsPerDay.toLocaleString('es')}
-          percent={quota.ops.percent}
-          warning={quotaWarning(quota.ops)}
-        />
-      </div>
-      <p className="hint">
-        {isAdmin
-          ? 'Cuenta admin: sin tope de cuota y sin cargos. Leer tus datos siempre está permitido.'
-          : `La cuota se renueva cada día. Cubre ${formatBytes(FREE_TIER.storageBytes)} de almacenamiento y ${FREE_TIER.opsPerDay.toLocaleString('es')} acciones por día. El tiempo real es pago; el modo gratuito edita en modo liviano.`}
-      </p>
-
-      <div className="usage-sep" />
-
-      <p className="usage-section-title">Detalle del cargo de hoy</p>
-      <div className="usage-grid">
-        <Row label="Escrituras" value={formatUsd(charge.writes)} />
-        <Row label="Lecturas" value={formatUsd(charge.reads)} />
-        <Row label="Borrados" value={formatUsd(charge.deletes)} />
-        <Row label="Almacenamiento" value={formatUsd(charge.storage)} />
-        <Row label="Transferencia" value={formatUsd(charge.egress)} />
-        <Row label="Margen de la app" value={formatUsd(Math.max(0, charge.total - cost.total))} />
-      </div>
-      <p className="hint">
-        {serverAllowance
-          ? `El servidor contó ${serverAllowance.opsUsed.toLocaleString('es')} operaciones de ${serverAllowance.quota.toLocaleString('es')} de hoy; el cargo de arriba es el que se debita del saldo.`
-          : 'Se cobra el uso que pasa la cuota diaria. El uso dentro de la cuota no se cobra.'}
-      </p>
-
-      <div className="usage-sep" />
-
-      <p className="usage-section-title">Operaciones</p>
-      <div className="usage-grid">
-        <Row label="Notas" value={String(notes)} />
-        <Row label="Carpetas" value={String(folders)} />
-        {serverAllowance && (
-          <Row
-            label="Medido por el servidor"
-            value={`${serverAllowance.opsUsed.toLocaleString('es')} / ${serverAllowance.quota.toLocaleString('es')}`}
-          />
-        )}
-        <Row label="Escrituras de sync" value={totals.writes.toLocaleString('es')} />
-        <Row label="Lecturas de sync" value={totals.reads.toLocaleString('es')} />
-        <Row label="Borrados (compactación)" value={totals.deletes.toLocaleString('es')} />
-        <Row label="Almacenamiento" value={formatBytes(totals.storageBytes)} />
-        <Row label="Transferido (envío)" value={formatBytes(totals.bytesWritten)} />
-        <Row label="Transferido (recepción)" value={formatBytes(totals.bytesRead)} />
-      </div>
-
-      <div className="usage-sep" />
-
-      {/*
-        Memory lives here because "the app is using 1 GB" is normally the
-        browser (every tab, the GPU process, every extension) or a dev build,
-        not the notes. These numbers come from inside this tab.
-      */}
-      <p className="usage-section-title">Esta pestaña</p>
-      <div className="usage-grid">
-        <Row
-          label="Heap en uso"
-          value={
-            diagnostics.usedHeap === null
-              ? 'no disponible en este navegador'
-              : `${formatBytes(diagnostics.usedHeap)}${diagnostics.heapLimit ? ` de ${formatBytes(diagnostics.heapLimit)}` : ''}`
-          }
-        />
-        <Row label="Nodos del DOM" value={diagnostics.domNodes.toLocaleString('es')} />
-        <Row label="Notas abiertas (sesión Yjs)" value={String(diagnostics.openNoteSessions)} />
-        <Row
-          label="Cuerpos sin migrar"
-          value={
-            diagnostics.pendingBodies.count === 0
-              ? 'ninguno'
-              : `${diagnostics.pendingBodies.count} · ${formatBytes(diagnostics.pendingBodies.characters * 2)} en el listado`
-          }
-        />
-        <Row
-          label="Cache del navegador"
-          value={diagnostics.storage ? formatBytes(diagnostics.storage.usage) : 'no disponible'}
-        />
-      </div>
-      <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
-        {diagnostics.pendingBodies.count > 0 && (
-          <button className="btn ghost" onClick={onMigrateBodies}>
-            Migrar cuerpos ahora
-          </button>
-        )}
-        <button className="btn ghost" onClick={onRefreshDiagnostics}>
-          Actualizar
-        </button>
-      </div>
-
-      <div className="usage-sep" />
-
-      <p className="usage-section-title">Saldo prepago</p>
-      <div className="usage-grid">
-        <Row label="Modelo" value={isAdmin ? 'Admin (sin cargos)' : 'Uso prepago diario'} />
-        <Row label="Cargo de hoy" value={formatUsd(todayCharge)} />
-        <Row label="Saldo" value={credits ? formatUsd(credits.balanceUsd) : 'sin cargar'} />
-      </div>
-
-      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-        {CREDIT_PACKS.map((pack) => (
-          <button key={pack} className="btn ghost" onClick={() => void requestPack(pack)}>
-            Recargar {formatUsd(pack)}
+      <div
+        className="usage-tabs"
+        role="tablist"
+        aria-label={t('usage.heading')}
+        onKeyDown={onTabKeyDown}
+      >
+        {TABS.map((key) => (
+          <button
+            key={key}
+            ref={(element) => {
+              tabRefs.current.set(key, element)
+            }}
+            id={`usage-tab-${key}`}
+            className="usage-tab"
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            aria-controls={`usage-panel-${key}`}
+            tabIndex={tab === key ? 0 : -1}
+            onClick={() => setTab(key)}
+          >
+            {t(TAB_LABELS[key])}
           </button>
         ))}
-        <input
-          className="field"
-          type="number"
-          inputMode="decimal"
-          min={MIN_TOP_UP_USD}
-          max={MAX_TOP_UP_USD}
-          step="0.5"
-          placeholder="Otro monto"
-          aria-label="Otro monto a recargar"
-          value={customAmount}
-          onChange={(event) => setCustomAmount(event.target.value)}
-          style={{ width: 96 }}
-        />
-        <button
-          className="btn ghost"
-          disabled={!customAmount}
-          onClick={() => void requestPack(Number(customAmount))}
-        >
-          Recargar
-        </button>
       </div>
-      <p className="hint">
-        El saldo vence a los 24 meses. El cargo se descuenta del saldo cada día y solo se
-        cobra por el uso que pasa la cuota diaria; las cuentas admin no pagan. Podés cargar
-        cualquier monto entre {formatUsd(MIN_TOP_UP_USD)} y {formatUsd(MAX_TOP_UP_USD)}: el
-        saldo se acredita cuando el pago se confirma.
-      </p>
 
-      <div className="usage-sep" />
+      <div
+        className="usage-panel"
+        role="tabpanel"
+        id="usage-panel-usage"
+        aria-labelledby="usage-tab-usage"
+        hidden={tab !== 'usage'}
+      >
+        <section className="usage-section">
+          <div className="usage-section-head">
+            <Gauge size={14} />
+            <p className="usage-section-title">{isAdmin ? t('usage.quota.admin') : t('usage.quota.daily')}</p>
+          </div>
+          <div className="usage-meters">
+            <QuotaMeter
+              label={t('usage.storage')}
+              icon={<Database size={14} />}
+              used={formatBytes(quota.storage.used)}
+              limit={
+                quota.storage.unlimited ? t('usage.unlimited') : formatBytes(FREE_TIER.storageBytes)
+              }
+              percent={quota.storage.percent}
+              warning={quotaWarning(quota.storage)}
+            />
+            <QuotaMeter
+              label={t('usage.operations')}
+              icon={<Activity size={14} />}
+              used={quota.ops.used.toLocaleString(localeTag())}
+              limit={
+                quota.ops.unlimited
+                  ? t('usage.unlimited')
+                  : FREE_TIER.opsPerDay.toLocaleString(localeTag())
+              }
+              percent={quota.ops.percent}
+              warning={quotaWarning(quota.ops)}
+            />
+          </div>
+          <p className="hint">
+            {isAdmin
+              ? t('usage.quotaAdminHint')
+              : t('usage.quotaHint', {
+                  storage: formatBytes(FREE_TIER.storageBytes),
+                  ops: FREE_TIER.opsPerDay.toLocaleString(localeTag()),
+                })}
+          </p>
+        </section>
 
-      <p className="usage-section-title">Recarga automática</p>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <label className="row" style={{ gap: 6, fontSize: 12 }}>
-          <input
-            type="checkbox"
-            checked={settings.autoTopUp}
-            onChange={(event) => setSettings({ ...settings, autoTopUp: event.target.checked })}
-          />
-          Activar
-        </label>
-        <label className="row" style={{ gap: 4, fontSize: 12 }}>
-          Al bajar de
-          <input
-            className="field"
-            type="number"
-            min={0}
-            step={0.5}
-            aria-label="Umbral de recarga automática"
-            value={settings.thresholdUsd}
-            onChange={(event) => setSettings({ ...settings, thresholdUsd: Number(event.target.value) })}
-            style={{ width: 74 }}
-          />
-        </label>
-        <label className="row" style={{ gap: 4, fontSize: 12 }}>
-          Recargar
-          <input
-            className="field"
-            type="number"
-            min={MIN_AUTO_TOP_UP_USD}
-            step={0.5}
-            aria-label="Monto de recarga automática"
-            value={settings.topUpUsd}
-            onChange={(event) => setSettings({ ...settings, topUpUsd: Number(event.target.value) })}
-            style={{ width: 74 }}
-          />
-        </label>
-        <button className="btn" disabled={Boolean(settingsError)} onClick={() => void saveSettings()}>
-          Guardar
-        </button>
-        {proxyEnabled && (
-          <button className="btn ghost" onClick={() => void openPortal()}>
-            Guardar tarjeta
-          </button>
-        )}
+        <section className="usage-section">
+          <div className="usage-section-head">
+            <Coins size={14} />
+            <p className="usage-section-title">{t('usage.chargeTitle')}</p>
+            <span className="usage-section-value">{formatUsd(charge.total)}</span>
+          </div>
+          <CostChart charge={charge} cost={cost} />
+          <p className="hint">
+            {serverAllowance
+              ? t('usage.chargeServerHint', {
+                  used: serverAllowance.opsUsed.toLocaleString(localeTag()),
+                  quota: serverAllowance.quota.toLocaleString(localeTag()),
+                })
+              : t('usage.chargeHint')}
+          </p>
+        </section>
+
+        <section className="usage-section">
+          <div className="usage-section-head">
+            <Activity size={14} />
+            <p className="usage-section-title">{t('usage.operations')}</p>
+          </div>
+          <p className="stat-group-label">{t('usage.group.content')}</p>
+          <div className="stat-grid">
+            <Stat label={t('usage.stat.notes')} value={String(notes)} icon={<FileText size={14} />} />
+            <Stat label={t('usage.stat.folders')} value={String(folders)} icon={<Folder size={14} />} />
+            <Stat label={t('usage.stat.storage')} value={formatBytes(totals.storageBytes)} icon={<HardDrive size={14} />} />
+          </div>
+          <p className="stat-group-label">{t('usage.group.sync')}</p>
+          <div className="stat-grid">
+            <Stat label={t('usage.stat.writes')} value={totals.writes.toLocaleString(localeTag())} icon={<Pencil size={14} />} />
+            <Stat label={t('usage.stat.reads')} value={totals.reads.toLocaleString(localeTag())} icon={<BookOpen size={14} />} />
+            <Stat label={t('usage.stat.deletes')} value={totals.deletes.toLocaleString(localeTag())} icon={<Trash2 size={14} />} />
+            <Stat label={t('usage.stat.sent')} value={formatBytes(totals.bytesWritten)} icon={<Upload size={14} />} />
+            <Stat label={t('usage.stat.received')} value={formatBytes(totals.bytesRead)} icon={<Download size={14} />} />
+          </div>
+          {serverAllowance && (
+            <>
+              <p className="stat-group-label">{t('usage.group.server')}</p>
+              <div className="stat-grid">
+                <Stat
+                  label={t('usage.stat.countedOps')}
+                  value={`${serverAllowance.opsUsed.toLocaleString(localeTag())} / ${serverAllowance.quota.toLocaleString(localeTag())}`}
+                  icon={<Server size={14} />}
+                  accent
+                />
+              </div>
+            </>
+          )}
+        </section>
       </div>
-      <p className="hint">
-        Mínimo {formatUsd(MIN_AUTO_TOP_UP_USD)} para la recarga automática (los packs sueltos
-        arrancan en {formatUsd(CREDIT_PACKS[0])}). La recarga se cobra sola con la tarjeta que
-        guardes en el portal de pagos; el saldo y el libro mayor los escribe el servidor.
-      </p>
-      {settingsError && (
-        <p className="hint tone-danger" role="status">
-          {settingsError}
-        </p>
-      )}
-      {feedback && (
-        <p className={`hint ${feedback.tone === 'error' ? 'tone-danger' : 'tone-ok'}`} role="status">
-          {feedback.text}
-        </p>
-      )}
 
-      <p className="hint">
-        Calculado con las tarifas públicas de Firestore Standard (US): {formatUsd(RATE_READS_PER_100K)}/100k
-        lecturas, {formatUsd(RATE_WRITES_PER_100K)}/100k escrituras y{' '}
-        {formatUsd(RATE_DELETES_PER_100K)}/100k borrados. El cargo es el del día: uso por encima
-        de la cuota diaria, con el margen de la app incluido. El almacenamiento incluye PITR y
-        backup, prorrateados por los bytes guardados. Las mediciones las hace la app: sirven para
-        transparencia, pero el cobro real tendrá que medirlas el servidor. El cobro con tarjeta
-        todavía no está habilitado: los pedidos de recarga quedan pendientes.
-      </p>
+      <div
+        className="usage-panel"
+        role="tabpanel"
+        id="usage-panel-balance"
+        aria-labelledby="usage-tab-balance"
+        hidden={tab !== 'balance'}
+      >
+        <section className="usage-section">
+          <div className="usage-section-head">
+            <CreditCard size={14} />
+            <p className="usage-section-title">{t('usage.balance.title')}</p>
+          </div>
+          <div className="balance-card">
+            <div className="balance-main">
+              <span className="balance-value">{credits ? formatUsd(credits.balanceUsd) : t('usage.balance.notLoaded')}</span>
+              <span className="balance-label">{t('usage.balance.available')}</span>
+            </div>
+            <div className="balance-meta">
+              <span>{t('usage.balance.model')}</span>
+              <strong>{isAdmin ? t('usage.balance.modelAdmin') : t('usage.balance.modelPrepaid')}</strong>
+              <span>{t('usage.balance.today')}</span>
+              <strong>{formatUsd(todayCharge)}</strong>
+            </div>
+          </div>
+          {!credits && <p className="hint">{t('usage.balance.notLoadedHint')}</p>}
+          <div className="pack-grid">
+            {CREDIT_PACKS.map((pack) => (
+              <button key={pack} className="pack-btn" onClick={() => void requestPack(pack)}>
+                <span className="pack-plus" aria-hidden="true">
+                  +
+                </span>
+                <span className="pack-label">{t('usage.topUp.pack', { amount: formatUsd(pack) })}</span>
+              </button>
+            ))}
+          </div>
+          <div className="custom-topup">
+            <label className="custom-topup-label" htmlFor="custom-amount">
+              {t('usage.topUp.other')}
+            </label>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                id="custom-amount"
+                className="field"
+                type="number"
+                inputMode="decimal"
+                min={MIN_TOP_UP_USD}
+                max={MAX_TOP_UP_USD}
+                step="0.5"
+                placeholder={`${formatUsd(MIN_TOP_UP_USD)} – ${formatUsd(MAX_TOP_UP_USD)}`}
+                value={customAmount}
+                onChange={(event) => setCustomAmount(event.target.value)}
+              />
+              <button
+                className="btn"
+                disabled={!customAmount}
+                onClick={() => {
+                  void requestPack(Number(customAmount))
+                  setCustomAmount('')
+                }}
+              >
+                {t('usage.topUp.submit')}
+              </button>
+            </div>
+          </div>
+          <p className="hint">
+            {t('usage.topUp.hint', {
+              min: formatUsd(MIN_TOP_UP_USD),
+              max: formatUsd(MAX_TOP_UP_USD),
+            })}
+          </p>
+        </section>
 
-      <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn ghost" onClick={onClose}>
-          Cerrar
-        </button>
+        <section className="usage-section">
+          <div className="usage-section-head">
+            <RefreshCw size={14} />
+            <p className="usage-section-title">{t('usage.auto.title')}</p>
+          </div>
+          <div className="settings-card">
+            <label className="switch-row">
+              <input
+                type="checkbox"
+                checked={settings.autoTopUp}
+                onChange={(event) => setSettings({ ...settings, autoTopUp: event.target.checked })}
+              />
+              <span>{t('usage.auto.enable')}</span>
+            </label>
+            <div className="settings-fields">
+              <label className="field-label">
+                {t('usage.auto.whenBelow')}
+                <input
+                  className="field"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  aria-label={t('usage.auto.threshold')}
+                  value={settings.thresholdUsd}
+                  onChange={(event) => setSettings({ ...settings, thresholdUsd: Number(event.target.value) })}
+                />
+              </label>
+              <label className="field-label">
+                {t('usage.auto.topUpBy')}
+                <input
+                  className="field"
+                  type="number"
+                  min={MIN_AUTO_TOP_UP_USD}
+                  step={0.5}
+                  aria-label={t('usage.auto.amount')}
+                  value={settings.topUpUsd}
+                  onChange={(event) => setSettings({ ...settings, topUpUsd: Number(event.target.value) })}
+                />
+              </label>
+              <button className="btn" disabled={Boolean(settingsError)} onClick={() => void saveSettings()}>
+                {t('usage.auto.save')}
+              </button>
+              {proxyEnabled && (
+                <button className="btn ghost" onClick={() => void openPortal()}>
+                  {t('usage.auto.saveCard')}
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="hint">
+            {t('usage.auto.hint', {
+              min: formatUsd(MIN_AUTO_TOP_UP_USD),
+              first: formatUsd(CREDIT_PACKS[0]),
+            })}
+          </p>
+          {settingsError && (
+            <p className="hint tone-danger" role="status">
+              {settingsError}
+            </p>
+          )}
+          {feedback && (
+            <p className={`hint ${feedback.tone === 'error' ? 'tone-danger' : 'tone-ok'}`} role="status">
+              {feedback.text}
+            </p>
+          )}
+        </section>
+
+        <p className="hint">
+          {t('usage.footer', {
+            reads: formatUsd(RATE_READS_PER_100K),
+            writes: formatUsd(RATE_WRITES_PER_100K),
+            deletes: formatUsd(RATE_DELETES_PER_100K),
+          })}
+        </p>
+      </div>
+
+      <div
+        className="usage-panel"
+        role="tabpanel"
+        id="usage-panel-diagnostics"
+        aria-labelledby="usage-tab-diagnostics"
+        hidden={tab !== 'diagnostics'}
+      >
+        <section className="usage-section">
+          <div className="usage-section-head">
+            <HardDrive size={14} />
+            <p className="usage-section-title">{t('usage.diagnostics.title')}</p>
+          </div>
+          <div className="stat-grid">
+            <Stat
+              label={t('usage.diagnostics.heap')}
+              value={
+                diagnostics.usedHeap === null
+                  ? t('usage.diagnostics.heapUnavailable')
+                  : `${formatBytes(diagnostics.usedHeap)}${diagnostics.heapLimit ? ` ${t('usage.diagnostics.heapOf', { limit: formatBytes(diagnostics.heapLimit) })}` : ''}`
+              }
+              icon={<Gauge size={14} />}
+            />
+            <Stat label={t('usage.diagnostics.domNodes')} value={diagnostics.domNodes.toLocaleString(localeTag())} icon={<Activity size={14} />} />
+            <Stat label={t('usage.diagnostics.openNotes')} value={String(diagnostics.openNoteSessions)} icon={<FileText size={14} />} />
+            <Stat
+              label={t('usage.diagnostics.pendingBodies')}
+              value={
+                diagnostics.pendingBodies.count === 0
+                  ? t('usage.diagnostics.pendingNone')
+                  : t('usage.diagnostics.pendingListed', {
+                      count: diagnostics.pendingBodies.count,
+                      size: formatBytes(diagnostics.pendingBodies.characters * 2),
+                    })
+              }
+              icon={<Database size={14} />}
+            />
+            <Stat
+              label={t('usage.diagnostics.cache')}
+              value={diagnostics.storage ? formatBytes(diagnostics.storage.usage) : t('usage.diagnostics.cacheUnavailable')}
+              icon={<HardDrive size={14} />}
+            />
+          </div>
+          <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+            {diagnostics.pendingBodies.count > 0 && (
+              <button className="btn ghost" onClick={onMigrateBodies}>
+                {t('usage.diagnostics.migrate')}
+              </button>
+            )}
+            <button className="btn ghost" onClick={onRefreshDiagnostics}>
+              <RefreshCw size={13} />
+              {t('usage.diagnostics.refresh')}
+            </button>
+          </div>
+        </section>
       </div>
     </Modal>
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="usage-row">
-      <span className="usage-label">{label}</span>
-      <span className="usage-value">{value}</span>
-    </div>
-  )
-}
-
-function QuotaBar({
+/** A quota meter: icon, label, used/limit and a bar that carries the state. */
+function QuotaMeter({
   label,
+  icon,
   used,
   limit,
   percent,
   warning,
 }: {
   label: string
+  icon: React.ReactNode
   used: string
   limit: string
   percent: number
   warning: 'none' | 'soft' | 'hard'
 }) {
+  const width = Math.max(0, Math.min(100, Math.round(percent * 100)))
+  const t = useT()
   return (
-    <div className="quota-line">
-      <div className="quota-head">
-        <span className="usage-label">{label}</span>
-        <span className="usage-value">
+    <div className={`quota-card${warning === 'hard' ? ' is-over' : warning === 'soft' ? ' is-soft' : ''}`}>
+      <div className="quota-card-head">
+        <span className="quota-icon">{icon}</span>
+        <span className="quota-label">{label}</span>
+        <span className="quota-value">
           {used} / {limit}
-          {warning === 'hard' ? ' · sin cuota' : warning === 'soft' ? ' · cerca del tope' : ''}
         </span>
       </div>
       <div
@@ -436,13 +597,104 @@ function QuotaBar({
         aria-label={label}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.round(percent * 100)}
+        aria-valuenow={width}
       >
-        <div
-          className={`quota-fill${warning === 'hard' ? ' is-over' : warning === 'soft' ? ' is-soft' : ''}`}
-          style={{ width: `${Math.round(percent * 100)}%` }}
-        />
+        <div className="quota-fill" style={{ width: `${width}%` }} />
       </div>
+      <span className="quota-note">
+        {warning === 'hard'
+          ? t('usage.quota.over')
+          : warning === 'soft'
+            ? t('usage.quota.near')
+            : t('usage.quota.used', { percent: width })}
+      </span>
+    </div>
+  )
+}
+
+/** The cost lines the chart draws, in stack order. `total` is the sum, not a line. */
+type CostKey = Exclude<keyof CostBreakdown, 'total'>
+
+const COST_KEYS: CostKey[] = ['writes', 'reads', 'deletes', 'storage', 'pitr', 'backup', 'egress']
+
+/** One stacked bar plus chips: the charge is a picture, not a table. */
+function CostChart({ charge, cost }: { charge: CostBreakdown; cost: CostBreakdown }) {
+  const t = useT()
+  const total = charge.total
+  const margin = Math.max(0, charge.total - cost.total)
+  const segments = COST_KEYS.filter((key) => charge[key] > 0)
+  const labelOf = (key: CostKey) => t(`usage.cost.${key}`)
+
+  if (segments.length === 0 || total <= 0) {
+    return (
+      <div className="cost-chart">
+        <div className="cost-empty">
+          <span className="cost-empty-dot" />
+          <span>{t('usage.cost.none')}</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="cost-chart">
+      <div
+        className="cost-stack"
+        role="img"
+        aria-label={t('usage.cost.title', { amount: formatUsd(total) })}
+      >
+        {segments.map((key) => {
+          const pct = (charge[key] / total) * 100
+          const label = labelOf(key)
+          return (
+            <span
+              key={key}
+              className={`cost-seg cost-${key}`}
+              style={{ width: `${pct}%` }}
+              title={`${label}: ${formatUsd(charge[key])}`}
+            >
+              {pct >= 16 && <span className="cost-seg-label">{label}</span>}
+            </span>
+          )
+        })}
+      </div>
+      <div className="cost-legend">
+        {segments.map((key) => (
+          <span className={`cost-chip cost-${key}`} key={key}>
+            <span className="cost-dot" />
+            <span className="cost-chip-label">{labelOf(key)}</span>
+            <span className="cost-chip-value">{formatUsd(charge[key])}</span>
+          </span>
+        ))}
+      </div>
+      {margin > 0 && (
+        <p className="cost-margin-note">
+          {t('usage.cost.margin', { amount: formatUsd(margin) })}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** A small stat card: big value, quiet label, optional icon. */
+function Stat({
+  label,
+  value,
+  icon,
+  accent = false,
+}: {
+  label: string
+  value: string
+  icon?: React.ReactNode
+  accent?: boolean
+}) {
+  return (
+    <div className={`stat-card${accent ? ' is-accent' : ''}`}>
+      <span className="stat-card-head">
+        {icon && <span className="stat-icon">{icon}</span>}
+        <span className="stat-label">{label}</span>
+      </span>
+      <span className="stat-value">{value}</span>
     </div>
   )
 }

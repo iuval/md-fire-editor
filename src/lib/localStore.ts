@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.ts'
 import type { Folder, NewNoteInput, Note, NoteKind } from './notes'
 import type { SortMode } from './sorting'
 
@@ -217,7 +218,7 @@ export function newLocalNoteDraft(
   id: string,
   kind: NoteKind = 'note'
 ): Note {
-  const title = kind === 'canvas' ? 'Canvas sin título' : 'Sin título'
+  const title = kind === 'canvas' ? t('app.untitledCanvas') : t('app.untitled')
   return buildNote(uid, folder, id, kind, title, '')
 }
 
@@ -229,7 +230,7 @@ export async function createLocalNote(
 ): Promise<Note> {
   const data = read()
   const noteId = id ?? newId('note')
-  const note = buildNote(uid, folder, noteId, kind, kind === 'canvas' ? 'Canvas sin título' : 'Sin título', '')
+  const note = buildNote(uid, folder, noteId, kind, kind === 'canvas' ? t('app.untitledCanvas') : t('app.untitled'), '')
   const body = kind === 'canvas' ? EMPTY_CANVAS : ''
   data.notes.push(note)
   data.bodies[noteId] = body
@@ -310,7 +311,7 @@ export function newLocalFolder(
   return {
     id,
     ownerId: uid,
-    name: name.trim().slice(0, 120) || 'Carpeta',
+    name: name.trim().slice(0, 120) || t('app.folderName'),
     parentId,
     sort: options.sort ?? 'manual',
     order: options.order ?? 0,
@@ -345,7 +346,7 @@ export async function renameLocalFolder(folderId: string, name: string): Promise
   if (index === -1) return
   data.folders[index] = {
     ...data.folders[index],
-    name: name.trim().slice(0, 120) || 'Carpeta',
+    name: name.trim().slice(0, 120) || t('app.folderName'),
     updatedAt: nowSeconds(),
   }
   write(data)

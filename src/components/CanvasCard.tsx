@@ -5,6 +5,7 @@ import type { CanvasFileRef } from '../lib/canvas/files'
 import { parseCardMarkdown, type Block, type Inline } from '../lib/canvas/markdownCard'
 import type { Rect } from '../lib/canvas/geometry'
 import { canvasColor } from '../lib/canvas/colors'
+import { useT } from '../i18n/index.ts'
 
 /**
  * One card. Presentation only: the surface owns selection, dragging, resizing
@@ -157,8 +158,9 @@ function BlockView({ block }: { block: Block }) {
 /** Memoised on purpose: 60 cards re-render on every drag frame, and re-parsing
  * 21 KB of markdown each time would make a move feel like a slideshow. */
 export const CardMarkdown = memo(function CardMarkdown({ source }: { source: string }) {
+  const t = useT()
   const blocks = parseCardMarkdown(source)
-  if (blocks.length === 0) return <p className="canvas-placeholder">Tarjeta vacía</p>
+  if (blocks.length === 0) return <p className="canvas-placeholder">{t('canvas.emptyCard')}</p>
   return (
     <div className="canvas-md">
       {blocks.map((block, index) => (
@@ -251,6 +253,7 @@ export function CanvasCard({
   onStartEditLabel,
   onOpenFile,
 }: CanvasCardProps) {
+  const t = useT()
   const isGroup = node.type === 'group'
   const style: React.CSSProperties = {
     transform: `translate(${rect.x}px, ${rect.y}px)`,
@@ -291,7 +294,7 @@ export function CanvasCard({
           {editingLabel ? (
             <LabelEditor initial={node.label ?? ''} onCommit={onCommitLabel} />
           ) : (
-            <span data-group-label={node.id}>{node.label || 'Grupo'}</span>
+            <span data-group-label={node.id}>{node.label || t('canvas.menu.group')}</span>
           )}
         </div>
       ) : node.type === 'text' ? (
@@ -304,13 +307,13 @@ export function CanvasCard({
         <div className="canvas-file">
           <FileText size={16} className="canvas-file-icon" />
           <div className="canvas-file-body">
-            <span className="canvas-file-title">{resolved?.title ?? node.file ?? 'Archivo'}</span>
+            <span className="canvas-file-title">{resolved?.title ?? node.file ?? t('canvas.menu.card')}</span>
             {node.subpath && <span className="canvas-file-sub">{node.subpath}</span>}
             {!resolved && (
               <span className="canvas-file-missing">
                 {node.file?.match(/\.(png|jpe?g|gif|webp|svg|pdf|mp3|mp4|wav)$/i)
-                  ? 'adjunto no guardado'
-                  : 'nota no encontrada'}
+                  ? t('canvas.attachmentMissing')
+                  : t('canvas.noteMissing')}
               </span>
             )}
           </div>
@@ -319,12 +322,12 @@ export function CanvasCard({
         <div className="canvas-link">
           <Link2 size={16} className="canvas-file-icon" />
           <div className="canvas-file-body">
-            <span className="canvas-file-title">{node.url ?? 'Enlace'}</span>
+            <span className="canvas-file-title">{node.url ?? t('canvas.menu.openLink')}</span>
           </div>
           {node.url && (
             <button
               className="icon-btn icon-btn--sm"
-              aria-label="Abrir enlace"
+              aria-label={t('canvas.menu.openLink')}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation()

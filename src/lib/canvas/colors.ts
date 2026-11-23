@@ -7,13 +7,14 @@
  * a neutral fallback, and anything else is handed to the browser as a color.
  */
 
-export const CANVAS_PRESETS: { id: string; label: string }[] = [
-  { id: '1', label: 'Rojo' },
-  { id: '2', label: 'Naranja' },
-  { id: '3', label: 'Amarillo' },
-  { id: '4', label: 'Verde' },
-  { id: '5', label: 'Cian' },
-  { id: '6', label: 'Violeta' },
+/** Ids only: the label shown in the menu comes from the catalogue. */
+export const CANVAS_PRESETS: { id: string }[] = [
+  { id: '1' },
+  { id: '2' },
+  { id: '3' },
+  { id: '4' },
+  { id: '5' },
+  { id: '6' },
 ]
 
 export function canvasColor(color: string | undefined): string | undefined {

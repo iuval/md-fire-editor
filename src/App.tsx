@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react'
+import { t } from './i18n/index.ts'
 
 /**
  * Boot shell. Nothing here may reach Firebase through a static import — the
@@ -14,7 +15,7 @@ const AppTree = lazy(() => import('./AppTree'))
 
 export default function App() {
   return (
-    <Suspense fallback={<div className="empty">Cargando…</div>}>
+    <Suspense fallback={<div className="empty">{t('common.loading')}</div>}>
       <AppTree />
     </Suspense>
   )

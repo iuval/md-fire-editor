@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { ArrowDownAZ, CalendarClock, CalendarPlus, Check, GripVertical, X } from 'lucide-react'
 import { Modal } from './Modal'
 import { isSortMode, sortLabel, type SortMode } from '../lib/sorting'
 import { useT } from '../i18n/index.ts'
@@ -18,43 +18,56 @@ export function SortDialog({ target, current, onChoose, onClose }: SortDialogPro
   return (
     <Modal labelledBy="sort-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h2 id="sort-heading">Ordenar «{target}»</h2>
+          <h2 id="sort-heading">{t('sortDialog.heading', { name: target })}</h2>
           <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
             <X size={15} />
           </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {MODES.map((mode) => (
-            <button
-              key={mode}
-              className="share-option"
-              aria-pressed={current === mode}
-              onClick={() => {
-                if (!isSortMode(mode)) return
-                onChoose(mode)
-                onClose()
-              }}
-            >
-              <span>
-                <span className="share-option-title">{sortLabel(mode)}</span>
-                <span className="share-option-desc" style={{ display: 'block' }}>
-                  {mode === 'manual'
-                    ? t('sortDialog.manualHint')
-                    : mode === 'updated'
-                      ? t('sortDialog.updatedHint')
-                      : mode === 'created'
-                        ? t('sortDialog.createdHint')
-                        : t('sortDialog.nameHint')}
+        <div className="sort-list">
+          {MODES.map((mode) => {
+            const active = current === mode
+            return (
+              <button
+                key={mode}
+                className={`sort-card${active ? ' is-current' : ''}`}
+                aria-pressed={active}
+                onClick={() => {
+                  if (!isSortMode(mode)) return
+                  onChoose(mode)
+                  onClose()
+                }}
+              >
+                <span className="sort-icon" aria-hidden="true">
+                  {mode === 'name' ? (
+                    <ArrowDownAZ size={16} />
+                  ) : mode === 'created' ? (
+                    <CalendarPlus size={16} />
+                  ) : mode === 'updated' ? (
+                    <CalendarClock size={16} />
+                  ) : (
+                    <GripVertical size={16} />
+                  )}
                 </span>
-              </span>
-            </button>
-          ))}
+                <span className="sort-text">
+                  <span className="sort-title">{sortLabel(mode)}</span>
+                  <span className="sort-desc">
+                    {mode === 'manual'
+                      ? t('sortDialog.manualHint')
+                      : mode === 'updated'
+                        ? t('sortDialog.updatedHint')
+                        : mode === 'created'
+                          ? t('sortDialog.createdHint')
+                          : t('sortDialog.nameHint')}
+                  </span>
+                </span>
+                {active && <Check size={14} className="sort-check" aria-hidden="true" />}
+              </button>
+            )
+          })}
         </div>
 
-        <p className="hint">
-          Las carpetas creadas dentro de esta heredan el orden, salvo que les pongas uno propio.
-        </p>
+        <p className="hint">{t('sortDialog.inheritHint')}</p>
     </Modal>
   )
 }

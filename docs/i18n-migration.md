@@ -1,8 +1,12 @@
 # i18n migration
 
-Status: **in progress**. The runtime, the English catalogue and the shell (sign-in,
-sidebar, rail, tabs, pane bar, crash screen) are migrated. 110 strings in 13 files are
-still inline Spanish.
+Status: **done**. The runtime and the English catalogue cover the whole app: sign-in,
+sidebar, rail, tabs, pane bar, crash screen, the menus and every dialog (usage, move,
+share, agents, sort, rename tag, theme, guest draft), the editor chrome, the desktop
+link page and the canvas. No user-facing string is left inline in Spanish.
+
+What stays in Spanish on purpose: code comments and developer-only invariant messages
+(they never reach the UI).
 
 ## How it works
 
@@ -40,23 +44,29 @@ plural(n, { one: '{count} note', other: '{count} notes' })
 - `aria-label` and `title` are user-visible: they take `t()` too.
 - Comments stay in Spanish; only string literals and JSX text are user-facing.
 
-## Remaining, by file
+## Where the strings live
 
-| File | Strings |
-|---|---|
-| `src/AppTree.tsx` | 33 |
-| `src/components/CanvasSurface.tsx` | 23 |
-| `src/components/UsageDialog.tsx` | 22 |
-| `src/components/NotePane.tsx` | 10 |
-| `src/components/NotePanels.tsx` | 6 |
-| `src/components/CanvasCard.tsx` | 6 |
-| `src/DesktopLink.tsx` | 4 |
-| `src/lib/vault.ts` | 1 |
-| `src/lib/errors.ts` | 1 |
-| `src/lib/collab/provider.ts` | 1 |
-| `src/lib/canvas/model.ts` | 1 |
-| `src/firebase.ts` | 1 |
-| `src/components/Modal.tsx` | 1 |
+- `src/i18n/en.ts` is the only catalogue. Menus, dialogs and the shell read from it
+  through `t()`/`useT()`; `aria-label`, `title` and `placeholder` go through it too.
+- `src/DesktopLink.tsx` (the desktop handshake page) is fully migrated and lazy-loads
+  its own copy, so it never drags Firebase into the boot chunk.
+- Canvas colours, connection labels and property fields all use catalogue keys.
+
+## Menu copy
+
+Menus are read while the pointer is already moving, so they carry no prose:
+
+- One word per item wherever the icon and the menu title make it unambiguous
+  (`Share`, `Rename`, `Order`, `Delete`). Two words only when the pair is needed
+  (`New note`, `New folder`, `Move up`, `Sign out`).
+- No second line under an item and no subtitle under the menu title: a menu that
+  needs a sentence is a menu with a bad label.
+- No section headers. Groups are separated by a divider (`separatorBefore`), which
+  costs 9px instead of a heading row.
+- A disabled item may carry a hover `title` for the reason; nothing else is hidden
+  in a tooltip.
+- The one exception is the canvas: it is a spatial surface, so its menu keeps the
+  object name as its title (`Card`, `Connection`, `Canvas`).
 
 ## Guard on the boot chunk
 

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useT } from './i18n/index.ts'
 import { useAuth } from './hooks/useFirebase'
 import { handshakeUrl, readDesktopLinkParams, refreshTokenOf } from './lib/desktopLink'
 
@@ -13,6 +14,7 @@ import { handshakeUrl, readDesktopLinkParams, refreshTokenOf } from './lib/deskt
  * incluir Firebase (ver `tests/bundle-budget.test.ts`).
  */
 export default function DesktopLink() {
+  const t = useT()
   const request = readDesktopLinkParams(window.location.search)
   const { user, loading, error: authError, doGoogleSignIn } = useAuth()
   const [busy, setBusy] = useState(false)
@@ -21,11 +23,8 @@ export default function DesktopLink() {
 
   if (!request) {
     return (
-      <Shell title="Este enlace no sirve">
-        <p className="auth-sub">
-          Abrí la app de escritorio y tocá <strong>Entrar con mi cuenta</strong>: el enlace se
-          genera solo, con el puerto y el código de esta conexión.
-        </p>
+      <Shell title={t('desktop.invalidLink')}>
+        <p className="auth-sub">{t('desktop.invalidLinkBody')}</p>
       </Shell>
     )
   }
@@ -42,7 +41,7 @@ export default function DesktopLink() {
         token = refreshTokenOf(fresh)
       }
       if (!token) {
-        throw new Error('No pude leer el token de la sesión. Cerrá sesión y volvé a entrar.')
+        throw new Error(t('desktop.missingToken'))
       }
 
       const response = await fetch(handshakeUrl(request.port), {
@@ -59,7 +58,7 @@ export default function DesktopLink() {
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { error?: string } | null
         throw new Error(
-          data?.error ?? `La app de escritorio rechazó la conexión (${response.status}).`
+          data?.error ?? t('desktop.rejected', { status: response.status })
         )
       }
       setDone(true)
@@ -72,32 +71,26 @@ export default function DesktopLink() {
 
   if (done) {
     return (
-      <Shell title="Listo, cuenta conectada">
-        <p className="auth-sub">
-          Volvé a <strong>FireMD Sync</strong>: ya está sincronizando con tu cuenta. Podés cerrar
-          esta pestaña.
-        </p>
+      <Shell title={t('desktop.connected')}>
+        <p className="auth-sub">{t('desktop.connectedBody')}</p>
       </Shell>
     )
   }
 
   if (loading) {
     return (
-      <Shell title="Conectar FireMD Sync">
-        <p className="auth-sub">Cargando…</p>
+      <Shell title={t('desktop.connectTitle')}>
+        <p className="auth-sub">{t('desktop.loading')}</p>
       </Shell>
     )
   }
 
   if (!user) {
     return (
-      <Shell title="Conectar FireMD Sync">
-        <p className="auth-sub">
-          Entrá con la misma cuenta que usás en el sitio. Después volvés a la app y queda
-          conectada.
-        </p>
+      <Shell title={t('desktop.connectTitle')}>
+        <p className="auth-sub">{t('desktop.signInBody')}</p>
         <button className="btn auth-btn" onClick={() => void doGoogleSignIn()}>
-          Entrar con Google
+          {t('desktop.signIn')}
         </button>
         {authError && <p className="hint tone-danger">{authError}</p>}
       </Shell>
@@ -105,19 +98,15 @@ export default function DesktopLink() {
   }
 
   return (
-    <Shell title="Conectar FireMD Sync">
+    <Shell title={t('desktop.connectTitle')}>
       <p className="auth-sub">
-        Vas a conectar la app de escritorio con <strong>{user.email ?? user.uid}</strong>. La app
-        queda con tu sesión; el sitio no cambia.
+        {t('desktop.connectBody', { email: user.email ?? user.uid })}
       </p>
       <button className="btn auth-btn" onClick={() => void connect()} disabled={busy}>
-        {busy ? 'Conectando…' : 'Conectar la app'}
+        {busy ? t('desktop.busy') : t('desktop.connect')}
       </button>
       {error && <p className="hint tone-danger">{error}</p>}
-      <p className="hint">
-        Si dice que no puede conectar, la app se cerró o se venció el plazo: volvé a la app y
-        tocá <strong>Entrar con mi cuenta</strong> otra vez.
-      </p>
+      <p className="hint">{t('desktop.retryHint')}</p>
     </Shell>
   )
 }

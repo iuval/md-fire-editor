@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { isChangeOrigin } from '@tiptap/extension-collaboration'
 import { Loader2 } from 'lucide-react'
+import { useT } from '../i18n/index.ts'
 import type { ProviderStatus, SyncStats } from '../lib/collab/provider'
 import { acquireNoteSession } from '../lib/collab/noteSession'
 import type { AwarenessUser, CollabUser } from '../lib/collab/awareness'
@@ -63,7 +64,7 @@ export function CollaborativeEditor({
   placeholder,
   focusSignal = 0,
 }: CollaborativeEditorProps) {
-  const [ready, setReady] = useState(false)
+  const t = useT()
   const [focused, setFocused] = useState(false)
   const changeRef = useRef(onMarkdownChange)
   useEffect(() => {
@@ -149,7 +150,6 @@ export function CollaborativeEditor({
         // Seeding fires `update` too. Emitting that echo made every *open* bump
         // `updatedAt`, reordering the note inside its folder.
         emitter.adopt(markdownOf(instance))
-        setReady(true)
       },
       onUpdate: ({ transaction }) => {
         // A Yjs-originated change comes from another view (a split showing the
@@ -161,6 +161,12 @@ export function CollaborativeEditor({
     },
     [session, userInfo]
   )
+
+  // `useEditor` builds the instance in a `useState` initialiser, so `onCreate`
+  // fires during render — setting state from there warns ("update on a component
+  // that hasn't mounted yet"). "Ready" is just "the instance exists", so derive
+  // it: no render-phase update, no extra commit.
+  const ready = Boolean(editor)
 
   // Reconcile external writes (agent CLI, another device, an import). The
   // shared document has one writer: if every view applied the note's markdown,
@@ -218,11 +224,11 @@ export function CollaborativeEditor({
             pointerEvents: 'none',
           }}
         >
-          <Loader2 size={14} className="spin" /> Conectando…
+          <Loader2 size={14} className="spin" /> {t('editor.connecting')}
         </div>
       )}
       {!editable && (
-        <p className="readonly-note">Solo lectura</p>
+        <p className="readonly-note">{t('editor.readOnly')}</p>
       )}
       <EditorContent editor={editor} />
       {isMobile && editable && editor && <EditorToolbar editor={editor} visible={focused} />}

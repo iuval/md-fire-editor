@@ -260,7 +260,7 @@ describe('<CollaborativeEditor />', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Solo lectura')
+    expect(container.textContent).toContain('Read only')
     expect(container.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('false')
   })
 })

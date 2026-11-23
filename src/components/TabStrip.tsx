@@ -203,7 +203,7 @@ export function TabStrip({
       <div
         className="tabbar-tabs"
         role="tablist"
-        aria-label="Archivos abiertos"
+        aria-label={t('tabs.listLabel')}
         ref={listRef}
         onDragOver={(event) => {
           if (!onDropTab || !currentTabDrag()) return

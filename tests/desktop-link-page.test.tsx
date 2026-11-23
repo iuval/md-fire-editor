@@ -69,14 +69,14 @@ describe('DesktopLink', () => {
   it('sin los parámetros de la app avisa que el enlace no sirve', () => {
     window.history.replaceState({}, '', '/')
     mount()
-    expect(host!.textContent).toContain('Este enlace no sirve')
+    expect(host!.textContent).toContain('This link does not work')
   })
 
   it('sin sesión ofrece entrar con Google', () => {
     window.history.replaceState({}, '', '/?desktop=51234&state=nonce')
     mount()
-    expect(host!.textContent).toContain('Conectar FireMD Sync')
-    expect(button('Entrar con Google')).toBeTruthy()
+    expect(host!.textContent).toContain('Connect FireMD Sync')
+    expect(button('Sign in with Google')).toBeTruthy()
   })
 
   it('con sesión manda el refresh token al puerto de la app', async () => {
@@ -89,7 +89,7 @@ describe('DesktopLink', () => {
     mount()
 
     await act(async () => {
-      button('Conectar la app').click()
+      button('Connect the app').click()
     })
 
     expect(calls).toHaveLength(1)
@@ -100,7 +100,7 @@ describe('DesktopLink', () => {
       uid: 'u1',
       email: 'a@b.com',
     })
-    expect(host!.textContent).toContain('Listo, cuenta conectada')
+    expect(host!.textContent).toContain('Done, account connected')
   })
 
   it('si el puerto contesta con error, lo muestra', async () => {
@@ -114,10 +114,10 @@ describe('DesktopLink', () => {
     mount()
 
     await act(async () => {
-      button('Conectar la app').click()
+      button('Connect the app').click()
     })
 
-    expect(host!.textContent).toContain('rechazó la conexión')
+    expect(host!.textContent).toContain('rejected the connection')
   })
 
   it('sin refresh token en la sesión no manda nada', async () => {
@@ -130,7 +130,7 @@ describe('DesktopLink', () => {
     mount()
 
     await act(async () => {
-      button('Conectar la app').click()
+      button('Connect the app').click()
     })
 
     expect(calls).toHaveLength(0)

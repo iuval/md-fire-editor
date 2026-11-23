@@ -218,7 +218,7 @@ export function parseCanvas(text: string): ParseResult {
   } catch (error) {
     throw new CanvasParseError((error as Error).message)
   }
-  if (!isRecord(data)) throw new CanvasParseError('el canvas no es un objeto JSON')
+  if (!isRecord(data)) throw new CanvasParseError('the canvas is not a JSON object')
 
   const seenNodes = new Set<string>()
   const seenEdges = new Set<string>()

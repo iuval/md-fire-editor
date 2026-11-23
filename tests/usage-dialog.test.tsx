@@ -62,6 +62,16 @@ function mount(
   return { host: document.body, onUpdateCredits, onRequestTopUp }
 }
 
+/** Tabs hide the panels they do not own, so a test has to pick one first. */
+function clickTab(host: HTMLElement, name: string) {
+  const tab = [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+    (el) => el.textContent?.trim() === name
+  )
+  if (!tab) throw new Error(`no encontré la pestaña "${name}"`)
+  act(() => tab.click())
+  return tab
+}
+
 function clickText(host: HTMLElement, text: string) {
   const button = [...host.querySelectorAll('button')].find((el) =>
     el.textContent?.includes(text)
@@ -85,32 +95,52 @@ afterEach(() => {
 describe('diálogo de uso', () => {
   it('muestra la cuota diaria y el uso del día', () => {
     const { host } = mount()
-    expect(host.textContent).toContain('Cuota diaria')
-    expect(host.textContent).toContain('Operaciones')
+    expect(host.textContent).toContain('Daily quota')
+    expect(host.textContent).toContain('Operations')
     expect(host.textContent).toContain('20.0 MB')
-    expect(host.textContent).toContain(`${FREE_TIER.opsPerDay.toLocaleString('es')}`)
+    expect(host.textContent).toContain(`${FREE_TIER.opsPerDay.toLocaleString('en-US')}`)
     expect(host.textContent).toContain('2026-11-22')
   })
 
   it('muestra la cuenta admin sin tope ni fee', () => {
     const { host } = mount({ isAdmin: true })
-    expect(host.textContent).toContain('Cuota (admin)')
-    expect(host.textContent).toContain('Sin límite')
-    expect(host.textContent).toContain('Admin (sin cargos)')
+    expect(host.textContent).toContain('Quota (admin)')
+    expect(host.textContent).toContain('No limit')
+    expect(host.textContent).toContain('Admin')
     expect(host.textContent).toContain('$0.00')
+  })
+
+  it('reparte el contenido en tres pestañas', () => {
+    const { host } = mount()
+    const tabs = [...host.querySelectorAll<HTMLElement>('[role="tab"]')]
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Usage', 'Balance', 'Diagnostics'])
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true')
+
+    const panels = [...host.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+    expect(panels).toHaveLength(3)
+    expect(panels[0].hidden).toBe(false)
+    expect(panels[1].hidden).toBe(true)
+    expect(panels[2].hidden).toBe(true)
+
+    clickTab(host, 'Balance')
+    expect(panels[0].hidden).toBe(true)
+    expect(panels[1].hidden).toBe(false)
+    expect(panels[1].textContent).toContain('Prepaid balance')
   })
 
   it('pide un pack de recarga', () => {
     const { host, onRequestTopUp } = mount()
-    clickText(host, 'Recargar $1')
+    clickTab(host, 'Balance')
+    clickText(host, 'Top up $1')
     expect(onRequestTopUp).toHaveBeenCalledWith(1)
   })
 
   it('guarda la configuración de auto top-up', () => {
     const { host, onUpdateCredits } = mount()
+    clickTab(host, 'Balance')
     const checkbox = host.querySelector('input[type="checkbox"]') as HTMLInputElement
     act(() => checkbox.click())
-    clickText(host, 'Guardar')
+    clickText(host, 'Save')
     expect(onUpdateCredits).toHaveBeenCalledWith({
       thresholdUsd: 1,
       topUpUsd: 5,
@@ -120,15 +150,16 @@ describe('diálogo de uso', () => {
 
   it('no guarda una configuración inválida', () => {
     const { host, onUpdateCredits } = mount()
+    clickTab(host, 'Balance')
     const amount = host.querySelector<HTMLInputElement>(
-      '[aria-label="Monto de recarga automática"]'
+      '[aria-label="Auto top-up amount"]'
     )!
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     act(() => {
       setValue.call(amount, '1')
       amount.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    clickText(host, 'Guardar')
+    clickText(host, 'Save')
     expect(onUpdateCredits).not.toHaveBeenCalled()
   })
 })

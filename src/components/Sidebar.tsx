@@ -373,6 +373,7 @@ export function Sidebar({
           className="icon-btn icon-btn--sm"
           aria-label={t('sidebar.noteActions', { title })}
           title={t('sidebar.noteActions', { title })}
+          aria-haspopup="menu"
           onClick={(event) => onNoteMenu(note, menuPos(event.currentTarget))}
         >
           <MoreHorizontal size={14} />
@@ -457,10 +458,10 @@ export function Sidebar({
 
       <div className="file-list">
         <div className="file-tree">
-          {loading && <p className="hint" style={{ padding: '10px 8px' }}>Cargando…</p>}
+          {loading && <p className="hint" style={{ padding: '10px 8px' }}>{t('sidebar.loading')}</p>}
 
           {!loading && notes.length === 0 && folders.length === 0 && (
-            <p className="hint" style={{ padding: '10px 8px' }}>Sin notas todavía.</p>
+            <p className="hint" style={{ padding: '10px 8px' }}>{t('sidebar.noNotes')}</p>
           )}
 
           {(() => {
@@ -506,9 +507,9 @@ export function Sidebar({
                       className="folder-toggle"
                       onClick={() => onToggleFolder(folder.id)}
                       aria-expanded={isOpenFolder}
-                      aria-label={`${node.path}: ${isOpenFolder ? 'ocultar' : 'mostrar'} contenido${
-                        isTarget ? '. Acá se crean los elementos nuevos' : ''
-                      }`}
+                      aria-label={`${node.path}: ${
+                        isOpenFolder ? t('sidebar.collapseFolder') : t('sidebar.expandFolder')
+                      }${isTarget ? `. ${t('sidebar.dropTarget')}` : ''}`}
                       style={{ paddingLeft: rowIndent(node.depth) }}
                     >
                       <ChevronRight size={12} className={`chev${isOpenFolder ? ' open' : ''}`} />
@@ -530,6 +531,7 @@ export function Sidebar({
                     <button
                       className="icon-btn icon-btn--sm"
                       aria-label={t('sidebar.folderActions', { name: folder.name })}
+                      aria-haspopup="menu"
                       onClick={(e) => onFolderMenu(folder, menuPos(e.currentTarget))}
                     >
                       <MoreHorizontal size={14} />
@@ -547,7 +549,7 @@ export function Sidebar({
                       }
                     >
                       {node.children.length === 0 && children.length === 0 && (
-                        <p className="tree-empty">Vacía</p>
+                        <p className="tree-empty">{t('sidebar.empty')}</p>
                       )}
                       {pinFirst(sortTree(node.children)).map((child) => renderNode(child))}
                       {children.map((note) => noteButton(note, rowIndent(node.depth + 1)))}
@@ -562,7 +564,7 @@ export function Sidebar({
 
           {rootNotes.length > 0 && folders.length > 0 && (
             <div className="sidebar-section">
-              <span className="sidebar-section-label">Sin carpeta</span>
+              <span className="sidebar-section-label">{t('sidebar.noFolder')}</span>
             </div>
           )}
 
@@ -604,7 +606,7 @@ export function Sidebar({
             <button
               className="notice-btn"
               onClick={() => setOpenNotice(openNotice === notice ? null : notice)}
-              aria-label={`Aviso: ${notice}`}
+              aria-label={t('notice.bell', { text: notice })}
               aria-expanded={openNotice === notice}
               title={notice}
             >
@@ -620,8 +622,8 @@ export function Sidebar({
                   setOpenNotice(null)
                   onDismissNotice?.()
                 }}
-                aria-label="Descartar aviso"
-                title="Descartar aviso"
+                aria-label={t('notice.dismiss')}
+                title={t('notice.dismiss')}
               >
                 <X size={13} />
               </button>
@@ -633,6 +635,7 @@ export function Sidebar({
           onClick={onAccountClick}
           aria-label={userName ? t('sidebar.accountOf', { name: userName }) : t('sidebar.account')}
           title={userName ? t('sidebar.accountOf', { name: userName }) : t('sidebar.account')}
+          aria-haspopup="menu"
         >
           {/* The same gear the collapsed rail uses: this is the preferences
               entry, not a row's "more" menu. */}

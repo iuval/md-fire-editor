@@ -74,6 +74,7 @@ export function SidebarRail({
             onClick={onAccountClick}
             aria-label={t('rail.account')}
             title={t('rail.account')}
+            aria-haspopup="menu"
           >
             <Settings size={15} />
           </button>

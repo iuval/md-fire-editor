@@ -74,7 +74,7 @@ export function ShareDialog({
     return () => {
       cancelled = true
     }
-  }, [members, names])
+  }, [members, names, t])
 
   const copy = async () => {
     try {
@@ -103,7 +103,7 @@ export function ShareDialog({
         setBusy(false)
       }
     },
-    []
+    [t]
   )
 
   const addByEmail = async () => {
@@ -211,16 +211,21 @@ export function ShareDialog({
                 {members.map(({ uid, role }) => {
                   const isOwner = role === 'owner'
                   return (
-                    <div className="member-row" key={uid}>
-                      <span className="avatar" style={{ width: 18, height: 18, fontSize: 9 }}>
+                    <div className="member-card" key={uid}>
+                      <span className="member-avatar" aria-hidden="true">
                         {(names[uid] ?? uid).slice(0, 1).toUpperCase()}
                       </span>
-                      <span className="member-name" title={uid}>
-                        {names[uid] ?? uid.slice(0, 8)}
-                        {uid === currentUid ? ` (${t('share.you')})` : ''}
-                      </span>
+                      <div className="member-main">
+                        <span className="member-name" title={uid}>
+                          {names[uid] ?? uid.slice(0, 8)}
+                          {uid === currentUid ? ` (${t('share.you')})` : ''}
+                        </span>
+                        <span className="member-role">
+                          {isOwner ? roleLabel('owner') : roleLabel(role)}
+                        </span>
+                      </div>
                       {isOwner ? (
-                        <span className="hint">{roleLabel('owner')}</span>
+                        <span className="role-pill is-owner">{roleLabel('owner')}</span>
                       ) : (
                         <>
                           <select
@@ -255,7 +260,7 @@ export function ShareDialog({
               <input
                 className="field"
                 type="email"
-                placeholder="persona@gmail.com"
+                placeholder={t('share.emailPlaceholder')}
                 value={email}
                 aria-label={t('share.addByEmail')}
                 onChange={(e) => setEmail(e.target.value)}
@@ -311,12 +316,13 @@ function AccessOption({
       onClick={onClick}
     >
       <span style={{ marginTop: 1, flexShrink: 0 }}>{icon}</span>
-      <span>
+      <span className="share-option-text">
         <span className="share-option-title">{title}</span>
         <span className="share-option-desc" style={{ display: 'block' }}>
           {description}
         </span>
       </span>
+      {active && <Check size={14} className="share-option-check" aria-hidden="true" />}
     </button>
   )
 }

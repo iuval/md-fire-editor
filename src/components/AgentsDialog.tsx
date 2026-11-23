@@ -132,10 +132,12 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
       ) : (
         <ul className="agent-list">
           {agents.map((agent) => (
-            <li key={agent.id} className="agent-row">
-              <Bot size={14} aria-hidden="true" />
+            <li key={agent.id} className="agent-card">
+              <span className="agent-avatar" aria-hidden="true">
+                <Bot size={15} />
+              </span>
               {editing === agent.id ? (
-                <>
+                <div className="agent-edit">
                   <input
                     className="field"
                     value={draft}
@@ -159,15 +161,18 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
                   <button className="icon-btn" onClick={() => setEditing(null)} aria-label={t('common.cancel')}>
                     <X size={14} />
                   </button>
-                </>
+                </div>
               ) : (
                 <>
-                  <span className="agent-name">{agent.name}</span>
-                  <span className="hint agent-meta">
-                    {agent.kind} · {since(agent.lastSeenAt)}
-                  </span>
+                  <div className="agent-main">
+                    <span className="agent-name">{agent.name}</span>
+                    <span className="agent-sub">
+                      <span className="agent-kind">{agent.kind}</span>
+                      <span className="agent-meta">{since(agent.lastSeenAt)}</span>
+                    </span>
+                  </div>
                   <button
-                    className="icon-btn"
+                    className="icon-btn icon-btn--sm"
                     onClick={() => startRename(agent)}
                     aria-label={t('agents.renameOf', { name: agent.name })}
                   >

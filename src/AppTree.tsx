@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FolderPlus, Hash, Link2, LogIn, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FilePlus, FolderPlus, Hash, Link2, LogIn, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { SidebarRail } from './components/SidebarRail'
 import { PaneBar } from './components/PaneBar'
@@ -44,7 +44,6 @@ import { flattenFolders, folderPath, sharedFolderOf } from './lib/folders'
 import { applyOrder, setFolderSort, setRootSort, subscribeUserSettings } from './lib/notes'
 import {
   DEFAULT_SORT,
-  sortLabel,
   moveOrder,
   nextOrder,
   orderKey,
@@ -137,9 +136,6 @@ const ACTIVE_KEY = 'firemd-active'
 const SIDEBAR_KEY = 'firemd-sidebar'
 const EXPANDED_KEY = 'firemd-folders'
 const PANES_KEY = 'firemd-panes'
-
-/** Shown instead of a split action once the pane budget is spent. */
-const SPLIT_LIMIT_LABEL = `Máximo de paneles (${MAX_PANES})`
 
 /** Tabs and panes as one tree: a pane is a split node's first child. */
 interface WorkspaceState {
@@ -358,7 +354,7 @@ function AppTree() {
           note.folderId ? `${folderPath(note.folderId, foldersById)}/` : ''
         }${safeFileName(note.title || t('app.untitled'))}.md`,
       })),
-    [notes, foldersById]
+    [notes, foldersById, t]
   )
 
   const [collapsed, setCollapsed] = useState(initialCollapsed)
@@ -685,7 +681,7 @@ function AppTree() {
       )
     )
     return () => offs.forEach((off) => off())
-  }, [orphanIdsKey, pendingKey, uid])
+  }, [orphanIdsKey, pendingKey, t, uid])
 
   useEffect(() => {
     setPresence([])
@@ -738,19 +734,19 @@ function AppTree() {
       (note) => (note.markdown ?? '') !== '' && note.markdownBytes === undefined
     )
     if (legacy.length === 0) return
-    setNotice(`Migrando ${legacy.length} cuerpos…`)
+    setNotice(t('notice.migrateStart', { count: legacy.length }))
     try {
       const { migrated, failed } = await migrateNoteBodies(legacy)
       setNotice(
         failed.length === 0
-          ? `Migrados ${migrated.length} cuerpos.`
-          : `Migrados ${migrated.length}. Fallaron ${failed.length}: revisá que las reglas estén desplegadas.`
+          ? t('notice.migrateDone', { count: migrated.length })
+          : t('notice.migrateDoneFailed', { count: migrated.length, failed: failed.length })
       )
     } catch {
-      setNotice('No se pudo migrar los cuerpos.')
+      setNotice(t('notice.migrateFailed'))
     }
     refreshDiagnostics()
-  }, [notes, refreshDiagnostics])
+  }, [notes, refreshDiagnostics, t])
 
   useEffect(() => {
     if (dialog.kind === 'usage') refreshDiagnostics()
@@ -799,9 +795,9 @@ function AppTree() {
       setNotice(`Exportadas ${vault.notes} notas en ${vault.fileName} (listo para abrir en Obsidian).`)
       track('export', user?.uid, { kind: 'vault' })
     } catch {
-      setNotice('No se pudo exportar el vault. Revisá la conexión.')
+      setNotice(t('notice.exportFailed'))
     }
-  }, [notes, folders, user?.uid])
+  }, [notes, folders, t, user?.uid])
 
   const handleExportNote = useCallback(
     async (note: Note) => {
@@ -933,18 +929,22 @@ function AppTree() {
       await flush()
       track('import', uid, { count: imported })
       const details: string[] = []
-      if (skippedJunk > 0) details.push(`${skippedJunk} archivos de sistema de macOS`)
-      if (skippedAttachments > 0) details.push(`${skippedAttachments} adjuntos (todavía no se guardan imágenes)`)
-      if (skippedLarge > 0) details.push(`${skippedLarge} notas de más de 250 KB`)
-      if (failedNotes > 0) details.push(`${failedNotes} no se pudieron guardar`)
+      if (skippedJunk > 0)
+        details.push(t('notice.importSkippedSystem', { count: skippedJunk }))
+      if (skippedAttachments > 0)
+        details.push(t('notice.importSkippedAttachments', { count: skippedAttachments }))
+      if (skippedLarge > 0)
+        details.push(t('notice.importSkippedLarge', { count: skippedLarge }))
+      if (failedNotes > 0)
+        details.push(t('notice.importSkippedFailed', { count: failedNotes }))
       setNotice(
         details.length > 0
-          ? `Importadas ${imported} notas. Omitidos: ${details.join(', ')}.`
-          : `Importadas ${imported} notas.`
+          ? t('notice.importDoneSkipped', { count: imported, details: details.join(', ') })
+          : t('notice.importDone', { count: imported })
       )
       if (first) selectNote(first)
     },
-    [addFolder, folders, selectNote, uid]
+    [addFolder, folders, foldersById, rootSort, selectNote, t, uid]
   )
 
   const focusPane = useCallback((paneId: string) => {
@@ -1063,7 +1063,7 @@ function AppTree() {
       const parentId = note.folderId ?? null
       const mode = resolveSort(parentId, foldersById, rootSort)
       if (mode !== 'manual') {
-        setNotice('Poné el orden de la carpeta en «Manual» para mover notas.')
+        setNotice(t('notice.orderNeedsManual'))
         return
       }
       const siblings = sortNotes(notes.filter((n) => (n.folderId ?? null) === parentId), 'manual')
@@ -1081,10 +1081,10 @@ function AppTree() {
           delete next[key]
           return next
         })
-        setNotice('No se pudo guardar el orden. Revisá la conexión.')
+        setNotice(t('notice.orderSaveFailed'))
       }
     },
-    [foldersById, notes, rootSort, uid]
+    [foldersById, notes, rootSort, t, uid]
   )
 
   const handleMoveFolder = useCallback(
@@ -1092,7 +1092,7 @@ function AppTree() {
       const parentId = folder.parentId ?? null
       const mode = resolveSort(parentId, foldersById, rootSort)
       if (mode !== 'manual') {
-        setNotice('Poné el orden del nivel en «Manual» para mover carpetas.')
+        setNotice(t('notice.orderNeedsManualFolder'))
         return
       }
       const siblings = sortFolders(folders.filter((f) => (f.parentId ?? null) === parentId), 'manual')
@@ -1108,10 +1108,10 @@ function AppTree() {
           delete next[key]
           return next
         })
-        setNotice('No se pudo guardar el orden. Revisá la conexión.')
+        setNotice(t('notice.orderSaveFailed'))
       }
     },
-    [folders, foldersById, rootSort]
+    [folders, foldersById, rootSort, t]
   )
 
   const handleRenameTag = useCallback(
@@ -1256,7 +1256,7 @@ function AppTree() {
             : panes[0].id
           return { layout: next, focusedPaneId: focused }
         })
-        setNotice('No se pudo crear la nota. Revisá la conexión.')
+        setNotice(t('notice.noteCreateFailed'))
       } finally {
         setPendingNotes((prev) => {
           if (!prev.has(noteId)) return prev
@@ -1266,7 +1266,7 @@ function AppTree() {
         })
       }
     },
-    [addNote, focusedPaneId, isMobile, layout, uid]
+    [addNote, focusedPaneId, isMobile, layout, t, uid, user?.uid]
   )
 
   /** Obsidian's "New canvas": an empty JSON Canvas document in a new tab. */
@@ -1356,7 +1356,7 @@ function AppTree() {
           dropOptimisticFolder(failedId)
           setNewFolderId((current) => (current === failedId ? null : current))
         }
-        setNotice('No se pudo crear la carpeta. Revisá la conexión.')
+        setNotice(t('notice.folderCreateFailed'))
         return null
       }
       // Without a reserved id the row only exists now.
@@ -1377,6 +1377,7 @@ function AppTree() {
       isMobile,
       reserveFolderId,
       rootSort,
+      t,
       uid,
     ]
   )
@@ -1424,24 +1425,24 @@ function AppTree() {
       try {
         await removeNote(note.id)
       } catch {
-        setNotice('No se pudo eliminar la nota. Revisá la conexión.')
+        setNotice(t('notice.noteDeleteFailed'))
       }
     },
-    [removeNote]
+    [removeNote, t]
   )
 
   const handleDeleteFolder = useCallback(
     async (folder: Folder) => {
       if (
         !window.confirm(
-          `¿Eliminar la carpeta "${folder.name}"? Sus notas vuelven a "Sin carpeta" y quedan privadas.`
+          t('menu.folder.deleteConfirm', { name: folder.name })
         )
       ) {
         return
       }
       await removeFolder(folder.id)
     },
-    [removeFolder]
+    [removeFolder, t]
   )
 
   const handleSignOut = useCallback(async () => {
@@ -1488,7 +1489,7 @@ function AppTree() {
         const items: MenuItem[] = []
         if (canManageShare || inherited) {
           items.push({
-            label: inherited ? 'Permisos de la carpeta…' : 'Compartir…',
+            label: inherited ? t('menu.note.permissions') : t('menu.note.share'),
             icon: <Link2 size={14} />,
             onSelect: () =>
               setDialog(
@@ -1498,31 +1499,43 @@ function AppTree() {
               ),
           })
         }
-        if (resolveSort(note.folderId ?? null, foldersById, rootSort) === 'manual') {
-          items.push({
-            label: 'Subir',
-            icon: <ArrowUp size={14} />,
-            onSelect: () => void handleMoveNote(note, -1),
-          })
-          items.push({
-            label: 'Bajar',
-            icon: <ArrowDown size={14} />,
-            onSelect: () => void handleMoveNote(note, 1),
-          })
+        const manual = resolveSort(note.folderId ?? null, foldersById, rootSort) === 'manual'
+        if (manual || owner) {
+          const organise: MenuItem[] = []
+          if (manual) {
+            organise.push(
+              {
+                label: t('menu.note.moveUp'),
+                icon: <ArrowUp size={14} />,
+                onSelect: () => void handleMoveNote(note, -1),
+              },
+              {
+                label: t('menu.note.moveDown'),
+                icon: <ArrowDown size={14} />,
+                onSelect: () => void handleMoveNote(note, 1),
+              }
+            )
+          }
+          if (owner) {
+            organise.push({
+              label: t('menu.note.move'),
+              icon: <Move size={14} />,
+              onSelect: () => setDialog({ kind: 'move', noteId: note.id }),
+            })
+          }
+          // A divider is the whole grouping: no header words to read.
+          organise[0].separatorBefore = items.length > 0
+          items.push(...organise)
         }
         items.push({
-          label: 'Exportar .md',
+          label: t('menu.note.export'),
           icon: <FileDown size={14} />,
+          separatorBefore: items.length > 0,
           onSelect: () => void handleExportNote(note),
         })
         if (owner) {
           items.push({
-            label: 'Mover a…',
-            icon: <Move size={14} />,
-            onSelect: () => setDialog({ kind: 'move', noteId: note.id }),
-          })
-          items.push({
-            label: 'Eliminar nota',
+            label: t('menu.note.delete'),
             icon: <Trash2 size={14} />,
             danger: true,
             separatorBefore: true,
@@ -1534,71 +1547,73 @@ function AppTree() {
     : []
 
   const folderMenuItems: MenuItem[] = folderMenu
-    ? [
-        {
-          label: 'Nueva nota acá',
-          icon: <FolderPlus size={14} />,
-          onSelect: () => {
-            setTargetFolderId(folderMenu!.folder.id)
-            void handleNewNote(folderMenu!.folder)
+    ? (() => {
+        const folder = folderMenu.folder
+        const currentSort = folder.sort ?? resolveSort(folder.parentId ?? null, foldersById, rootSort)
+        const items: MenuItem[] = [
+          {
+            label: t('menu.folder.newNote'),
+            icon: <FilePlus size={14} />,
+            onSelect: () => {
+              setTargetFolderId(folder.id)
+              void handleNewNote(folder)
+            },
           },
-        },
-        {
-          label: 'Nueva subcarpeta…',
-          icon: <FolderPlus size={14} />,
-          onSelect: () => void handleNewFolder(folderMenu!.folder.id),
-        },
-        {
-          label: 'Renombrar…',
-          icon: <Pencil size={14} />,
-          onSelect: () => setDialog({ kind: 'rename-folder', folderId: folderMenu.folder.id }),
-        },
-        {
-          label: 'Etiquetas…',
-          icon: <Hash size={14} />,
-          onSelect: () => setDialog({ kind: 'folder-tags', folderId: folderMenu.folder.id }),
-        },
-        {
-          label: `${t('menu.sortOrder')}: ${sortLabel(folderMenu.folder.sort ?? resolveSort(folderMenu.folder.parentId ?? null, foldersById, rootSort))}…`,
-          icon: <ArrowDownWideNarrow size={14} />,
-          onSelect: () => setDialog({ kind: 'sort', folderId: folderMenu!.folder.id }),
-        },
-        ...(resolveSort(folderMenu.folder.parentId ?? null, foldersById, rootSort) === 'manual'
-          ? [
-              {
-                label: 'Subir',
-                icon: <ArrowUp size={14} />,
-                onSelect: () => void handleMoveFolder(folderMenu!.folder, -1),
-              },
-              {
-                label: 'Bajar',
-                icon: <ArrowDown size={14} />,
-                onSelect: () => void handleMoveFolder(folderMenu!.folder, 1),
-              },
-            ]
-          : []),
-        ...(isAclOwner(folderMenu.folder, user?.uid)
-          ? [
-              {
-                label: 'Compartir…',
-                icon: <Link2 size={14} />,
-                onSelect: () =>
-                  setDialog({ kind: 'share-folder', folderId: folderMenu!.folder.id }),
-              },
-            ]
-          : []),
-        ...(isAclOwner(folderMenu.folder, user?.uid)
-          ? [
-              {
-                label: 'Eliminar carpeta',
-                icon: <Trash2 size={14} />,
-                danger: true,
-                separatorBefore: true,
-                onSelect: () => void handleDeleteFolder(folderMenu.folder),
-              },
-            ]
-          : []),
-      ]
+          {
+            label: t('menu.folder.newFolder'),
+            icon: <FolderPlus size={14} />,
+            onSelect: () => void handleNewFolder(folder.id),
+          },
+          {
+            label: t('menu.folder.rename'),
+            icon: <Pencil size={14} />,
+            separatorBefore: true,
+            onSelect: () => setDialog({ kind: 'rename-folder', folderId: folder.id }),
+          },
+          {
+            label: t('menu.folder.tags'),
+            icon: <Hash size={14} />,
+            onSelect: () => setDialog({ kind: 'folder-tags', folderId: folder.id }),
+          },
+          {
+            label: t('menu.folder.sort'),
+            icon: <ArrowDownWideNarrow size={14} />,
+            onSelect: () => setDialog({ kind: 'sort', folderId: folder.id }),
+          },
+        ]
+        if (currentSort === 'manual') {
+          items.push(
+            {
+              label: t('menu.folder.moveUp'),
+              icon: <ArrowUp size={14} />,
+              onSelect: () => void handleMoveFolder(folder, -1),
+            },
+            {
+              label: t('menu.folder.moveDown'),
+              icon: <ArrowDown size={14} />,
+              onSelect: () => void handleMoveFolder(folder, 1),
+            }
+          )
+        }
+        if (isAclOwner(folder, user?.uid)) {
+          items.push(
+            {
+              label: t('menu.folder.share'),
+              icon: <Link2 size={14} />,
+              separatorBefore: true,
+              onSelect: () => setDialog({ kind: 'share-folder', folderId: folder.id }),
+            },
+            {
+              label: t('menu.folder.delete'),
+              icon: <Trash2 size={14} />,
+              danger: true,
+              separatorBefore: true,
+              onSelect: () => void handleDeleteFolder(folder),
+            }
+          )
+        }
+        return items
+      })()
     : []
 
   const userName = user?.displayName || user?.email?.split('@')[0] || ''
@@ -1631,14 +1646,14 @@ function AppTree() {
       // A note still being created has no document to write to yet.
       if (pendingNotes.has(noteId)) return
       if (!noteCanEdit(note, folders, user?.uid)) {
-        setNotice('No tenés permiso para renombrar esta nota.')
+        setNotice(t('notice.noteRenameForbidden'))
         return
       }
       void saveNoteContent(noteId, { title: next }).catch(() =>
-        setNotice('No se pudo renombrar la nota. Revisá la conexión.')
+        setNotice(t('notice.noteRenameFailed'))
       )
     },
-    [folders, notesById, notesByIdFromList, pendingNotes, user?.uid]
+    [folders, notesById, notesByIdFromList, pendingNotes, t, user?.uid]
   )
 
   /**
@@ -1649,7 +1664,7 @@ function AppTree() {
   const splitActions = (paneId: string) => ({
     onSplitRight: isMobile ? undefined : () => splitPaneAt(paneId, 'row'),
     onSplitDown: isMobile ? undefined : () => splitPaneAt(paneId, 'column'),
-    splitLimitLabel: splitAllowed ? undefined : SPLIT_LIMIT_LABEL,
+    splitLimitLabel: splitAllowed ? undefined : t('notice.splitLimit', { max: MAX_PANES }),
   })
 
   /**
@@ -1691,7 +1706,7 @@ function AppTree() {
   const accountMenuItems: MenuItem[] = guest
     ? [
         {
-          label: t('guest.signIn'),
+          label: t('menu.account.signIn'),
           icon: <LogIn size={14} />,
           onSelect: () => {
             setDialog({ kind: 'none' })
@@ -1699,64 +1714,62 @@ function AppTree() {
           },
         },
         {
-          label: 'Exportar vault (.zip)',
+          label: t('menu.vault.export'),
           icon: <Download size={14} />,
-          onSelect: handleExportAll,
           separatorBefore: true,
+          onSelect: handleExportAll,
         },
         {
-          label: 'Importar vault (.zip o .md)…',
+          label: t('menu.vault.import'),
           icon: <Upload size={14} />,
           onSelect: () => importRef.current?.click(),
         },
         {
-          label: 'Apariencia…',
+          label: t('menu.account.appearance'),
           icon: <Palette size={14} />,
-          onSelect: () => setDialog({ kind: 'theme' }),
           separatorBefore: true,
+          onSelect: () => setDialog({ kind: 'theme' }),
         },
         {
-          label: `${t('menu.listOrder')}: ${sortLabel(rootSort)}…`,
+          label: t('menu.account.listOrder'),
           icon: <ArrowDownWideNarrow size={14} />,
           onSelect: () => setDialog({ kind: 'sort', folderId: null }),
         },
       ]
     : [
         {
-          label: 'Exportar vault (.zip)',
+          label: t('menu.vault.export'),
           icon: <Download size={14} />,
           onSelect: handleExportAll,
         },
         {
-          label: 'Uso y facturación…',
-          icon: <Activity size={14} />,
-          onSelect: () => setDialog({ kind: 'usage' }),
-          separatorBefore: true,
-        },
-        {
-          label: 'Importar vault (.zip o .md)…',
+          label: t('menu.vault.import'),
           icon: <Upload size={14} />,
           onSelect: () => importRef.current?.click(),
         },
         {
-          label: 'Agentes de IA…',
+          label: t('menu.account.usage'),
+          icon: <Activity size={14} />,
+          separatorBefore: true,
+          onSelect: () => setDialog({ kind: 'usage' }),
+        },
+        {
+          label: t('menu.account.agents'),
           icon: <Bot size={14} />,
           onSelect: () => setDialog({ kind: 'agents' }),
-          separatorBefore: true,
         },
         {
-          label: 'Apariencia…',
+          label: t('menu.account.appearance'),
           icon: <Palette size={14} />,
           onSelect: () => setDialog({ kind: 'theme' }),
-          separatorBefore: true,
         },
         {
-          label: `${t('menu.listOrder')}: ${sortLabel(rootSort)}…`,
+          label: t('menu.account.listOrder'),
           icon: <ArrowDownWideNarrow size={14} />,
           onSelect: () => setDialog({ kind: 'sort', folderId: null }),
         },
         {
-          label: 'Cerrar sesión',
+          label: t('menu.account.signOut'),
           icon: <LogOut size={14} />,
           separatorBefore: true,
           onSelect: () => void handleSignOut(),
@@ -1968,6 +1981,7 @@ function AppTree() {
       {noteMenu && noteMenuItems.length > 0 && (
         <Menu
           items={noteMenuItems}
+          title={noteMenu.note.title || t('note.untitled')}
           anchor="pointer"
           pos={{ x: noteMenu.x, y: noteMenu.y }}
           onClose={() => setNoteMenu(null)}
@@ -1977,6 +1991,7 @@ function AppTree() {
       {folderMenu && (
         <Menu
           items={folderMenuItems}
+          title={folderMenu.folder.name}
           anchor="pointer"
           pos={{ x: folderMenu.x, y: folderMenu.y }}
           onClose={() => setFolderMenu(null)}
@@ -1994,6 +2009,8 @@ function AppTree() {
           />
           <Menu
             items={accountMenuItems}
+            title={guest ? t('account.guest') : userName || t('account.label')}
+            label={t('menu.label')}
             onClose={() => setDialog({ kind: 'none' })}
             anchor="bottom-left"
           />
@@ -2077,8 +2094,8 @@ function AppTree() {
         <SortDialog
           target={
             dialog.folderId
-              ? folderPath(dialog.folderId, foldersById) || 'Carpeta'
-              : 'Sin carpeta'
+              ? folderPath(dialog.folderId, foldersById) || t('folder.unnamed')
+              : t('sidebar.noFolder')
           }
           current={
             dialog.folderId
@@ -2173,10 +2190,10 @@ function AppTree() {
 
       {dialog.kind === 'folder-tags' && (
         <InputDialog
-          title="Etiquetas de la carpeta"
-          label="Separadas por coma o espacio (ej. trabajo, clientes/acme)"
+          title={t('folder.tagsTitle')}
+          label={t('folder.tagsLabel')}
           initialValue={folders.find((f) => f.id === dialog.folderId)?.tags.join(', ') ?? ''}
-          confirmLabel="Guardar"
+          confirmLabel={t('common.save')}
           maxLength={200}
           onConfirm={(value) => void updateFolderTags(dialog.folderId, parseTagInput(value))}
           onClose={() => setDialog({ kind: 'none' })}
@@ -2185,8 +2202,8 @@ function AppTree() {
 
       {dialog.kind === 'rename-folder' && (
         <InputDialog
-          title="Renombrar carpeta"
-          label="Nombre"
+          title={t('folder.renameTitle')}
+          label={t('folder.nameLabel')}
           initialValue={folders.find((f) => f.id === dialog.folderId)?.name ?? ''}
           onConfirm={(name) => void renameFolder(dialog.folderId, name)}
           onClose={() => setDialog({ kind: 'none' })}

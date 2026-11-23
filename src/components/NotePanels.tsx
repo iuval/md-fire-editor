@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ChevronRight, Plus, X } from 'lucide-react'
+import { plural, useT } from '../i18n/index.ts'
 import {
   propertyTypeLabel,
   PROPERTY_TYPES,
@@ -37,6 +38,7 @@ export function NotePanels({
   onRenameTag,
   onPropertyChange,
 }: NotePanelsProps) {
+  const t = useT()
   const [tagsOpen, setTagsOpen] = useState(false)
   const [propsOpen, setPropsOpen] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -61,7 +63,7 @@ export function NotePanels({
           aria-expanded={tagsOpen}
         >
           <ChevronRight size={11} className={`chev${tagsOpen ? ' open' : ''}`} />
-          {tags.length} {tags.length === 1 ? 'etiqueta' : 'etiquetas'}
+          {plural(tags.length, { one: t('note.tagOne', { count: tags.length }), other: t('note.tagOther', { count: tags.length }) })}
         </button>
         {tagsOpen &&
           tags.map((tag) => (
@@ -101,7 +103,7 @@ export function NotePanels({
                     <input
                       type="checkbox"
                       checked={Boolean(property.value)}
-                      aria-label={`Valor de ${property.key}`}
+                      aria-label={t('property.valueOf', { key: property.key })}
                       onChange={(e) =>
                         onPropertyChange({ key: property.key, value: e.target.checked })
                       }
@@ -115,7 +117,7 @@ export function NotePanels({
                           ? formatPropertyValue(property)
                           : String(property.value)
                       }
-                      aria-label={`Valor de ${property.key}`}
+                      aria-label={t('property.valueOf', { key: property.key })}
                       onChange={(e) =>
                         onPropertyChange({
                           key: property.key,
@@ -129,7 +131,7 @@ export function NotePanels({
                   <select
                     className="prop-type"
                     value={property.type}
-                    aria-label={`Tipo de ${property.key}`}
+                    aria-label={t('property.typeOf', { key: property.key })}
                     onChange={(e) =>
                       onPropertyChange({
                         key: property.key,
@@ -147,7 +149,7 @@ export function NotePanels({
 
                   <button
                     className="icon-btn icon-btn--sm"
-                    aria-label={`Quitar ${property.key}`}
+                    aria-label={t('property.remove', { key: property.key })}
                     onClick={() => onPropertyChange({ key: property.key, value: null })}
                   >
                     <X size={12} />
@@ -165,8 +167,8 @@ export function NotePanels({
             <div className="prop-add">
               <input
                 className="prop-input"
-                placeholder="nombre"
-                aria-label="Nombre de la propiedad"
+                placeholder={t('property.namePlaceholder')}
+                aria-label={t('property.nameLabel')}
                 value={newKey}
                 onChange={(e) => setNewKey(e.target.value)}
                 style={{ maxWidth: 120 }}
@@ -174,7 +176,7 @@ export function NotePanels({
               <select
                 className="prop-type"
                 value={newType}
-                aria-label="Tipo de la nueva propiedad"
+                aria-label={t('property.typeLabel')}
                 onChange={(e) => setNewType(e.target.value as PropertyType)}
               >
                 {PROPERTY_TYPES.map((type) => (
@@ -185,14 +187,14 @@ export function NotePanels({
               </select>
               <input
                 className="prop-input"
-                placeholder="valor"
-                aria-label="Valor de la nueva propiedad"
+                placeholder={t('property.valuePlaceholder')}
+                aria-label={t('property.valueLabel')}
                 value={newValue}
                 onChange={(e) => setNewValue(e.target.value)}
               />
               <button
                 className="icon-btn icon-btn--sm"
-                aria-label="Agregar propiedad"
+                aria-label={t('property.addLabel')}
                 onClick={addProperty}
                 disabled={!newKey.trim()}
               >

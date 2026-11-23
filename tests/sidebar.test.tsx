@@ -682,7 +682,7 @@ describe('where new items go', () => {
     expect(marked[0].textContent).toContain('Los Muchachos')
     // Said out loud too, not only painted.
     expect(marked[0].querySelector('.folder-toggle')!.getAttribute('aria-label')).toContain(
-      'se crean los elementos nuevos'
+      'New items are created here'
     )
   })
 

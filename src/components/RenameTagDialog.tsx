@@ -27,14 +27,14 @@ export function RenameTagDialog({ current, knownTags, onRename, onClose }: Renam
   return (
     <Modal labelledBy="rename-tag-heading" onClose={onClose}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h2 id="rename-tag-heading">Renombrar etiqueta</h2>
+          <h2 id="rename-tag-heading">{t('renameTag.heading')}</h2>
           <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
             <X size={15} />
           </button>
         </div>
 
         <label className="hint" htmlFor="rename-from">
-          Etiqueta actual
+          {t('renameTag.from')}
         </label>
         <input
           id="rename-from"
@@ -51,7 +51,7 @@ export function RenameTagDialog({ current, knownTags, onRename, onClose }: Renam
         </datalist>
 
         <label className="hint" htmlFor="rename-to">
-          Nueva etiqueta (si ya existe, se fusionan)
+          {t('renameTag.to')}
         </label>
         <input
           id="rename-to"
@@ -64,17 +64,14 @@ export function RenameTagDialog({ current, knownTags, onRename, onClose }: Renam
           spellCheck={false}
         />
 
-        <p className="hint">
-          Se reescriben las notas que puedas editar. Las que no tengas permiso de escritura quedan
-          como están.
-        </p>
+        <p className="hint">{t('renameTag.hint')}</p>
 
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost" onClick={onClose}>
-            Cancelar
+            {t('common.cancel')}
           </button>
           <button className="btn" onClick={submit} disabled={!from.trim() || !to.trim()}>
-            Renombrar
+            {t('renameTag.submit')}
           </button>
         </div>
     </Modal>

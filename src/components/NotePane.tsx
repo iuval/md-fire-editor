@@ -17,6 +17,7 @@ import {
 import { MAX_CANVAS_CHARS, canvasTagsOf } from '../lib/canvas/model'
 import { isLocalMode } from '../lib/localStore'
 import type { CanvasFileRef } from '../lib/canvas/files'
+import { useT } from '../i18n/index.ts'
 import { DocCrumbs } from './DocCrumbs'
 import { joinFrontmatter, sameMarkdown, splitFrontmatter } from '../lib/markdown'
 import { extractTags } from '../lib/tags'
@@ -63,6 +64,7 @@ function NoteDocument({
   onStatus,
   onStats,
 }: NoteDocumentProps) {
+  const t = useT()
   const [title, setTitle] = useState(note.title)
   const titleFocused = useRef(false)
   const frontmatterRef = useRef('')
@@ -192,9 +194,9 @@ function NoteDocument({
       setTitle(next)
       if (!editable) return
       if (titleTimer.current) clearTimeout(titleTimer.current)
-      titleTimer.current = setTimeout(() => persist({ title: next.trim() || 'Sin título' }), 600)
+      titleTimer.current = setTimeout(() => persist({ title: next.trim() || t('note.untitled') }), 600)
     },
-    [editable, persist]
+    [editable, persist, t]
   )
 
   const handlePropertyChange = useCallback(
@@ -227,8 +229,8 @@ function NoteDocument({
         onChange={(event) => handleTitleChange(event.target.value)}
         readOnly={!editable}
         maxLength={300}
-        placeholder="Sin título"
-        aria-label="Título de la nota"
+        placeholder={t('note.titlePlaceholder')}
+        aria-label={t('note.titleLabel')}
         spellCheck={false}
         onKeyDown={(event) => {
           // Enter on the name writes the note: same hand-off as Obsidian, where
@@ -392,13 +394,14 @@ export function NotePane({
   onStatus,
   onStats,
 }: NotePaneProps) {
+  const t = useT()
   const activeTabId = pane.activeTabId
   const hasTab = pane.tabs.some((tab) => tab.id === activeTabId)
 
   return (
     <section
       className={`workspace-pane${focused ? ' focused' : ''}`}
-      aria-label="Panel de nota"
+      aria-label={t('pane.label')}
       onPointerDownCapture={onFocus}
     >
       {!hideTabs && (
@@ -445,20 +448,18 @@ export function NotePane({
         {!hasTab && (
           <div className="empty" style={{ minHeight: '50vh' }}>
             <p className="empty-title">
-              {emptyWorkspace ? 'Todavía no hay notas' : 'Panel vacío'}
+              {emptyWorkspace ? t('pane.emptyTitle') : t('pane.emptyPaneTitle')}
             </p>
             <p className="hint" style={{ maxWidth: 340, textAlign: 'center' }}>
-              {emptyWorkspace
-                ? 'Creá una nota nueva, o importá un vault de Obsidian (.zip o .md) y seguí donde estabas.'
-                : 'Elegí una nota en el panel de la izquierda y se abre acá. En la barra de pestañas podés dividir este panel a la derecha o abajo.'}
+              {emptyWorkspace ? t('pane.emptyHint') : t('pane.emptyPaneHint')}
             </p>
             <div className="row">
               <button className="btn" onClick={onNewNote}>
-                Crear nota
+                {t('pane.createNote')}
               </button>
               {emptyWorkspace && (
                 <button className="btn ghost" onClick={onImport}>
-                  Importar vault
+                  {t('pane.importVault')}
                 </button>
               )}
             </div>
@@ -467,7 +468,7 @@ export function NotePane({
 
         {hasTab && !note && !noteError && (
           <p className="hint" style={{ padding: '16px 24px' }}>
-            {creating ? 'Creando la nota…' : 'Cargando…'}
+            {creating ? t('pane.creating') : t('pane.loading')}
           </p>
         )}
 

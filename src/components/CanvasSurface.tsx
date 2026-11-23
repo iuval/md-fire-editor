@@ -6,12 +6,18 @@ import {
   AlignRight,
   AlignStartVertical,
   AlignCenterVertical,
+  ArrowLeftRight,
+  ArrowRight,
   Copy,
+  ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
   Grid2x2,
   Maximize2,
   Minus,
   Palette,
+  Pencil,
   Plus,
   Settings2,
   Square,
@@ -19,7 +25,6 @@ import {
   Trash2,
   Type,
   ZoomIn,
-  ArrowLeftRight,
 } from 'lucide-react'
 import { Menu, type MenuItem } from './Menu'
 import { CanvasCard } from './CanvasCard'
@@ -51,9 +56,21 @@ import {
 } from '../lib/canvas/geometry'
 import { resolveCanvasFile, type CanvasFileRef } from '../lib/canvas/files'
 import { CANVAS_PRESETS, canvasColor } from '../lib/canvas/colors'
+import type { MessageKey } from '../i18n/index.ts'
 import type { YCanvas } from '../lib/canvas/yCanvas'
+import { useT } from '../i18n/index.ts'
 
 const SNAP_KEY = 'firemd.canvas.snap'
+
+/** Preset ids come from the file format; the label is ours. */
+const COLOUR_LABELS: Record<string, MessageKey> = {
+  '1': 'canvas.colour.red',
+  '2': 'canvas.colour.orange',
+  '3': 'canvas.colour.yellow',
+  '4': 'canvas.colour.green',
+  '5': 'canvas.colour.cyan',
+  '6': 'canvas.colour.violet',
+}
 const MemoCard = memo(CanvasCard)
 
 type MenuState =
@@ -88,6 +105,7 @@ export interface CanvasSurfaceProps {
  * changes, so a move does not emit a Firestore block per frame.
  */
 export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }: CanvasSurfaceProps) {
+  const t = useT()
   const version = useSyncExternalStore(ycanvas.subscribe, ycanvas.getVersion)
   const canvas = useMemo(() => ycanvas.toJSON(), [ycanvas, version])
 
@@ -832,62 +850,89 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
       width: DEFAULT_GROUP_SIZE.width,
       height: DEFAULT_GROUP_SIZE.height,
       text: '',
-      label: 'Grupo',
+      label: t('canvas.menu.group'),
     }
     ycanvas.addNodes([node])
     setSelection([node.id])
-  }, [canEdit, canvas.nodes.length, size.height, size.width, toWorld, ycanvas])
+  }, [canEdit, canvas.nodes.length, size.height, size.width, toWorld, ycanvas, t])
 
-  const menuItems = useMemo((): { items: MenuItem[]; close: () => void } | null => {
+  const menuItems = useMemo((): {
+    items: MenuItem[]
+    close: () => void
+    title?: string
+    searchable?: boolean
+    searchPlaceholder?: string
+  } | null => {
     if (!menu) return null
     const close = () => setMenu(null)
 
     if (menu.kind === 'color') {
+      const current = nodesById.get(menu.ids[0])?.color
       const items: MenuItem[] = CANVAS_PRESETS.map((preset) => ({
-        label: preset.label,
+        label: t(COLOUR_LABELS[preset.id] ?? 'canvas.colour.other'),
         icon: <span className="canvas-swatch" style={{ background: `var(--canvas-preset-${preset.id})` }} />,
+        checked: current === preset.id,
+        keepOpen: true,
         onSelect: () => ycanvas.updateNodes(menu.ids.map((id) => ({ id, patch: { color: preset.id } }))),
       }))
       items.push({
-        label: 'Sin color',
+        label: t('canvas.menu.noColour'),
+        icon: <span className="canvas-swatch canvas-swatch--none" />,
         separatorBefore: true,
+        checked: !current,
+        keepOpen: true,
         onSelect: () => ycanvas.updateNodes(menu.ids.map((id) => ({ id, patch: { color: undefined } }))),
       })
-      return { items, close }
+      return { items, close, title: t('canvas.menu.colour') }
     }
 
     if (menu.kind === 'settings') {
       return {
         items: [
           {
-            label: `Ajustar a la grilla: ${snapGrid ? 'sí' : 'no'}`,
+            label: t('canvas.menu.snap'),
             icon: <Grid2x2 size={14} />,
+            checked: snapGrid,
+            keepOpen: true,
             onSelect: () => setSnapGrid((value) => !value),
           },
           {
-            label: `Solo lectura: ${readOnly ? 'sí' : 'no'}`,
+            label: t('canvas.menu.readOnly'),
+            icon: readOnly ? <EyeOff size={14} /> : <Eye size={14} />,
+            checked: readOnly,
+            keepOpen: true,
             onSelect: () => setReadOnly((value) => !value),
           },
           {
-            label: 'Ajustar a la pantalla',
+            label: t('canvas.menu.fit'),
             icon: <Maximize2 size={14} />,
             separatorBefore: true,
             onSelect: zoomToFit,
           },
         ],
         close,
+        title: t('canvas.menu.settings'),
       }
     }
 
     if (menu.kind === 'files') {
       if (filesByTitle.length === 0) {
         return {
-          items: [{ label: 'No hay notas todavía', disabled: true, onSelect: () => undefined }],
+          items: [
+            {
+              label: t('canvas.menu.noNotes'),
+              icon: <FileText size={14} />,
+              disabled: true,
+              disabledReason: t('canvas.menu.noNotesHint'),
+              onSelect: () => undefined,
+            },
+          ],
           close,
+          title: t('canvas.menu.addNoteTitle'),
         }
       }
       return {
-        items: filesByTitle.slice(0, 40).map((file) => ({
+        items: filesByTitle.slice(0, 200).map((file) => ({
           label: file.title || file.path,
           icon: <FileText size={14} />,
           onSelect: () => {
@@ -907,33 +952,50 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
           },
         })),
         close,
+        title: t('canvas.menu.addNoteTitle'),
+        searchable: true,
+        searchPlaceholder: t('canvas.menu.searchNote'),
       }
     }
 
     if (menu.kind === 'edge') {
       const edge = canvas.edges.find((item) => item.id === menu.id)
       if (!edge) return null
+      const noDirection = edge.fromEnd === 'none' && edge.toEnd === 'none'
+      const oneWay = edge.fromEnd === 'none' && edge.toEnd === 'arrow'
+      const bothWays = edge.fromEnd === 'arrow' && edge.toEnd === 'arrow'
       return {
         items: [
           {
-            label: 'Etiqueta…',
+            label: t('canvas.menu.edgeLabel'),
+            icon: <Type size={14} />,
             onSelect: () =>
               setEdgeLabel({ id: edge.id, value: edge.label ?? '' }),
           },
           {
-            label: 'Sin dirección',
+            label: t('canvas.menu.noDirection'),
+            icon: <Minus size={14} />,
+            separatorBefore: true,
+            checked: noDirection,
+            keepOpen: true,
             onSelect: () => ycanvas.updateEdge(edge.id, { fromEnd: 'none', toEnd: 'none' }),
           },
           {
-            label: 'Unidireccional',
+            label: t('canvas.menu.oneWay'),
+            icon: <ArrowRight size={14} />,
+            checked: oneWay,
+            keepOpen: true,
             onSelect: () => ycanvas.updateEdge(edge.id, { fromEnd: 'none', toEnd: 'arrow' }),
           },
           {
-            label: 'Bidireccional',
+            label: t('canvas.menu.bothWays'),
+            icon: <ArrowLeftRight size={14} />,
+            checked: bothWays,
+            keepOpen: true,
             onSelect: () => ycanvas.updateEdge(edge.id, { fromEnd: 'arrow', toEnd: 'arrow' }),
           },
           {
-            label: 'Eliminar conexión',
+            label: t('canvas.menu.removeEdge'),
             icon: <Trash2 size={14} />,
             danger: true,
             separatorBefore: true,
@@ -944,6 +1006,7 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
           },
         ],
         close,
+        title: edge.label || t('canvas.menu.edgeTitle'),
       }
     }
 
@@ -952,33 +1015,51 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
       if (!node) return null
       const items: MenuItem[] = []
       if (node.type === 'text' && canEdit) {
-        items.push({ label: 'Editar', onSelect: () => setEditingId(node.id) })
+        items.push({
+          label: t('canvas.menu.edit'),
+          icon: <Pencil size={14} />,
+          onSelect: () => setEditingId(node.id),
+        })
       }
       if (node.type === 'group' && canEdit) {
-        items.push({ label: 'Renombrar grupo', onSelect: () => setEditingLabelId(node.id) })
+        items.push({
+          label: t('canvas.menu.renameGroup'),
+          icon: <Pencil size={14} />,
+          onSelect: () => setEditingLabelId(node.id),
+        })
       }
       if (node.type === 'file') {
         const resolved = node.file ? resolveCanvasFile(files, node.file) : null
         if (resolved) {
-          items.push({ label: 'Abrir nota', onSelect: () => onOpenNote(resolved.id) })
+          items.push({
+            label: t('canvas.menu.openNote'),
+            icon: <FileText size={14} />,
+            separatorBefore: true,
+            onSelect: () => onOpenNote(resolved.id),
+          })
         }
       }
       if (node.type === 'link' && node.url) {
-        items.push({ label: 'Abrir enlace', onSelect: () => window.open(node.url, '_blank', 'noopener') })
+        items.push({
+          label: t('canvas.menu.openLink'),
+          icon: <ExternalLink size={14} />,
+          onSelect: () => window.open(node.url, '_blank', 'noopener'),
+        })
       }
       if (canEdit) {
         items.push({
-          label: 'Duplicar',
+          label: t('canvas.menu.duplicate'),
           icon: <Copy size={14} />,
+          separatorBefore: true,
           onSelect: () => setSelection(duplicate([node.id])),
         })
         items.push({
-          label: 'Color',
-          icon: <Palette size={14} />,
+          label: t('canvas.menu.colour'),
+          icon: <span className="canvas-swatch" style={node.color ? { background: `var(--canvas-preset-${node.color})` } : undefined} />,
           onSelect: () => setMenu({ kind: 'color', ids: [node.id], x: menu.x + 140, y: menu.y }),
         })
         items.push({
-          label: 'Eliminar',
+          label: t('canvas.menu.delete'),
           icon: <Trash2 size={14} />,
           danger: true,
           separatorBefore: true,
@@ -988,27 +1069,40 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
           },
         })
       }
-      return { items, close }
+      return {
+        items,
+        close,
+        title: node.type === 'group' ? node.label || t('canvas.menu.group') : t('canvas.menu.card'),
+      }
     }
 
     // Canvas background.
     return {
       items: [
-        { label: 'Nueva tarjeta', icon: <Type size={14} />, onSelect: () => addTextCard(menu.x, menu.y) },
-        { label: 'Nuevo grupo', icon: <SquareDashed size={14} />, onSelect: addGroup },
         {
-          label: 'Agregar nota…',
+          label: t('canvas.menu.newCard'),
+          icon: <Type size={14} />,
+          onSelect: () => addTextCard(menu.x, menu.y),
+        },
+        {
+          label: t('canvas.menu.newGroup'),
+          icon: <SquareDashed size={14} />,
+          onSelect: addGroup,
+        },
+        {
+          label: t('canvas.menu.addNote'),
           icon: <FileText size={14} />,
           onSelect: () => setMenu({ kind: 'files', x: menu.x, y: menu.y }),
         },
         {
-          label: 'Ajustes del canvas',
+          label: t('canvas.menu.settings'),
           icon: <Settings2 size={14} />,
           separatorBefore: true,
           onSelect: () => setMenu({ kind: 'settings', x: menu.x, y: menu.y }),
         },
       ],
       close,
+      title: t('canvas.menu.canvas'),
     }
   }, [
     addGroup,
@@ -1025,6 +1119,7 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
     size.height,
     size.width,
     snapGrid,
+    t,
     toWorld,
     ycanvas,
     zoomToFit,
@@ -1048,7 +1143,7 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
         backgroundPosition: `${currentView.x}px ${currentView.y}px`,
       }}
       role="application"
-      aria-label="Canvas"
+      aria-label={t('canvas.surfaceLabel')}
       tabIndex={0}
       onPointerDown={handlePointerDown}
       onContextMenu={handleContextMenu}
@@ -1173,7 +1268,7 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
                     className={`canvas-connect canvas-connect--${side}`}
                     data-node-id={id}
                     data-connect={side}
-                    title="Arrastrar para conectar"
+                    title={t('canvas.dragToConnect')}
                   />
                 ))}
               </div>
@@ -1201,7 +1296,7 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
           }}
         >
           {selection.length === 1 && nodesById.get(selection[0])?.type === 'text' && canEdit && (
-            <button className="icon-btn icon-btn--sm" title="Editar" onClick={() => setEditingId(selection[0])}>
+            <button className="icon-btn icon-btn--sm" title={t('canvas.edit')} onClick={() => setEditingId(selection[0])}>
               <Type size={13} />
             </button>
           )}
@@ -1209,7 +1304,8 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
             <>
               <button
                 className="icon-btn icon-btn--sm"
-                title="Color"
+                title={t('canvas.menu.colour')}
+                aria-haspopup="menu"
                 onClick={(event) => {
                   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
                   setMenu({ kind: 'color', ids: selection, x: rect.left, y: rect.bottom + 4 })
@@ -1217,10 +1313,10 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
               >
                 <Palette size={13} />
               </button>
-              <button className="icon-btn icon-btn--sm" title="Duplicar" onClick={() => setSelection(duplicate(selection))}>
+              <button className="icon-btn icon-btn--sm" title={t('canvas.menu.duplicate')} onClick={() => setSelection(duplicate(selection))}>
                 <Copy size={13} />
               </button>
-              <button className="icon-btn icon-btn--sm" title="Eliminar" onClick={deleteSelection}>
+              <button className="icon-btn icon-btn--sm" title={t('canvas.toolbar.delete')} onClick={deleteSelection}>
                 <Trash2 size={13} />
               </button>
             </>
@@ -1228,27 +1324,27 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
           {selection.length > 1 && canEdit && (
             <>
               <span className="canvas-bar-sep" />
-              <button className="icon-btn icon-btn--sm" title="Alinear a la izquierda" onClick={() => runAlign('left')}>
+              <button className="icon-btn icon-btn--sm" title={t('canvas.toolbar.alignLeft')} onClick={() => runAlign('left')}>
                 <AlignLeft size={13} />
               </button>
-              <button className="icon-btn icon-btn--sm" title="Centrar" onClick={() => runAlign('center')}>
+              <button className="icon-btn icon-btn--sm" title={t('canvas.centre')} onClick={() => runAlign('center')}>
                 <AlignCenter size={13} />
               </button>
-              <button className="icon-btn icon-btn--sm" title="Alinear a la derecha" onClick={() => runAlign('right')}>
+              <button className="icon-btn icon-btn--sm" title={t('canvas.toolbar.alignRight')} onClick={() => runAlign('right')}>
                 <AlignRight size={13} />
               </button>
-              <button className="icon-btn icon-btn--sm" title="Alinear arriba" onClick={() => runAlign('top')}>
+              <button className="icon-btn icon-btn--sm" title={t('canvas.toolbar.alignTop')} onClick={() => runAlign('top')}>
                 <AlignStartVertical size={13} />
               </button>
-              <button className="icon-btn icon-btn--sm" title="Centrar vertical" onClick={() => runAlign('middle')}>
+              <button className="icon-btn icon-btn--sm" title={t('canvas.centreVertical')} onClick={() => runAlign('middle')}>
                 <AlignCenterVertical size={13} />
               </button>
-              <button className="icon-btn icon-btn--sm" title="Alinear abajo" onClick={() => runAlign('bottom')}>
+              <button className="icon-btn icon-btn--sm" title={t('canvas.toolbar.alignBottom')} onClick={() => runAlign('bottom')}>
                 <AlignEndVertical size={13} />
               </button>
             </>
           )}
-          <button className="icon-btn icon-btn--sm" title="Zoom a la selección" onClick={zoomToSelection}>
+          <button className="icon-btn icon-btn--sm" title={t('canvas.toolbar.zoomToSelection')} onClick={zoomToSelection}>
             <ZoomIn size={13} />
           </button>
         </div>
@@ -1280,14 +1376,14 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
         >
           <button
             className="icon-btn icon-btn--sm"
-            title="Etiqueta"
+            title={t('canvas.toolbar.label')}
             onClick={() => setEdgeLabel({ id: selectedEdge.id, value: selectedEdge.label ?? '' })}
           >
             <Type size={13} />
           </button>
           <button
             className="icon-btn icon-btn--sm"
-            title="Dirección"
+            title={t('canvas.toolbar.direction')}
             onClick={() =>
               ycanvas.updateEdge(selectedEdge.id, {
                 fromEnd: selectedEdge.fromEnd === 'arrow' ? 'none' : 'arrow',
@@ -1298,7 +1394,7 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
           </button>
           <button
             className="icon-btn icon-btn--sm"
-            title="Eliminar conexión"
+            title={t('canvas.toolbar.deleteEdge')}
             onClick={() => {
               ycanvas.removeEdges([selectedEdge.id])
               setEdgeSelection(null)
@@ -1314,7 +1410,7 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
           className="canvas-edge-label-input"
           autoFocus
           value={edgeLabel.value}
-          placeholder="Etiqueta de la conexión"
+          placeholder={t('canvas.toolbar.edgeLabel')}
           onChange={(event) => setEdgeLabel({ id: edgeLabel.id, value: event.target.value })}
           onBlur={() => {
             ycanvas.updateEdge(edgeLabel.id, { label: edgeLabel.value.trim() || undefined })
@@ -1332,24 +1428,25 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
 
       {canvas.nodes.length === 0 && (
         <div className="canvas-empty">
-          <p className="empty-title">Canvas vacío</p>
-          <p className="hint">Doble clic para una tarjeta, o arrastrá una nota desde el panel.</p>
+          <p className="empty-title">{t('canvas.emptyTitle')}</p>
+          <p className="hint">{t('canvas.emptyHint')}</p>
         </div>
       )}
 
       <div className="canvas-zoom">
-        <button className="icon-btn icon-btn--sm" title="Acercar" onClick={() => zoomBy(1.25)}>
+        <button className="icon-btn icon-btn--sm" title={t('canvas.zoomIn')} onClick={() => zoomBy(1.25)}>
           <Plus size={14} />
         </button>
-        <button className="icon-btn icon-btn--sm" title="Alejar" onClick={() => zoomBy(0.8)}>
+        <button className="icon-btn icon-btn--sm" title={t('canvas.zoomOut')} onClick={() => zoomBy(0.8)}>
           <Minus size={14} />
         </button>
-        <button className="icon-btn icon-btn--sm" title="Ajustar a la pantalla (Shift+1)" onClick={zoomToFit}>
+        <button className="icon-btn icon-btn--sm" title={t('canvas.fitToScreen')} onClick={zoomToFit}>
           <Maximize2 size={14} />
         </button>
         <button
           className="icon-btn icon-btn--sm"
-          title="Ajustes del canvas"
+          title={t('canvas.settings')}
+          aria-haspopup="menu"
           onClick={(event) => {
             const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
             setMenu({ kind: 'settings', x: rect.left, y: rect.bottom + 4 })
@@ -1361,13 +1458,14 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
       </div>
 
       <div className="canvas-actions">
-        <button className="canvas-action" title="Nueva tarjeta" disabled={!canEdit} onClick={() => addTextCard()}>
+        <button className="canvas-action" title={t('canvas.newCard')} disabled={!canEdit} onClick={() => addTextCard()}>
           <Type size={15} />
           Tarjeta
         </button>
         <button
           className="canvas-action"
-          title="Agregar nota"
+          title={t('canvas.addNote')}
+          aria-haspopup="menu"
           disabled={!canEdit}
           onClick={(event) => {
             const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
@@ -1377,13 +1475,23 @@ export function CanvasSurface({ ycanvas, editable, isMobile, files, onOpenNote }
           <FileText size={15} />
           Nota
         </button>
-        <button className="canvas-action" title="Nuevo grupo" disabled={!canEdit} onClick={addGroup}>
+        <button className="canvas-action" title={t('canvas.newGroup')} disabled={!canEdit} onClick={addGroup}>
           <Square size={15} />
           Grupo
         </button>
       </div>
 
-      {menu && menuItems && <Menu items={menuItems.items} pos={{ x: menu.x, y: menu.y }} anchor="pointer" onClose={menuItems.close} />}
+      {menu && menuItems && (
+        <Menu
+          items={menuItems.items}
+          title={menuItems.title}
+          searchable={menuItems.searchable}
+          searchPlaceholder={menuItems.searchPlaceholder}
+          pos={{ x: menu.x, y: menu.y }}
+          anchor="pointer"
+          onClose={menuItems.close}
+        />
+      )}
     </div>
   )
 }

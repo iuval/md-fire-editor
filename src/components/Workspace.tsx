@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useT } from '../i18n/index.ts'
 import { findPane, listPanes, type PaneLeaf, type PaneSplit, type PaneTree } from '../lib/panes'
 
 interface WorkspaceProps {
@@ -68,6 +69,7 @@ function SplitView({
   onFocusPane: (paneId: string) => void
   onRatio: (splitId: string, ratio: number) => void
 }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
   const horizontal = split.direction === 'row'
@@ -126,7 +128,7 @@ function SplitView({
         role="separator"
         tabIndex={0}
         aria-orientation={horizontal ? 'vertical' : 'horizontal'}
-        aria-label="Redimensionar paneles"
+        aria-label={t('pane.resize')}
         aria-valuenow={Math.round(split.ratio * 100)}
         aria-valuemin={15}
         aria-valuemax={85}

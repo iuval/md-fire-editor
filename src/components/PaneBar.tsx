@@ -47,7 +47,7 @@ export function PaneBar({
             className="icon-btn icon-btn--sm"
             onClick={onClearTags}
             aria-label={t('paneBar.clearTagFilter')}
-            title="Quitar filtro"
+            title={t('paneBar.clearTagFilter')}
           >
             <X size={12} />
           </button>

@@ -55,7 +55,7 @@ export function InputDialog({
         />
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost" onClick={onClose}>
-            Cancelar
+            {t('common.cancel')}
           </button>
           <button className="btn" onClick={submit} disabled={!value.trim()}>
             {confirmLabel}

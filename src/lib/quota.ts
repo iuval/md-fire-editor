@@ -1,4 +1,4 @@
-import { chargeBreakdown, type UsageTotals } from './usage'
+import { chargeBreakdown, costBreakdown, type UsageTotals } from './usage'
 
 /**
  * Cuota gratuita diaria (D6 de `docs/prepaid-usage-model.md`).
@@ -89,6 +89,23 @@ export function opsAllowed(
 export const agentOpsAllowed = opsAllowed
 
 /**
+ * Uso facturable de hoy: lo que pasa la cuota diaria, ya descontado.
+ * Devuelve ceros para admin y para uso dentro de la cuota.
+ */
+export function billableUsage(
+  usage: Pick<UsageTotals, 'writes' | 'deletes' | 'reads' | 'storageBytes' | 'bytesRead'> | null,
+  admin = false
+) {
+  if (!usage || admin) return { writes: 0, deletes: 0, storageBytes: 0 }
+  const free = FREE_TIER.opsPerDay
+  const writes = Math.max(0, (usage.writes ?? 0) - free)
+  const afterWrites = Math.max(0, free - (usage.writes ?? 0))
+  const deletes = Math.max(0, (usage.deletes ?? 0) - afterWrites)
+  const storageBytes = Math.max(0, (usage.storageBytes ?? 0) - FREE_TIER.storageBytes)
+  return { writes, deletes, storageBytes }
+}
+
+/**
  * Lo que se cobra hoy: precio publicado del uso que pasa la cuota diaria.
  * Devuelve 0 para admin y para uso dentro de la cuota.
  */
@@ -96,19 +113,44 @@ export function dailyCharge(
   usage: Pick<UsageTotals, 'writes' | 'deletes' | 'reads' | 'storageBytes' | 'bytesRead'> | null,
   admin = false
 ): number {
-  if (!usage || admin) return 0
-  const free = FREE_TIER.opsPerDay
-  const writes = Math.max(0, (usage.writes ?? 0) - free)
-  const afterWrites = Math.max(0, free - (usage.writes ?? 0))
-  const deletes = Math.max(0, (usage.deletes ?? 0) - afterWrites)
-  const storageBytes = Math.max(0, (usage.storageBytes ?? 0) - FREE_TIER.storageBytes)
+  const billable = billableUsage(usage, admin)
   // D9: leer los datos propios nunca se cobra. Solo se factura lo que escribe
   // el usuario (o su agente) por encima de la cuota diaria.
   return chargeBreakdown({
     reads: 0,
-    writes,
-    deletes,
-    storageBytes,
+    writes: billable.writes,
+    deletes: billable.deletes,
+    storageBytes: billable.storageBytes,
     bytesRead: 0,
   }).total
+}
+
+/** Desglose del costo real de hoy con la misma base que `dailyCharge`. */
+export function dailyCostBreakdown(
+  usage: Pick<UsageTotals, 'writes' | 'deletes' | 'reads' | 'storageBytes' | 'bytesRead'> | null,
+  admin = false
+) {
+  const billable = billableUsage(usage, admin)
+  return costBreakdown({
+    reads: 0,
+    writes: billable.writes,
+    deletes: billable.deletes,
+    storageBytes: billable.storageBytes,
+    bytesRead: 0,
+  })
+}
+
+/** Desglose del cargo de hoy con la misma base que `dailyCharge`. */
+export function dailyChargeBreakdown(
+  usage: Pick<UsageTotals, 'writes' | 'deletes' | 'reads' | 'storageBytes' | 'bytesRead'> | null,
+  admin = false
+) {
+  const billable = billableUsage(usage, admin)
+  return chargeBreakdown({
+    reads: 0,
+    writes: billable.writes,
+    deletes: billable.deletes,
+    storageBytes: billable.storageBytes,
+    bytesRead: 0,
+  })
 }
