@@ -21,6 +21,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
+import { rootPatch } from '../src/lib/notes'
 
 const PROJECT_ID = 'demo-firemd'
 const OWNER = 'owner-uid'
@@ -666,9 +667,87 @@ describe('folders', () => {
     await assertSucceeds(updateDoc(doc(db(OWNER), 'folders', 'f1'), { access: 'link-view', updatedAt: ts() }))
   })
 
-  it('only the owner deletes the folder', async () => {
+  it('only an owner deletes the folder', async () => {
     await seedFolder('f1', everyRole)
     await assertFails(deleteDoc(doc(db(EDITOR), 'folders', 'f1')))
+    await assertFails(deleteDoc(doc(db(VIEWER), 'folders', 'f1')))
+    await assertSucceeds(deleteDoc(doc(db(OWNER), 'folders', 'f1')))
+  })
+
+  // The menu offers the actions of an owner to whoever carries the owner role,
+  // so the rules have to agree: a co-owner deletes and reshapes the folder like
+  // the account that created it.
+  it('a co-owner deletes and reshapes the folder', async () => {
+    await seedFolder('f1', { memberIds: [OWNER, EDITOR], roles: { [OWNER]: 'owner', [EDITOR]: 'owner' } })
+    await assertSucceeds(
+      updateDoc(doc(db(EDITOR), 'folders', 'f1'), { access: 'link-view', updatedAt: ts() })
+    )
+    await assertSucceeds(deleteDoc(doc(db(EDITOR), 'folders', 'f1')))
+  })
+})
+
+/**
+ * The bug behind "Missing or insufficient permissions" when deleting a folder:
+ * the app empties the folder by moving its notes to the root, and a note written
+ * by somebody else cannot be rewritten by the folder's owner, so the whole
+ * delete failed and the folder stayed forever.
+ */
+describe('folders: emptying a folder that holds other people\'s notes', () => {
+  const sharedRoles = { memberIds: [OWNER, EDITOR], roles: { [OWNER]: 'owner', [EDITOR]: 'editor' } }
+
+  /** A note the editor created inside the owner's folder: it inherits the ACL. */
+  async function seedEditorNote() {
+    await seedFolder('f1', sharedRoles)
+    await seedNote('n1', { ownerId: EDITOR, folderId: 'f1', aclSource: 'folder', ...sharedRoles })
+  }
+
+  function detach(overrides: Record<string, unknown> = {}) {
+    // The patch the app writes, not a copy of it: if `rootPatch` changes shape
+    // the rules have to keep accepting it.
+    return { ...rootPatch({ ownerId: EDITOR }), updatedAt: ts(), ...overrides }
+  }
+
+  it('the folder owner hands the note back to its author', async () => {
+    await seedEditorNote()
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), detach()))
+  })
+
+  it('a detach cannot widen access', async () => {
+    await seedEditorNote()
+    await assertFails(
+      updateDoc(
+        doc(db(OWNER), 'notes', 'n1'),
+        detach({ memberIds: [OWNER, EDITOR], roles: { [EDITOR]: 'owner', [OWNER]: 'owner' } })
+      )
+    )
+  })
+
+  it('a detach changes nothing but the ACL', async () => {
+    await seedEditorNote()
+    await assertFails(updateDoc(doc(db(OWNER), 'notes', 'n1'), detach({ title: 'mine now' })))
+  })
+
+  it('only a member of the folder may detach', async () => {
+    await seedEditorNote()
+    await assertFails(updateDoc(doc(db(STRANGER), 'notes', 'n1'), detach()))
+  })
+
+  it('a link-editor cannot detach somebody else\'s note', async () => {
+    await seedFolder('f1', { access: 'link-edit' })
+    await seedNote('n1', {
+      ownerId: EDITOR,
+      folderId: 'f1',
+      aclSource: 'folder',
+      memberIds: [],
+      roles: {},
+      access: 'link-edit',
+    })
+    await assertFails(updateDoc(doc(db(STRANGER), 'notes', 'n1'), detach()))
+  })
+
+  it('the owner can delete the folder once the notes are detached', async () => {
+    await seedEditorNote()
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'notes', 'n1'), detach()))
     await assertSucceeds(deleteDoc(doc(db(OWNER), 'folders', 'f1')))
   })
 })

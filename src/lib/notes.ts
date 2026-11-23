@@ -14,6 +14,7 @@ import {
   updateDoc,
   where,
   writeBatch,
+  type DocumentReference,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { postBody, proxyEnabled } from './proxy'
@@ -791,38 +792,107 @@ export async function setFolderAccess(folderId: string, access: Access): Promise
   await updateDoc(doc(db, 'folders', folderId), { access, updatedAt: serverTimestamp() })
 }
 
+/**
+ * The patch that sends a note back to the root list when its folder goes away.
+ *
+ * The author keeps the note, not the person deleting the folder: the note may
+ * have been written by an agent or by a co-editor invited into it, and the rules
+ * only accept the move when nobody's ownership is rewritten.
+ */
+export function rootPatch(data: Record<string, unknown>): Record<string, unknown> {
+  const ownerId = data.ownerId as string
+  return {
+    folderId: null,
+    aclSource: 'own',
+    memberIds: [ownerId],
+    roles: { [ownerId]: 'owner' },
+    access: 'restricted',
+  }
+}
+
+/**
+ * Applies every write, and refuses to let one document sink the rest.
+ *
+ * A batch is atomic, so a single document the caller may not touch used to take
+ * every other write with it: one note written by somebody else left the whole
+ * folder undeletable, forever, with "Missing or insufficient permissions" as the
+ * only symptom. On refusal the writes are retried one at a time, and the ones
+ * still refused are returned so the caller can decide what that means.
+ */
+export async function settleWrites<T>(
+  ops: T[],
+  commitBatch: (ops: T[]) => Promise<void>,
+  writeOne: (op: T) => Promise<void>
+): Promise<T[]> {
+  if (ops.length === 0) return []
+  try {
+    await commitBatch(ops)
+    return []
+  } catch {
+    const refused: T[] = []
+    for (const op of ops) {
+      try {
+        await writeOne(op)
+      } catch {
+        refused.push(op)
+      }
+    }
+    return refused
+  }
+}
+
 /** Remove the folder, moving its notes back to the root first. */
 export async function deleteFolder(folderId: string): Promise<void> {
   if (isLocalMode()) return deleteLocalFolder(folderId)
   if (!db) return
-  const notesSnap = await getDocs(query(collection(db, 'notes'), where('folderId', '==', folderId)))
-  const batch = writeBatch(db)
-  notesSnap.forEach((docSnap) => {
-    const data = docSnap.data()
-    const owner = data.ownerId as string
-    batch.update(docSnap.ref, {
-      folderId: null,
-      aclSource: 'own',
-      memberIds: [owner],
-      roles: { [owner]: 'owner' },
-      access: 'restricted',
-      updatedAt: serverTimestamp(),
-    })
-  })
-  await batch.commit()
+  const database = db
+  type Write = { ref: DocumentReference; patch: Record<string, unknown> }
+  const commit = (writes: Write[]) => {
+    const batch = writeBatch(database)
+    writes.forEach(({ ref, patch }) => batch.update(ref, patch))
+    return batch.commit()
+  }
+  const one = ({ ref, patch }: Write) => updateDoc(ref, patch)
 
-  // Nested folders are re-attached to the deleted folder's parent.
-  const childSnap = await getDocs(query(collection(db, 'folders'), where('parentId', '==', folderId)))
+  const notesSnap = await getDocs(
+    query(collection(database, 'notes'), where('folderId', '==', folderId))
+  )
+  const stranded = await settleWrites(
+    notesSnap.docs.map(
+      (docSnap): Write => ({
+        ref: docSnap.ref,
+        patch: { ...rootPatch(docSnap.data()), updatedAt: serverTimestamp() },
+      })
+    ),
+    commit,
+    one
+  )
+  // A note left behind would point at a folder that no longer exists, and the
+  // rules fail closed on exactly that: nobody, not even its author, could read it
+  // again. Better to keep the folder and say so.
+  if (stranded.length > 0) throw new Error(t('error.folderNotEmpty'))
+
+  // Nested folders are re-attached to the deleted folder's parent. One we may
+  // not touch keeps pointing at the deleted folder instead, and the tree already
+  // renders orphans at the root: nothing is lost and nobody's folder moves
+  // without permission.
+  const childSnap = await getDocs(
+    query(collection(database, 'folders'), where('parentId', '==', folderId))
+  )
   if (!childSnap.empty) {
-    const parentId = (await getDoc(doc(db, 'folders', folderId))).data()?.parentId ?? null
-    const reparent = writeBatch(db)
-    childSnap.forEach((child) => {
-      reparent.update(child.ref, { parentId, updatedAt: serverTimestamp() })
-    })
-    await reparent.commit()
+    const parentId =
+      (await getDoc(doc(database, 'folders', folderId))).data()?.parentId ?? null
+    await settleWrites(
+      childSnap.docs.map((child): Write => ({
+        ref: child.ref,
+        patch: { parentId, updatedAt: serverTimestamp() },
+      })),
+      commit,
+      one
+    )
   }
 
-  await deleteDoc(doc(db, 'folders', folderId))
+  await deleteDoc(doc(database, 'folders', folderId))
 }
 
 // ---------- sharing ----------

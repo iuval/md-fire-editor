@@ -89,6 +89,15 @@ service cloud.firestore {
       return signedIn() && acl.ownerId == uid();
     }
 
+    // The app hands the owner's menu (share, delete) to whoever carries the
+    // owner role, and an owner may promote a co-owner. Rules read the same
+    // signal so the button and the write agree: a folder created by another
+    // account — an agent, an earlier session — stays deletable by the person
+    // the folder says is its owner.
+    function isRoleOwner(acl) {
+      return signedIn() && rank(roleOf(acl)) >= 3;
+    }
+
     // ---------- admins ----------
     // Admin accounts do not pay and have no quota. The bootstrap admin is
     // identified by email so the account works before its `admins/{uid}` doc
@@ -187,12 +196,12 @@ service cloud.firestore {
       allow update: if resource != null
         && validFolder(request.resource.data, folderId)
         && (
-          (isAclOwner(resource.data)
+          (isRoleOwner(resource.data)
             && aclUpdateValid(resource.data, request.resource.data))
           || (canWrite(resource.data) && nameOnlyChange())
         );
 
-      allow delete: if resource != null && isAclOwner(resource.data);
+      allow delete: if resource != null && isRoleOwner(resource.data);
     }
 
     // Owner may change sharing and members but not the identity of the folder.
@@ -260,6 +269,18 @@ service cloud.firestore {
       return next.ownerId == current.ownerId && next.createdAt == current.createdAt;
     }
 
+    // A note leaving its folder for the root list: the author keeps it, alone.
+    function detachesToAuthor(next) {
+      return next.diff(resource.data).affectedKeys()
+          .hasOnly(['folderId', 'aclSource', 'memberIds', 'roles', 'access', 'updatedAt'])
+        && next.folderId == null
+        && next.aclSource == 'own'
+        && next.memberIds == [next.ownerId]
+        && next.roles.keys().hasOnly([next.ownerId])
+        && next.roles[next.ownerId] == 'owner'
+        && next.access == 'restricted';
+    }
+
     match /notes/{noteId} {
       allow get: if resource != null && canRead(aclOf(resource.data));
 
@@ -301,6 +322,15 @@ service cloud.firestore {
             && mirrorsFolder(resource.data.folderId, request.resource.data)
             && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['memberIds', 'roles', 'access', 'updatedAt']))
+          // Deleting a folder empties it: each note goes back to the root list
+          // owned by its author. The folder's owner can do that for notes other
+          // people wrote in it — but only that. Nobody's note is rewritten, and
+          // the new ACL is the author's own, which cannot widen access.
+          || (resource.data.keys().hasAny(['aclSource'])
+            && resource.data.aclSource == 'folder'
+            && resource.data.folderId is string
+            && isRoleOwner(folderDoc(resource.data.folderId))
+            && detachesToAuthor(request.resource.data))
         );
 
       allow delete: if resource != null && isAclOwner(resource.data);

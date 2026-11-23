@@ -66,6 +66,7 @@ export const en = {
     orderSaveFailed: 'Could not save the order. Check the connection.',
     noteCreateFailed: 'Could not create the note. Check the connection.',
     folderCreateFailed: 'Could not create the folder. Check the connection.',
+    folderDeleteFailed: 'Could not delete the folder. Check the connection.',
     noteDeleteFailed: 'Could not delete the note. Check the connection.',
     noteRenameForbidden: 'You do not have permission to rename this note.',
     noteRenameFailed: 'Could not rename the note. Check the connection.',
@@ -220,6 +221,8 @@ export const en = {
     emptyAgentName: 'The name cannot be empty',
     unnamedAgent: 'Unnamed',
     firestoreUnavailable: 'Firestore is not available.',
+    folderNotEmpty:
+      'This folder still holds notes written by other accounts, and they could not be moved out. Nothing was deleted.',
     topUpMinimum: 'The minimum top-up is ${amount}.',
     negativeThreshold: 'The threshold cannot be negative.',
     topUpBelowThreshold: 'The top-up has to be above the threshold, otherwise it repeats on every buy.',

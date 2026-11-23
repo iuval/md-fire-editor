@@ -10,6 +10,8 @@ import {
   optimisticFolder,
   reserveFolderId,
   reserveNoteId,
+  rootPatch,
+  settleWrites,
   type Folder,
   type Note,
 } from '../src/lib/notes'
@@ -253,5 +255,70 @@ describe('how much of the vault is still in the list', () => {
 
     expect(pendingBodies(notes)).toEqual({ count: 2, characters: 800 })
     expect(pendingBodies([])).toEqual({ count: 0, characters: 0 })
+  })
+})
+
+describe('emptying a folder to delete it', () => {
+  it('gives each note back to its author, never to the person deleting', () => {
+    // The note may have been written by an agent or a co-editor invited into the
+    // folder. The rules accept the move only if the note stays the author's.
+    expect(rootPatch({ ownerId: 'agent-uid' })).toEqual({
+      folderId: null,
+      aclSource: 'own',
+      memberIds: ['agent-uid'],
+      roles: { 'agent-uid': 'owner' },
+      access: 'restricted',
+    })
+  })
+
+  it('writes the whole folder in one batch when nothing is refused', async () => {
+    const batches: string[][] = []
+    const refused = await settleWrites(
+      ['a', 'b'],
+      async (ops) => {
+        batches.push(ops)
+      },
+      async () => {
+        throw new Error('the fallback should not run')
+      }
+    )
+
+    expect(batches).toEqual([['a', 'b']])
+    expect(refused).toEqual([])
+  })
+
+  it('retries one document at a time when the batch is refused', async () => {
+    // Regression: a note somebody else wrote made the batch fail, so the folder
+    // could never be deleted ("Missing or insufficient permissions").
+    const written: string[] = []
+    const refused = await settleWrites(
+      ['mine', 'theirs'],
+      async () => {
+        throw new Error('Missing or insufficient permissions.')
+      },
+      async (op) => {
+        if (op === 'theirs') throw new Error('Missing or insufficient permissions.')
+        written.push(op)
+      }
+    )
+
+    expect(written).toEqual(['mine'])
+    expect(refused).toEqual(['theirs'])
+  })
+
+  it('does not touch Firestore for an empty folder', async () => {
+    let called = false
+    const refused = await settleWrites(
+      [],
+      async () => {
+        called = true
+      },
+      async () => {
+        called = true
+      }
+    )
+
+    expect(called).toBe(false)
+    expect(refused).toEqual([])
   })
 })

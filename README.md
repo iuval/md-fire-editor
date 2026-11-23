@@ -113,10 +113,12 @@ latencia o más de ~50 editores por documento, conviene un provider websocket
 |---|---|
 | Leer nota o carpeta | cualquier rol (`lectura`+), o link `link-view`/`link-edit` |
 | Editar contenido | rol `escritura`/`dueño`, o link `link-edit` |
-| Cambiar ACL (`memberIds`, `roles`, `access`) | solo el dueño del documento |
+| Cambiar ACL (`memberIds`, `roles`, `access`) | el dueño del documento; en carpetas, también un co-dueño (rol `dueño`) |
 | Cambiar nombre de carpeta | dueño o `escritura` (solo el campo `name`) |
 | Mover nota de carpeta | dueño de la nota |
-| Borrar nota / carpeta | solo el dueño |
+| Borrar nota | solo el dueño de la nota |
+| Borrar carpeta | el dueño (`ownerId`) o un co-dueño invitado con rol `dueño` |
+| Vaciar una carpeta que se borra | el dueño de la carpeta devuelve cada nota a su autor (`aclSource: 'own'`), sin reescribir quién la escribió |
 | Escribir `updates` / `collab/state` / `presence` | quien pueda escribir la nota |
 | Leer `userIndex` | uno por id (nunca `list`); escribir solo el propio `uid` |
 | Colecciones no declaradas | denegado (catch-all) |

@@ -1445,7 +1445,18 @@ function AppTree() {
       ) {
         return
       }
-      await removeFolder(folder.id)
+      // The delete is a chain of writes (notes out, children up, the document
+      // last): any of them can be refused, and a silent `await` used to leave the
+      // row on screen with nothing but a console error to explain it.
+      try {
+        await removeFolder(folder.id)
+      } catch (error) {
+        setNotice(
+          error instanceof Error && error.message
+            ? error.message
+            : t('notice.folderDeleteFailed')
+        )
+      }
     },
     [removeFolder, t]
   )
