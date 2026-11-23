@@ -160,7 +160,9 @@ describe('optimistic note (the tab paints before the write lands)', () => {
       order: draft.order,
       kind: 'canvas',
     })
-    expect(draft.title).toBe('Untitled canvas')
+    // A new note has no title: the pane shows "Untitled" as its placeholder, and
+    // a note nobody names stays nameless instead of storing that word.
+    expect(draft.title).toBe('')
     // An empty body, so the pane renders an empty document instead of waiting.
     expect(draft.markdown).toBe('')
   })
@@ -173,6 +175,7 @@ describe('optimistic note (the tab paints before the write lands)', () => {
       serverTimestamp()
     )
     expect('kind' in written).toBe(false)
+    expect(draft.title).toBe('')
     expect(draft.kind).toBe('note')
     expect(draft.aclSource).toBe('own')
     expect(draft.roles).toEqual({ u1: 'owner' })

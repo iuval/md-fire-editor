@@ -194,9 +194,11 @@ function NoteDocument({
       setTitle(next)
       if (!editable) return
       if (titleTimer.current) clearTimeout(titleTimer.current)
-      titleTimer.current = setTimeout(() => persist({ title: next.trim() || t('note.untitled') }), 600)
+      // An emptied title is a nameless note, not a note called "Untitled": the
+      // field keeps `Untitled` only as its placeholder.
+      titleTimer.current = setTimeout(() => persist({ title: next.trim() }), 600)
     },
-    [editable, persist, t]
+    [editable, persist]
   )
 
   const handlePropertyChange = useCallback(

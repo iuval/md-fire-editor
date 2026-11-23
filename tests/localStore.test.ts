@@ -42,7 +42,8 @@ describe('local workspace', () => {
 
     return createLocalNote(LOCAL_UID).then((note) => {
       expect(note.ownerId).toBe(LOCAL_UID)
-      expect(note.title).toBe('Untitled')
+      // Nameless: the sidebar and the pane show "Untitled" as a placeholder.
+      expect(note.title).toBe('')
       expect(seen).toEqual([0, 1])
       expect(localStoreSummary().notes).toBe(1)
       off()

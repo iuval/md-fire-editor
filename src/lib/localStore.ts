@@ -218,8 +218,9 @@ export function newLocalNoteDraft(
   id: string,
   kind: NoteKind = 'note'
 ): Note {
-  const title = kind === 'canvas' ? t('app.untitledCanvas') : t('app.untitled')
-  return buildNote(uid, folder, id, kind, title, '')
+  // Nameless, like the note Firestore creates: `Untitled` is a placeholder, not a
+  // title a note should be born with.
+  return buildNote(uid, folder, id, kind, '', '')
 }
 
 export async function createLocalNote(
@@ -230,7 +231,7 @@ export async function createLocalNote(
 ): Promise<Note> {
   const data = read()
   const noteId = id ?? newId('note')
-  const note = buildNote(uid, folder, noteId, kind, kind === 'canvas' ? t('app.untitledCanvas') : t('app.untitled'), '')
+  const note = buildNote(uid, folder, noteId, kind, '', '')
   const body = kind === 'canvas' ? EMPTY_CANVAS : ''
   data.notes.push(note)
   data.bodies[noteId] = body

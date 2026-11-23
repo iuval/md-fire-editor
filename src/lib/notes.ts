@@ -101,8 +101,6 @@ interface Timestampish {
 }
 
 export const MAX_MARKDOWN_BYTES = 250_000
-const defaultTitle = () => t('app.untitled')
-const defaultCanvasTitle = () => t('app.untitledCanvas')
 export const MAX_TITLE_LENGTH = 300
 export const MAX_FOLDER_NAME = 120
 
@@ -330,7 +328,9 @@ export function newNoteDraft(
     aclSource: folder ? 'folder' : 'own',
     ...acl,
     kind,
-    title: kind === 'canvas' ? defaultCanvasTitle() : defaultTitle(),
+    // A new note is nameless: the pane shows "Untitled" as its placeholder, and a
+    // note nobody ever names keeps an empty title instead of storing that word.
+    title: '',
     markdown: '',
     tags: [],
     order: 0,
@@ -360,7 +360,7 @@ export async function createNote(
     aclSource: folder ? 'folder' : 'own',
     ...(kind === 'canvas' ? { kind } : {}),
     ...acl,
-    title: kind === 'canvas' ? defaultCanvasTitle() : defaultTitle(),
+    title: '',
     markdownBytes: body.length,
     tags: [],
     version: 1,
@@ -468,7 +468,9 @@ export function buildNoteDocument(
     folderId: input.folder ? input.folder.id : null,
     aclSource: input.folder ? 'folder' : 'own',
     ...acl,
-    title: (input.title || defaultTitle()).slice(0, MAX_TITLE_LENGTH),
+    // No invented title: an imported note keeps the name its file gave it, and an
+    // empty one is a nameless note, not a note called "Untitled".
+    title: input.title.slice(0, MAX_TITLE_LENGTH),
     ...(input.kind === 'canvas' ? { kind: 'canvas' as const } : {}),
     markdownBytes: Math.min(input.markdown.length, MAX_MARKDOWN_BYTES),
     tags: input.tags,
@@ -983,7 +985,7 @@ export async function migrateLegacyNotes(uid: string): Promise<number> {
         memberIds: [uid],
         roles: { [uid]: 'owner' },
         access: 'restricted',
-        title: String(data.title ?? defaultTitle()).slice(0, MAX_TITLE_LENGTH),
+        title: String(data.title ?? '').slice(0, MAX_TITLE_LENGTH),
         markdownBytes: body.length,
         version: 1,
         createdAt: now,

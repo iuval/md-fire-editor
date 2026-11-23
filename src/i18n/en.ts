@@ -16,7 +16,6 @@ export const en = {
     anonymous: 'Anonymous',
     unnamedPerson: 'Unnamed',
     editorPlaceholder: 'Start typing…',
-    untitledCanvas: 'Untitled canvas',
     folderName: 'Folder',
     noAccess: 'This note does not exist or you do not have access.',
     loadingEditor: 'Loading editor…',
