@@ -4,25 +4,22 @@ import http from 'node:http'
 import { verifyFirebaseIdToken } from './auth.mjs'
 import { createFirestoreStore } from './firestore.mjs'
 import { createProxyHandler } from './http.mjs'
-import { createLemonSqueezy } from './providers/lemonsqueezy.mjs'
+import { createPolar } from './providers/polar.mjs'
 
 const port = Number(process.env.PORT ?? 8080)
 
+/**
+ * Polar es el MoR: cobra, factura y liquida. Lemon Squeezy ya no acepta altas
+ * nuevas (cierra el 31-mar-2027), así que el adaptador es el de Polar.
+ */
 function buildCheckout() {
-  const {
-    LEMONSQUEEZY_API_KEY,
-    LEMONSQUEEZY_STORE_ID,
-    LEMONSQUEEZY_VARIANT_ID,
-    LEMONSQUEEZY_WEBHOOK_SECRET,
-    LEMONSQUEEZY_API_BASE,
-  } = process.env
-  if (!LEMONSQUEEZY_API_KEY) return null
-  return createLemonSqueezy({
-    apiKey: LEMONSQUEEZY_API_KEY,
-    storeId: LEMONSQUEEZY_STORE_ID,
-    variantId: LEMONSQUEEZY_VARIANT_ID,
-    webhookSecret: LEMONSQUEEZY_WEBHOOK_SECRET,
-    ...(LEMONSQUEEZY_API_BASE ? { apiBase: LEMONSQUEEZY_API_BASE } : {}),
+  const { POLAR_ACCESS_TOKEN, POLAR_PRODUCT_ID, POLAR_WEBHOOK_SECRET, POLAR_SERVER } = process.env
+  if (!POLAR_ACCESS_TOKEN) return null
+  return createPolar({
+    accessToken: POLAR_ACCESS_TOKEN,
+    productId: POLAR_PRODUCT_ID,
+    webhookSecret: POLAR_WEBHOOK_SECRET,
+    server: POLAR_SERVER === 'sandbox' ? 'sandbox' : 'production',
   })
 }
 

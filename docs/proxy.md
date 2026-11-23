@@ -18,7 +18,7 @@ Código: `server/` (JS ESM, sin framework). Tests: `tests/proxy-core.test.ts`,
 | **E1** proxy del canal caliente | **parcial** | `block` (1 escritura), `body` (3) y `compact` (1 + N borrados) por HTTP. Presencia sigue del cliente: cobrarla antes de separar modo liviano rompería la cuota gratuita (§7). |
 | **E2** cerrar escrituras directas | **hecho, apagado** | Interruptor `config/proxy.enforced` en las rules: bloques y `body` update. Se prende después del despliegue. |
 | **E3** cuota + débito + libro | **hecho** | `allowance/{uid}/days/{d}`, débito del saldo, libro inmutable, idempotencia por `opId`, reserva por operación (nunca negativo), auto top-up. |
-| **E6** checkout MoR | **código listo, proveedor a cambiar** | Checkout + webhook firmado que acredita saldo, packs $1/$5/$20 (recarga automática desde $5) y vencimiento a 24 meses. Lemon Squeezy cerró las altas nuevas: falta implementar el adaptador de Polar y sus claves. |
+| **E6** checkout MoR | **hecho (Polar)** | Checkout con precio ad-hoc por pack, webhook `order.paid` con Standard Webhooks, packs $1/$5/$20 (recarga automática desde $5) y vencimiento a 24 meses. |
 | E4 agents/MCP por el proxy | pendiente | Hoy los agentes escriben por REST con su propio token. |
 | **E5** storage exacto + compactación server-side | **parcial** | El stock se mueve en cada `body` y la compactación (manifest + borrados) ya la escribe el proxy, cobrando los borrados. Falta el cargo mensual por MB extra. |
 | E7 retirar `usage`/copy | pendiente | `usage` sigue siendo el contador de transparencia del cliente. |
@@ -119,10 +119,44 @@ Variables:
 |---|---|
 | `GOOGLE_CLOUD_PROJECT` | proyecto de Firestore (o el default de Cloud Run) |
 | `ALLOWED_ORIGINS` | lista separada por comas para CORS (`https://md-sync-app.web.app`) |
-| `LEMONSQUEEZY_API_KEY` / `_STORE_ID` / `_VARIANT_ID` | checkout (E6) |
-| `LEMONSQUEEZY_WEBHOOK_SECRET` | firma HMAC del webhook |
+| `POLAR_ACCESS_TOKEN` | OAT de Polar (`polar_oat_…`), scope `checkouts:write` (E6) |
+| `POLAR_PRODUCT_ID` | producto "Saldo FireMD" (un precio nominal; el pack va como precio ad-hoc) |
+| `POLAR_WEBHOOK_SECRET` | secreto del endpoint (`whsec_…`), firma Standard Webhooks |
+| `POLAR_SERVER` | `production` (default) o `sandbox` |
 
 La service account necesita `roles/datastore.user` y `roles/firebaseauth.viewer`.
+
+### 5.1 Provisionar el MoR (Polar)
+
+Lemon Squeezy ya no acepta altas nuevas y cierra el 31-mar-2027; el adaptador es
+`server/src/providers/polar.mjs` (Polar es MoR y acepta comercios en Uruguay).
+
+```bash
+polar auth login --production
+# Un producto con un precio nominal: el pack se manda como precio ad-hoc ($1/$5/$20)
+polar products create --name "Saldo FireMD" --visibility private \
+  --prices '[{"amount_type":"fixed","price_amount":2000}]' --json
+# Webhook: solo order.paid, formato raw, a la ruta del proxy
+polar webhooks create_webhook_endpoint \
+  --url https://firemd-proxy-XXX.southamerica-east1.run.app/v1/billing/webhook \
+  --name "FireMD proxy" --format raw --events order.paid --json   # imprime el whsec_
+# Token de la organización para el proxy
+polar auth token --scope checkouts:write
+```
+
+Los dos secretos van a Secret Manager, no a variables de entorno:
+
+```bash
+printf %s "$OAT"    | gcloud secrets create polar-access-token --data-file=-
+printf %s "$WHSEC"  | gcloud secrets create polar-webhook-secret --data-file=-
+gcloud run services update firemd-proxy --region southamerica-east1 \
+  --set-secrets POLAR_ACCESS_TOKEN=polar-access-token:latest,POLAR_WEBHOOK_SECRET=polar-webhook-secret:latest \
+  --update-env-vars POLAR_PRODUCT_ID=<product_id>,POLAR_SERVER=production
+```
+
+El saldo se acredita con el **neto** de la orden (`net_amount`), sin impuestos ni
+descuentos, para que el saldo sea exactamente el valor del pack. `allow_discount_codes`
+va en `false` para que el monto no se pueda manipular desde el checkout.
 
 ```bash
 # 2. Cliente: el proxy pasa a ser el escritor

@@ -1,126 +1,180 @@
 // E6: sesión de checkout del MoR y webhook firmado. Sin red: `fetch` y el
-// cuerpo del evento se inyectan.
+// cuerpo del evento se inyectan. El proveedor es Polar (Lemon Squeezy cerró
+// las altas nuevas), firma Standard Webhooks + el esquema viejo de Polar.
 import { createHmac } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  createLemonSqueezy,
-  validSignature,
-} from '../server/src/providers/lemonsqueezy.mjs'
+import { createPolar, verifySignature } from '../server/src/providers/polar.mjs'
 
-const SECRET = 'whsec_test'
+const SECRET = 'whsec_' + Buffer.from('clave-de-prueba-32-bytes-larga!!').toString('base64')
+const LEGACY_SECRET = 'polar_legacy_secret'
 const config = {
-  apiKey: 'key_test',
-  storeId: 'store_1',
-  variantId: 'variant_1',
+  accessToken: 'polar_oat_test',
+  productId: '1b0f8a2c-0000-4000-8000-000000000001',
   webhookSecret: SECRET,
 }
 
-function sign(raw: string, secret = SECRET) {
-  return createHmac('sha256', secret).update(raw).digest('hex')
+const now = () => Date.parse('2026-11-24T12:00:00.000Z')
+const stamp = '1795521600' // 2026-11-24T12:00:00Z
+
+function signStandard(raw: string, id = 'msg_1', timestamp = stamp, secret = SECRET) {
+  const key = Buffer.from(secret.slice('whsec_'.length), 'base64')
+  const signature = createHmac('sha256', key).update(`${id}.${timestamp}.${raw}`).digest('base64')
+  return { 'webhook-id': id, 'webhook-timestamp': timestamp, 'webhook-signature': `v1,${signature}` }
 }
 
+function signLegacy(raw: string, secret = LEGACY_SECRET) {
+  return { 'webhook-signature': createHmac('sha256', secret).update(raw).digest('hex') }
+}
+
+const orderEvent = JSON.stringify({
+  type: 'order.paid',
+  timestamp: '2026-11-24T12:00:00Z',
+  api_version: '2026-10',
+  data: {
+    id: 'order_1',
+    paid: true,
+    status: 'paid',
+    net_amount: 500,
+    total_amount: 610,
+    metadata: { uid: 'owner' },
+  },
+})
+
 describe('firma del webhook', () => {
-  it('acepta la firma correcta y rechaza el resto', () => {
-    expect(validSignature('{"a":1}', sign('{"a":1}'), SECRET)).toBe(true)
-    expect(validSignature('{"a":1}', sign('{"a":1}', 'otro'), SECRET)).toBe(false)
-    expect(validSignature('{"a":2}', sign('{"a":1}'), SECRET)).toBe(false)
-    expect(validSignature('{"a":1}', '', SECRET)).toBe(false)
-    expect(validSignature('{"a":1}', sign('{"a":1}'), '')).toBe(false)
+  it('acepta Standard Webhooks y rechaza firma, timestamp o id cambiados', () => {
+    const headers = signStandard(orderEvent)
+    expect(verifySignature({ rawBody: orderEvent, headers, secret: SECRET, now })).toBe(true)
+
+    expect(
+      verifySignature({
+        rawBody: orderEvent + ' ',
+        headers,
+        secret: SECRET,
+        now,
+      })
+    ).toBe(false)
+
+    // Fuera de la ventana de 5 minutos.
+    expect(
+      verifySignature({
+        rawBody: orderEvent,
+        headers: signStandard(orderEvent, 'msg_1', String(Number(stamp) - 600)),
+        secret: SECRET,
+        now,
+      })
+    ).toBe(false)
+
+    expect(
+      verifySignature({
+        rawBody: orderEvent,
+        headers: { ...headers, 'webhook-id': 'msg_2' },
+        secret: SECRET,
+        now,
+      })
+    ).toBe(false)
+
+    expect(verifySignature({ rawBody: orderEvent, headers, secret: '', now })).toBe(false)
+  })
+
+  it('acepta el secreto viejo de Polar (hex sobre el cuerpo)', () => {
+    const headers = signLegacy(orderEvent)
+    expect(verifySignature({ rawBody: orderEvent, headers, secret: LEGACY_SECRET, now })).toBe(true)
+    expect(
+      verifySignature({ rawBody: orderEvent + 'x', headers, secret: LEGACY_SECRET, now })
+    ).toBe(false)
   })
 })
 
 describe('sesión de checkout', () => {
-  it('manda el monto en centavos y el uid en custom_data', async () => {
+  it('manda el pack como precio ad-hoc del producto', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ data: { id: 'cs_1', attributes: { url: 'https://ls.test/checkout/1' } } }),
+      json: async () => ({ id: 'cs_1', url: 'https://polar.sh/checkout/cs_1', status: 'open' }),
     }))
-    const ls = createLemonSqueezy({ ...config, fetchImpl })
-    const session = await ls.createSession({
+    const polar = createPolar({ ...config, fetchImpl })
+    const session = await polar.createSession({
       uid: 'owner',
-      packUsd: 15,
+      packUsd: 5,
       email: 'o@x.test',
       successUrl: 'https://app.test/ok',
     })
 
-    expect(session).toEqual({ url: 'https://ls.test/checkout/1', id: 'cs_1' })
+    expect(session).toEqual({ url: 'https://polar.sh/checkout/cs_1', id: 'cs_1' })
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://api.lemonsqueezy.com/v1/checkouts')
-    expect(init.headers).toMatchObject({ Authorization: 'Bearer key_test' })
+    expect(url).toBe('https://api.polar.sh/v1/checkouts/')
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer polar_oat_test' })
     const body = JSON.parse(String(init.body))
-    expect(body.data.attributes.custom_price).toBe(1500)
-    expect(body.data.attributes.checkout_data.custom.uid).toBe('owner')
-    expect(body.data.relationships.variant.data.id).toBe('variant_1')
-    expect(body.data.relationships.store.data.id).toBe('store_1')
+    expect(body.products).toEqual([config.productId])
+    expect(body.prices[config.productId]).toEqual([{ amount_type: 'fixed', price_amount: 500 }])
+    expect(body.metadata).toEqual({ uid: 'owner' })
+    expect(body.external_customer_id).toBe('owner')
+    expect(body.allow_discount_codes).toBe(false)
+    expect(body.success_url).toBe('https://app.test/ok')
+  })
+
+  it('usa el sandbox cuando se pide', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ url: 'https://x.test/c' }) }))
+    await createPolar({ ...config, server: 'sandbox', fetchImpl }).createSession({ uid: 'o', packUsd: 1 })
+    expect((fetchImpl.mock.calls[0] as [string])[0]).toBe('https://sandbox-api.polar.sh/v1/checkouts/')
   })
 
   it('falla si el MoR no devuelve una URL https', async () => {
-    const fetchImpl = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ data: { id: 'cs_1', attributes: {} } }),
-    }))
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'cs_1' }) }))
     await expect(
-      createLemonSqueezy({ ...config, fetchImpl }).createSession({ uid: 'owner', packUsd: 5 })
+      createPolar({ ...config, fetchImpl }).createSession({ uid: 'owner', packUsd: 5 })
     ).rejects.toThrow('URL https')
   })
 
   it('propaga el error del MoR con el status', async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 422, text: async () => 'bad' }))
     await expect(
-      createLemonSqueezy({ ...config, fetchImpl }).createSession({ uid: 'owner', packUsd: 5 })
+      createPolar({ ...config, fetchImpl }).createSession({ uid: 'owner', packUsd: 5 })
     ).rejects.toThrow('422')
   })
 })
 
 describe('webhook', () => {
-  const orderEvent = JSON.stringify({
-    meta: { event_name: 'order_created', custom_data: { uid: 'owner' } },
-    data: { id: 'order_1', type: 'orders', attributes: { total: 1500, status: 'paid' } },
-  })
-
-  it('traduce la orden a uid + monto', async () => {
-    const ls = createLemonSqueezy(config)
-    const event = await ls.parseWebhook(orderEvent, { 'x-signature': sign(orderEvent) })
+  it('traduce la orden a uid + monto neto', async () => {
+    const polar = createPolar({ ...config, now })
+    const event = await polar.parseWebhook(orderEvent, signStandard(orderEvent))
     expect(event).toEqual({
       uid: 'owner',
       eventId: 'order_1',
-      amountUsd: 15,
-      provider: 'lemonsqueezy',
+      amountUsd: 5,
+      provider: 'polar',
     })
   })
 
   it('rechaza una firma inválida', async () => {
-    const ls = createLemonSqueezy(config)
-    await expect(ls.parseWebhook(orderEvent, { 'x-signature': 'deadbeef' })).rejects.toMatchObject({
-      status: 401,
-    })
+    const polar = createPolar({ ...config, now })
+    await expect(
+      polar.parseWebhook(orderEvent, { 'webhook-signature': 'v1,deadbeef' })
+    ).rejects.toMatchObject({ status: 401 })
   })
 
   it('ignora eventos que no acreditan saldo', async () => {
-    const ls = createLemonSqueezy(config)
-    const event = JSON.stringify({ meta: { event_name: 'order_refunded' }, data: { id: 'order_2' } })
-    const parsed = await ls.parseWebhook(event, { 'x-signature': sign(event) })
-    expect(parsed).toMatchObject({ ignored: true, eventName: 'order_refunded' })
+    const polar = createPolar({ ...config, now })
+    const event = JSON.stringify({ type: 'order.refunded', data: { id: 'order_2' } })
+    const parsed = await polar.parseWebhook(event, signStandard(event))
+    expect(parsed).toMatchObject({ ignored: true, eventName: 'order.refunded' })
   })
 
-  it('ignora una orden que no está paga', async () => {
-    const ls = createLemonSqueezy(config)
+  it('ignora una orden impaga', async () => {
+    const polar = createPolar({ ...config, now })
     const event = JSON.stringify({
-      meta: { event_name: 'order_created', custom_data: { uid: 'owner' } },
-      data: { id: 'order_3', attributes: { total: 500, status: 'pending' } },
+      type: 'order.paid',
+      data: { id: 'order_3', paid: false, net_amount: 500, metadata: { uid: 'owner' } },
     })
-    const parsed = await ls.parseWebhook(event, { 'x-signature': sign(event) })
+    const parsed = await polar.parseWebhook(event, signStandard(event))
     expect(parsed).toMatchObject({ ignored: true })
   })
 
   it('rechaza un evento sin uid o sin monto', async () => {
-    const ls = createLemonSqueezy(config)
+    const polar = createPolar({ ...config, now })
     const event = JSON.stringify({
-      meta: { event_name: 'order_created' },
-      data: { id: 'order_4', attributes: { total: 500, status: 'paid' } },
+      type: 'order.paid',
+      data: { id: 'order_4', paid: true, net_amount: 0, metadata: {} },
     })
-    await expect(ls.parseWebhook(event, { 'x-signature': sign(event) })).rejects.toMatchObject({
-      status: 400,
-    })
+    await expect(polar.parseWebhook(event, signStandard(event))).rejects.toMatchObject({ status: 400 })
   })
 })
