@@ -21,6 +21,7 @@ const NotePane = lazy(() =>
 )
 import { ShareDialog } from './components/ShareDialog'
 import { MoveDialog } from './components/MoveDialog'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { InputDialog } from './components/InputDialog'
 import { AgentsPanel } from './components/AgentsPanel'
 import { UsagePanel } from './components/UsagePanel'
@@ -175,6 +176,8 @@ type Dialog =
   | { kind: 'share-note'; noteId: string }
   | { kind: 'share-folder'; folderId: string }
   | { kind: 'move'; noteId: string }
+  | { kind: 'delete-note'; noteId: string }
+  | { kind: 'delete-folder'; folderId: string }
   | { kind: 'rename-folder'; folderId: string }
   | { kind: 'folder-tags'; folderId: string }
   | { kind: 'sort'; folderId: string }
@@ -1286,14 +1289,21 @@ function AppTree() {
   )
 
   /**
-   * The visitor's first frame: a blank note with the caret in it, plus the
-   * "Welcome to FireMD" note that says what this is.
+   * The visitor's first frame: a page waiting for the first keystroke, plus the
+   * "Welcome to FireMD" note that carries what the marketing site used to say.
    *
-   * A note taker first: the first thing on screen is a page waiting for the first
-   * keystroke, not a brochure. Both are real notes in the local store, so the
-   * visitor can type, keep them, delete the welcome one, and the whole workspace
-   * travels to the account on sign-in. Seeded once per browser, so a returning
-   * visitor gets their own notes back.
+   * A note taker first. The empty note is the one in front, with the caret in its
+   * title; the welcome note sits beside it in the tab strip and in the sidebar, so
+   * a visitor who wants the tour opens it and a visitor who wants to write never
+   * sees it. Both are real notes in the local store: they can type, keep them,
+   * delete the welcome one, and the whole workspace travels to the account on
+   * sign-in. Seeded once per browser, so a returning visitor gets their own notes
+   * back.
+   *
+   * Order matters twice over. The welcome note is opened *first* so the empty note
+   * lands on top of it — `openTab` activates whatever it opens. And the welcome
+   * note is optional: its own failure is caught, so a broken seed still leaves the
+   * visitor with a page to write on instead of an empty shell.
    */
   const guestSeeded = useRef(false)
   useEffect(() => {
@@ -1311,8 +1321,12 @@ function AppTree() {
           layout: openTab(ws.layout, ws.focusedPaneId, welcome.id, newId('tab')),
           focusedPaneId: ws.focusedPaneId,
         }))
-        // The blank note goes through the app's own "new note" path: it opens
-        // on top with the caret in its title, exactly like pressing + does.
+      } catch {
+        // The tour is optional; the page to write on is not.
+      }
+      // The empty note goes through the app's own "new note" path: it opens on
+      // top with the caret in its title, exactly like pressing + does.
+      try {
         await handleNewNote()
       } catch {
         // A failed seed leaves the empty workspace; the visitor can create a note.
@@ -1423,7 +1437,6 @@ function AppTree() {
 
   const handleDeleteNote = useCallback(
     async (note: Note) => {
-      if (!window.confirm(t('note.deleteConfirm', { title: note.title || t('app.untitled') }))) return
       // Every tab showing it goes away immediately (it can be open in both
       // panes); the delete finishes in the background.
       setWorkspace((ws) => {
@@ -1433,7 +1446,8 @@ function AppTree() {
       try {
         await removeNote(note.id)
       } catch {
-        setNotice(t('notice.noteDeleteFailed'))
+        // The dialog is still open and waiting: it shows why.
+        throw new Error(t('notice.noteDeleteFailed'))
       }
     },
     [removeNote, t]
@@ -1441,20 +1455,16 @@ function AppTree() {
 
   const handleDeleteFolder = useCallback(
     async (folder: Folder) => {
-      if (
-        !window.confirm(
-          t('menu.folder.deleteConfirm', { name: folder.name })
-        )
-      ) {
-        return
-      }
       // The delete is a chain of writes (notes out, children up, the document
       // last): any of them can be refused, and a silent `await` used to leave the
       // row on screen with nothing but a console error to explain it.
       try {
         await removeFolder(folder.id)
       } catch (error) {
-        setNotice(
+        // A folder delete is a chain of writes (notes out, children up, the
+        // document last): the dialog stays open on the first refusal and says
+        // which one it was, instead of closing over a folder that never left.
+        throw new Error(
           error instanceof Error && error.message
             ? error.message
             : t('notice.folderDeleteFailed')
@@ -1492,6 +1502,11 @@ function AppTree() {
   const shareNote = dialog.kind === 'share-note' ? noteFor(dialog.noteId) : null
   const shareNoteFolder = shareNote ? sharedFolderOf(shareNote, folders) : null
   const moveNote = dialog.kind === 'move' ? noteFor(dialog.noteId) : null
+  const deleteNote = dialog.kind === 'delete-note' ? noteFor(dialog.noteId) : null
+  const deleteFolder =
+    dialog.kind === 'delete-folder'
+      ? folders.find((folder) => folder.id === dialog.folderId) ?? null
+      : null
 
   /**
    * A file's actions belong to the file, so they open from its row in the tree
@@ -1558,7 +1573,7 @@ function AppTree() {
             icon: <Trash2 size={14} />,
             danger: true,
             separatorBefore: true,
-            onSelect: () => void handleDeleteNote(note),
+            onSelect: () => setDialog({ kind: 'delete-note', noteId: note.id }),
           })
         }
         return items
@@ -1614,22 +1629,25 @@ function AppTree() {
             }
           )
         }
-        if (isAclOwner(folder, user?.uid)) {
-          items.push(
-            {
+        // Deleting is the owner's call in both worlds: a visitor owns the
+        // folders of this browser (LOCAL_UID), so the row can go. Sharing needs
+        // a cloud account, so a visitor is not offered it at all.
+        if (isAclOwner(folder, viewer.uid)) {
+          if (!guest) {
+            items.push({
               label: t('menu.folder.share'),
               icon: <Link2 size={14} />,
               separatorBefore: true,
               onSelect: () => setDialog({ kind: 'share-folder', folderId: folder.id }),
-            },
-            {
-              label: t('menu.folder.delete'),
-              icon: <Trash2 size={14} />,
-              danger: true,
-              separatorBefore: true,
-              onSelect: () => void handleDeleteFolder(folder),
-            }
-          )
+            })
+          }
+          items.push({
+            label: t('menu.folder.delete'),
+            icon: <Trash2 size={14} />,
+            danger: true,
+            separatorBefore: true,
+            onSelect: () => setDialog({ kind: 'delete-folder', folderId: folder.id }),
+          })
         }
         return items
       })()
@@ -2190,6 +2208,30 @@ function AppTree() {
           }))}
           currentFolderId={moveNote.folderId}
           onMove={(folder) => void moveNoteTo(moveNote, folder)}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
+      {dialog.kind === 'delete-note' && deleteNote && (
+        <ConfirmDialog
+          title={t('note.deleteTitle', { title: deleteNote.title || t('app.untitled') })}
+          body={t('note.deleteBody')}
+          confirmLabel={t('common.delete')}
+          busyLabel={t('common.deleting')}
+          danger
+          onConfirm={() => handleDeleteNote(deleteNote)}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
+      )}
+
+      {dialog.kind === 'delete-folder' && deleteFolder && (
+        <ConfirmDialog
+          title={t('menu.folder.deleteTitle', { name: deleteFolder.name })}
+          body={t('menu.folder.deleteBody')}
+          confirmLabel={t('common.delete')}
+          busyLabel={t('common.deleting')}
+          danger
+          onConfirm={() => handleDeleteFolder(deleteFolder)}
           onClose={() => setDialog({ kind: 'none' })}
         />
       )}

@@ -17,7 +17,7 @@ describe('t', () => {
 
   it('replaces placeholders and tolerates extra params', () => {
     expect(t('sidebar.noteActions', { title: 'Recipes' })).toBe('Actions for Recipes')
-    expect(t('note.deleteConfirm', { title: 'Recipes', unused: 1 })).toBe('Delete "Recipes"?')
+    expect(t('note.deleteTitle', { title: 'Recipes', unused: 1 })).toBe('Delete "Recipes"?')
   })
 
   it('leaves a placeholder alone when the param is missing, instead of printing undefined', () => {

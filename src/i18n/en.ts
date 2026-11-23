@@ -27,7 +27,8 @@ export const en = {
     renamedTag: 'Tag renamed in {count} note.',
     renamedTagOther: 'Tag renamed in {count} notes.',
     tagOther: '{count} tags',
-    deleteConfirm: 'Delete "{title}"?',
+    deleteTitle: 'Delete "{title}"?',
+    deleteBody: 'The note is gone for everyone it was shared with.',
     untitled: 'Untitled',
     kind: 'Note',
     canvas: 'Canvas',
@@ -287,8 +288,8 @@ export const en = {
       moveDown: 'Move down',
       share: 'Share',
       delete: 'Delete',
-      deleteConfirm:
-        'Delete the folder “{name}”? Its notes go back to the root list and become private.',
+      deleteTitle: 'Delete the folder “{name}”?',
+      deleteBody: 'Its notes go back to the root list and become private.',
     },
   },
   settings: {
@@ -360,6 +361,9 @@ export const en = {
     close: 'Close',
     cancel: 'Cancel',
     save: 'Save',
+    delete: 'Delete',
+    deleting: 'Deleting…',
+    working: 'Working…',
     loading: 'Loading…',
   },
   account: {

@@ -1722,6 +1722,15 @@ body.tab-dragging .pane-drop {
   color: light-dark(var(--color-text), var(--color-text-dark));
 }
 
+/* The destructive action is outlined in the danger colour, not filled with it:
+   the token is a readable ink in both appearances, so the label keeps its
+   contrast without a second solid variant to maintain. */
+.btn.danger {
+  background: none;
+  border: 1px solid light-dark(var(--color-danger), var(--color-danger-dark));
+  color: light-dark(var(--color-danger), var(--color-danger-dark));
+}
+
 /* A disabled primary used to be the accent at 60% opacity: it read as "faded
    but clickable" and dropped to 2.8:1. Neutral surface, muted label, no
    ambiguity about whether it can be pressed. */
