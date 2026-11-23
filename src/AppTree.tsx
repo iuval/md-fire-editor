@@ -103,7 +103,7 @@ import {
   migrateLocalStore,
   setLocalMode,
 } from './lib/localStore'
-import { useT } from './i18n/index.ts'
+import { plural, useT } from './i18n/index.ts'
 import type { ProviderStatus, SyncStats } from './lib/collab/provider'
 import {
   createFolder,
@@ -1166,7 +1166,12 @@ function AppTree() {
       setSelectedTags((current) =>
         current.map((tag) => (tag === source.toLowerCase() ? target.toLowerCase() : tag))
       )
-      setNotice(`Etiqueta renombrada en ${changed} ${changed === 1 ? 'nota' : 'notas'}.`)
+      setNotice(
+        plural(changed, {
+          one: t('note.renamedTag', { count: changed }),
+          other: t('note.renamedTagOther', { count: changed }),
+        })
+      )
       track('note_shared', uid, { kind: 'tag-rename' })
     },
     [notes, uid]

@@ -85,7 +85,7 @@ export function NotePanels({
           aria-expanded={propsOpen}
         >
           <ChevronRight size={11} className={`chev${propsOpen ? ' open' : ''}`} />
-          {properties.length} {properties.length === 1 ? 'propiedad' : 'propiedades'}
+          {plural(properties.length, { one: t('note.propertyOne', { count: properties.length }), other: t('note.propertyOther', { count: properties.length }) })}
         </button>
       </div>
 

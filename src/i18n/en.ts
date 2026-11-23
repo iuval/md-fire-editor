@@ -14,6 +14,7 @@ export const en = {
     untitledFile: 'untitled',
     folderFile: 'folder',
     anonymous: 'Anonymous',
+    unnamedPerson: 'Unnamed',
     editorPlaceholder: 'Start typing…',
     untitledCanvas: 'Untitled canvas',
     folderName: 'Folder',
@@ -22,6 +23,10 @@ export const en = {
   },
   note: {
     tagOne: '{count} tag',
+    propertyOne: '{count} property',
+    propertyOther: '{count} properties',
+    renamedTag: 'Tag renamed in {count} note.',
+    renamedTagOther: 'Tag renamed in {count} notes.',
     tagOther: '{count} tags',
     deleteConfirm: 'Delete "{title}"?',
     untitled: 'Untitled',

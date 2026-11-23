@@ -1,5 +1,6 @@
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
+import { t } from '../i18n/index.ts'
 
 /**
  * Collaborator lookup without a backend.
@@ -23,7 +24,7 @@ export async function publishOwnDirectoryEntry(
   name: string | null | undefined
 ): Promise<void> {
   if (!db) return
-  const displayName = (name || email?.split('@')[0] || 'Sin nombre').slice(0, 120)
+  const displayName = (name || email?.split('@')[0] || t('app.unnamedPerson')).slice(0, 120)
 
   // Public display name, used by the share panel to label members.
   await setDoc(doc(db, 'profiles', uid), { name: displayName, updatedAt: serverTimestamp() })
