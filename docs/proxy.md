@@ -164,6 +164,19 @@ escritura directa sin deploy.
 | 5 | Segundo usuario escribe | se debita el `uid` del **dueño** (`payerOf`), no el del invitado |
 | 6 | Cliente directo | con `config/proxy.enforced` falla con `permission-denied` |
 
+**Corrida real contra producción (24-nov-2026)**: 19/19. ID token de un usuario
+sintético → `https://md-sync-app.web.app/api` → Cloud Run → `verifyIdToken` →
+transacción: bloque contado, reenvío idempotente, débito `0,001 → 0,000995` con
+asiento `−0,000005` en el libro, body con `storageBytes = 13`, compactación de 2
+bloques (manifest + borrados, `opsUsed = 707`), bloque posterior intacto y `402
+free-exhausted` que no escribe. El usuario y los documentos de prueba se
+borraron al final.
+
+Para repetirla hace falta un usuario real: `accounts:signUp?key=<apiKey>` desde
+un contexto con `Referer: https://md-sync-app.web.app/` (la API key está
+restringida por referrer) y un `config/proxy.enforced` apagado, o un custom
+token firmado con IAM `signBlob` (el camino que se usó acá).
+
 Tests automáticos que cubren 1-5 sin emulador: `tests/proxy-core.test.ts`
 (24 casos) y `tests/proxy-http.test.ts` (13 casos). El 6 lo cubre
 `tests/firestore.rules.test.ts` ("allowance y corte del proxy").
@@ -176,7 +189,16 @@ El adaptador real (`server/src/firestore.mjs`: transacción, `DELETE_FIELD`,
 npm run test:proxy:store
 ```
 
-## 7. Lo que falta para cerrar E1/E5
+## 7. Por qué el corte (E2) sigue apagado
+
+`config/proxy.enforced` ya no rompería la compactación ni el body del cliente
+web, pero **rompería a los agentes CLI/MCP**: `agent/core.mjs:writeNoteBody`
+escribe `notes/{id}/body/main` con un patch directo (y el `vault push`). El
+corte se prende después de E4. Mientras tanto el medidor cobra igual: el
+cliente web escribe por el proxy, y la escritura directa que quede (agentes,
+escritorio) es la que E2/E4 van a cerrar.
+
+## 8. Lo que falta para cerrar E1/E5
 
 - **Presencia**: se escribe directo (`presence/{uid}`) y no se cobra. Cobrarla
   hoy agotaría la cuota gratuita en minutos (una escritura cada pocos segundos),

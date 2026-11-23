@@ -129,6 +129,18 @@ suite('store real de Firestore', () => {
     expect(allowance.storageBytes).toBe(13)
   })
 
+  it('compacta: escribe el manifest y borra los bloques plegados', async () => {
+    const result = await op('op_e1b2c3d4', 'compact', {
+      blockIds: ['op_a1b2c3d4', 'op_b1b2c3d4'],
+      manifest: { epoch: 1, snapshot: 'AAAA', stateVector: 'BBBB', jid: 2, bytes: 3, clientId: 1 },
+    })
+    expect(result.ok).toBe(true)
+    expect(result.allowance.deletes).toBeGreaterThanOrEqual(2)
+
+    expect((await db.doc(`notes/${noteId}/updates/op_a1b2c3d4`).get()).exists).toBe(false)
+    expect((await db.doc(`notes/${noteId}/collab/manifest`).get()).data().snapshot).toBe('AAAA')
+  })
+
   it('sin saldo y sobre la cuota rechaza sin escribir', async () => {
     await db.doc(`credits/${uid}`).set({ balanceUsd: 0 }, { merge: true })
     const rejected = await op('op_d1b2c3d4')
