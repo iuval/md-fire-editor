@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FireMD — privacy policy</title>
+    <meta
+      name="description"
+      content="What FireMD stores, why, who processes it, how long it is kept, and how to export or delete it."
+    />
+    <link rel="canonical" href="https://firemd.app/privacy/" />
+    <link rel="alternate" hreflang="en" href="https://firemd.app/privacy/" />
+    <link rel="alternate" hreflang="x-default" href="https://firemd.app/privacy/" />
+    <meta name="robots" content="index,follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://firemd.app/privacy/" />
+    <meta property="og:title" content="FireMD — privacy policy" />
+    <meta property="og:site_name" content="FireMD" />
+    <meta property="og:locale" content="en_US" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+        src: url("/fonts/inter-latin-var.woff2") format("woff2");
+      }
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --page: #ffffff;
+        --text: #22222a;
+        --muted: #5c5c66;
+        --border: #e3e3e6;
+        --accent: #6f5ce0;
+        --accent-ink: #5646c4;
+        --tint: #f4f2ff;
+        --radius: 10px;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1e1e1e;
+          --page: #181818;
+          --text: #dadada;
+          --muted: #a8a8a8;
+          --border: #3a3a3a;
+          --accent: #8b7cf8;
+          --accent-ink: #c3b9ff;
+          --tint: #262232;
+        }
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--accent-ink); text-underline-offset: 3px; }
+      a:hover { text-decoration-thickness: 2px; }
+      .wrap { width: min(100% - 40px, 960px); margin: 0 auto; }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 20px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 650;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-size: 13px;
+        color: var(--text);
+        text-decoration: none;
+      }
+      .brand img { width: 22px; height: 22px; display: block; }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 38px;
+        padding: 8px 16px;
+        border-radius: var(--radius);
+        background: var(--accent);
+        color: #fff;
+        font-weight: 550;
+        text-decoration: none;
+        border: 1px solid transparent;
+      }
+      .button:hover { filter: brightness(1.06); }
+      .button.secondary {
+        background: transparent;
+        color: var(--text);
+        border-color: var(--border);
+      }
+      main { padding: 56px 0 72px; }
+      .eyebrow {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin: 0 0 14px;
+      }
+      h1 {
+        font-size: clamp(32px, 6vw, 52px);
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        margin: 0 0 18px;
+        text-wrap: balance;
+        max-width: 18ch;
+      }
+      .lede {
+        font-size: clamp(17px, 2.4vw, 20px);
+        color: var(--muted);
+        max-width: 62ch;
+        margin: 0 0 28px;
+      }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+      section { margin-top: 64px; }
+      h2 {
+        font-size: clamp(22px, 3.4vw, 30px);
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        margin: 0 0 10px;
+      }
+      .section-lede { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
+      .pillars {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        background: var(--page);
+      }
+      .card h3 { margin: 0 0 8px; font-size: 16px; letter-spacing: -0.01em; }
+      .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+      .plans {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .plan {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 22px;
+        background: var(--page);
+      }
+      .plan.featured { border-color: var(--accent); background: var(--tint); }
+      .plan .label {
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      .plan .price { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 4px; }
+      .plan .price small { font-size: 14px; font-weight: 500; color: var(--muted); }
+      .plan ul { margin: 14px 0 0; padding-left: 18px; color: var(--muted); font-size: 14.5px; }
+      .plan li { margin: 6px 0; }
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .faq { margin-top: 22px; border-top: 1px solid var(--border); }
+      .faq details { border-bottom: 1px solid var(--border); padding: 16px 0; }
+      .faq summary { cursor: pointer; font-weight: 600; }
+      .faq p { color: var(--muted); margin: 10px 0 0; }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 28px 0 40px;
+        color: var(--muted);
+        font-size: 13.5px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 22px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      footer nav { display: flex; flex-wrap: wrap; gap: 12px 18px; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92em;
+        background: var(--tint);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      @media (max-width: 560px) {
+        main { padding: 40px 0 56px; }
+        section { margin-top: 48px; }
+        .actions .button { flex: 1 1 auto; justify-content: center; }
+      }
+    
+      /* ---------- tariff table ---------- */
+      .tariff {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 14px 0 10px;
+        font-size: 14.5px;
+      }
+      .tariff caption {
+        text-align: left;
+        color: var(--muted);
+        font-size: 13px;
+        padding-bottom: 8px;
+      }
+      .tariff th,
+      .tariff td {
+        text-align: left;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .tariff th {
+        font-weight: 600;
+      }
+      .tariff td:last-child,
+      .tariff th:last-child {
+        text-align: right;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .tariff tr:last-child td {
+        border-bottom: none;
+      }
+      .tariff-scroll {
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/">
+          <img src="/favicon.svg" alt="" width="22" height="22" />
+          FireMD
+        </a>
+        <a class="button" href="/">Open the editor</a>
+      </header>
+
+      <main>
+        <p class="eyebrow">Privacy policy</p>
+        <h1>What FireMD does with your data</h1>
+        <p class="lede">
+          FireMD is a Markdown notes app. Your notes are yours: you can export them at any time,
+          and deleting a note deletes it. This page says exactly what is stored, why, who
+          processes it, how long it stays, and how to get rid of it.
+        </p>
+        <p class="note">Last updated: 23 November 2026.</p>
+
+        <section id="who">
+          <h2>Who is responsible</h2>
+          <p>
+            FireMD (<a href="https://firemd.app">firemd.app</a>) is the data controller for the
+            data described here. For any privacy question, or to exercise a right, write to
+            <a href="mailto:iuvalgoldansky@gmail.com">iuvalgoldansky@gmail.com</a>.
+          </p>
+        </section>
+
+        <section id="what">
+          <h2>What is stored</h2>
+          <ul class="planul">
+            <li>
+              <strong>Your account.</strong> When you sign in with Google we receive your name,
+              email address and profile picture, plus the account identifier Google gives the app.
+              There is no password: authentication happens on Google's side.
+            </li>
+            <li>
+              <strong>Your notes.</strong> The Markdown you write, note titles, folders, tags,
+              canvases, and the access list of each note or folder (who is owner, who can edit, who
+              can read, and whether a link grants access).
+            </li>
+            <li>
+              <strong>Collaboration data.</strong> The sync blocks that carry edits between devices,
+              and short-lived presence records (cursor position, selection, a display name and a
+              colour) that disappear when you stop editing.
+            </li>
+            <li>
+              <strong>Usage counters.</strong> How many reads, writes, deletes, stored bytes and
+              transferred bytes your account used, per day and per month, because that is what the
+              free quota and the prepaid balance are calculated from.
+            </li>
+            <li>
+              <strong>Billing records.</strong> Your prepaid balance and an immutable ledger of
+              top-ups. We never see or store your card: the payment is processed by Polar, our
+              merchant of record.
+            </li>
+            <li>
+              <strong>Product events and crash reports.</strong> A small fixed set of event names
+              (for example "note created", "export") and, when something breaks, the error name and
+              a truncated message, so we can fix it. No free text, no third-party analytics
+              scripts, no advertising identifiers.
+            </li>
+            <li>
+              <strong>Local data in your browser.</strong> Your session, your theme and layout
+              preferences, the offline cache, and — if you write before signing in — a local draft
+              that never leaves the browser unless you choose to save it.
+            </li>
+          </ul>
+        </section>
+
+        <section id="why">
+          <h2>Why it is processed</h2>
+          <ul class="planul">
+            <li>To provide the service: syncing, storing and sharing your notes.</li>
+            <li>To authenticate you and protect your account.</li>
+            <li>To measure usage, apply the free quota and charge the prepaid balance.</li>
+            <li>To diagnose failures and prevent abuse of the service.</li>
+            <li>To comply with tax and accounting obligations, which our merchant of record handles.</li>
+          </ul>
+          <p class="note">
+            We do not sell personal data, do not build advertising profiles, and do not use your
+            notes to train models.
+          </p>
+        </section>
+
+        <section id="who-else">
+          <h2>Who processes it</h2>
+          <ul class="planul">
+            <li>
+              <strong>Google Cloud / Firebase</strong> — authentication, database, file hosting and
+              monitoring (data stored in the United States, <code>nam5</code>).
+            </li>
+            <li>
+              <strong>Polar</strong> — merchant of record for card payments: it processes the
+              payment, issues the receipt and handles sales tax and VAT. We only receive the
+              confirmation of the order and its amount.
+            </li>
+            <li>
+              <strong>Our domain and DNS provider</strong> — to serve the site and its certificates.
+            </li>
+          </ul>
+          <p class="note">
+            No other party receives your data. Agents you connect on purpose (a CLI or an AI agent)
+            act with the permissions you grant them, through the same security rules that apply to a
+            person.
+          </p>
+        </section>
+
+        <section id="retention">
+          <h2>How long it is kept</h2>
+          <table class="tariff">
+            <tbody>
+              <tr>
+                <td>Notes, folders, tags and access lists</td>
+                <td>Until you delete them, or your account.</td>
+              </tr>
+              <tr>
+                <td>Sync blocks between devices</td>
+                <td>Compacted continuously; old blocks are pruned automatically.</td>
+              </tr>
+              <tr>
+                <td>Presence (cursor, selection)</td>
+                <td>Seconds to minutes; it is designed to disappear.</td>
+              </tr>
+              <tr>
+                <td>Usage counters</td>
+                <td>Kept per day and per month, for quota and billing.</td>
+              </tr>
+              <tr>
+                <td>Product events and crash reports</td>
+                <td>Short-lived; they are pruned automatically.</td>
+              </tr>
+              <tr>
+                <td>Backups</td>
+                <td>Daily snapshots with a 7-day retention, plus a 7-day point-in-time recovery window.</td>
+              </tr>
+              <tr>
+                <td>Local draft in the browser</td>
+                <td>Until you save or discard it; it never leaves your device otherwise.</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="rights">
+          <h2>Your rights</h2>
+          <ul class="planul">
+            <li>
+              <strong>Export</strong> — the app exports every note as Markdown with its folder
+              structure, whenever you want. The format stays Markdown.
+            </li>
+            <li>
+              <strong>Delete</strong> — deleting a note removes it and its content. To delete your
+              whole account, write to the address above; it is done within 30 days, including the
+              notes, counters and billing records we are not required to keep for tax purposes.
+            </li>
+            <li>
+              <strong>Access and correction</strong> — your data is visible in the app; you can
+              correct any of it, and ask us for a copy.
+            </li>
+            <li>
+              <strong>Object or restrict</strong> — write to us and we will explain or stop the
+              processing in question, unless a legal obligation requires it.
+            </li>
+            <li>
+              <strong>Revoke access</strong> — removing a person from a note or folder cuts their
+              access immediately, enforced by the database rules.
+            </li>
+          </ul>
+        </section>
+
+        <section id="security">
+          <h2>How it is protected</h2>
+          <p>
+            All traffic is HTTPS with HSTS. Access to each note is decided by database security
+            rules on the server, not by the client: the browser cannot widen its own permissions.
+            The prepaid balance can only be written by our backend. Backups and point-in-time
+            recovery are enabled.
+          </p>
+        </section>
+
+        <section id="changes">
+          <h2>Changes</h2>
+          <p>
+            If this policy changes in a way that affects you, the date at the top changes and, for
+            anything material, we announce it in the app before it takes effect.
+          </p>
+        </section>
+
+        <footer>
+          <p>FireMD — collaborative Markdown notes.</p>
+          <p>
+            <a href="/">Editor</a> · <a href="/pricing/">Pricing</a> ·
+            <a href="/agent.md">Agents (CLI/MCP)</a> · <a href="/llms.txt">llms.txt</a>
+          </p>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

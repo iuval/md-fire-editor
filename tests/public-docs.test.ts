@@ -124,3 +124,42 @@ describe('agent.md', () => {
     expect(agent).toMatch(/Do not try to work around it/)
   })
 })
+
+describe('privacy policy', () => {
+  const privacy = readFileSync(resolve(ROOT, 'public/privacy/index.html'), 'utf8')
+  const sitemap = readFileSync(resolve(ROOT, 'public/sitemap.xml'), 'utf8')
+
+  it('is served as a real page, in English, with its own canonical', () => {
+    expect(privacy).toContain('<html lang="en">')
+    expect(privacy).toContain('<link rel="canonical" href="https://firemd.app/privacy/" />')
+    expect(privacy).toContain('<link rel="alternate" hreflang="en"')
+    expect(sitemap).toContain('<loc>https://firemd.app/privacy/</loc>')
+  })
+
+  it('names the processors the app actually uses', () => {
+    for (const party of ['Google Cloud', 'Firebase', 'Polar']) {
+      expect(privacy).toContain(party)
+    }
+  })
+
+  it('answers the questions a policy has to answer', () => {
+    for (const section of ['What is stored', 'Why it is processed', 'How long it is kept', 'Your rights']) {
+      expect(privacy).toContain(section)
+    }
+    // Export and delete are real features, not promises: both must be described.
+    expect(privacy).toMatch(/exports every note as Markdown/)
+    expect(privacy).toMatch(/deleting a note removes it/)
+    // A contact route that actually exists: the domain has no mailbox yet.
+    expect(privacy).toMatch(/mailto:iuvalgoldansky@gmail\.com/)
+  })
+
+  it('does not promise an inbox the domain cannot receive', () => {
+    // `firemd.app` has no MX records, so privacy@firemd.app would bounce.
+    expect(privacy).not.toContain('privacy@firemd.app')
+  })
+
+  it('is reachable from the pricing page footer', () => {
+    const pricing = readFileSync(resolve(ROOT, 'public/pricing/index.html'), 'utf8')
+    expect(pricing).toContain('href="/privacy/"')
+  })
+})
