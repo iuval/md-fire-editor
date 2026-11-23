@@ -16,9 +16,17 @@ import { EditorToolbar } from './EditorToolbar'
 /** The editor's own markdown serialiser (tiptap-markdown). */
 type MarkdownStorage = { markdown: { getMarkdown(): string } }
 
-function markdownOf(editor: Editor | null): string {
-  if (!editor) return ''
-  return (editor.storage as unknown as MarkdownStorage).markdown.getMarkdown()
+export function markdownOf(editor: Editor | null): string {
+  // A destroyed editor keeps its object but loses its storage (`destroy()` resets
+  // `extensionStorage` to `{}`), so `storage.markdown` is undefined and this used
+  // to throw. Tiptap's React adapter destroys on a 1 ms timer, and a parent state
+  // update landing inside that window re-runs the effects below with the dead
+  // instance — which is exactly what a visitor's first frame does: the seed opens
+  // two tabs, so the pane's editor unmounts while the body is still arriving.
+  if (!editor || editor.isDestroyed) return ''
+  const storage = (editor.storage as unknown as Partial<MarkdownStorage>).markdown
+  if (!storage) return ''
+  return storage.getMarkdown()
 }
 
 interface CollaborativeEditorProps {
@@ -172,7 +180,7 @@ export function CollaborativeEditor({
   // shared document has one writer: if every view applied the note's markdown,
   // two panes showing the same note would insert it twice.
   useEffect(() => {
-    if (!editor || !session.isPrimary(owner)) return
+    if (!editor || editor.isDestroyed || !session.isPrimary(owner)) return
     const incoming = body ?? ''
     const current = markdownOf(editor)
     if (!incoming || incoming === current) return
@@ -183,13 +191,13 @@ export function CollaborativeEditor({
   }, [editor, body, emitter, session, owner])
 
   useEffect(() => {
-    if (!focusSignal || !ready || !editor || !editable) return
+    if (!focusSignal || !ready || !editor || editor.isDestroyed || !editable) return
     // `start`: the caret lands at the top of the body, not after the last word.
     editor.commands.focus('start', { scrollIntoView: false })
   }, [editor, editable, focusSignal, ready])
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
     editor.setEditable(editable)
     editor.setOptions({
       editorProps: {

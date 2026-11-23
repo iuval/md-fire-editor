@@ -8,7 +8,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { Markdown } from 'tiptap-markdown'
-import { CollaborativeEditor } from '../src/components/CollaborativeEditor'
+import { CollaborativeEditor, markdownOf } from '../src/components/CollaborativeEditor'
 import { TagHighlight, tagHighlightKey } from '../src/components/extensions/tagHighlight'
 import { FirestoreAwareness } from '../src/lib/collab/awareness'
 import type { Note } from '../src/lib/notes'
@@ -236,6 +236,37 @@ describe('<CollaborativeEditor />', () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(surface.contains(document.activeElement)).toBe(true)
+  })
+
+  it('serialises a destroyed editor to empty instead of throwing', () => {
+    // Tiptap's React adapter destroys the instance on a 1 ms timer when the
+    // component stops being mounted, and `destroy()` resets `extensionStorage` to
+    // `{}` — so `storage.markdown` is undefined. A parent state update landing
+    // inside that window re-runs the reconcile effect with the dead instance. The
+    // first visitor's frame does exactly that: the seed opens two tabs, so the
+    // pane's editor unmounts while the body is still arriving. It used to throw
+    // "Cannot read properties of undefined (reading 'getMarkdown')" and the whole
+    // app rendered "Something broke" for every visitor.
+    const element = document.createElement('div')
+    const ydoc = new Y.Doc()
+    const awareness = fakeAwareness()
+    const editor = new Editor({
+      element,
+      extensions: [
+        StarterKit.configure({ undoRedo: false }),
+        Collaboration.configure({ document: ydoc, field: 'content' }),
+        CollaborationCaret.configure({ provider: { awareness }, user: { name: 'Ana' } }),
+        Markdown.configure({ html: false }),
+      ],
+    })
+    editor.commands.setContent('# Vivo')
+    expect(markdownOf(editor)).toContain('# Vivo')
+
+    editor.destroy()
+    expect(editor.isDestroyed).toBe(true)
+    expect(markdownOf(editor)).toBe('')
+
+    ydoc.destroy()
   })
 
   it('renders read-only when the user cannot edit', async () => {
