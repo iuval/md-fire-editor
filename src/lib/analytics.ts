@@ -1,4 +1,4 @@
-import { addDoc, collection, serverTimestamp, type Firestore } from 'firebase/firestore'
+import { Timestamp, addDoc, collection, serverTimestamp, type Firestore } from 'firebase/firestore'
 import { db } from '../firebase'
 
 /**
@@ -30,6 +30,20 @@ export type EventName = (typeof EVENTS)[number]
 
 const sent = new Set<EventName>()
 
+/**
+ * Retention for product events, enforced by a Firestore TTL policy on
+ * `expireAt`. It used to be enforced on `at`, which is the moment the event
+ * happened: every document was expired on arrival and the history never grew
+ * past a day. A dedicated field keeps retention a decision instead of an
+ * accident.
+ */
+export const EVENT_RETENTION_DAYS = 180
+
+/** The timestamp a Firestore TTL policy deletes this document at. */
+export function expireAtFrom(now: number = Date.now()): Timestamp {
+  return Timestamp.fromMillis(now + EVENT_RETENTION_DAYS * 86_400_000)
+}
+
 export function resetAnalyticsForTests(): void {
   sent.clear()
 }
@@ -56,5 +70,6 @@ export function track(
     name,
     props: safeProps,
     at: serverTimestamp(),
+    expireAt: expireAtFrom(),
   }).catch(() => undefined)
 }

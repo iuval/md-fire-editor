@@ -1,4 +1,5 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { expireAtFrom } from './analytics.ts'
 import { auth, db } from '../firebase.ts'
 
 /**
@@ -71,6 +72,7 @@ export function reportError(kind: ErrorKind, error: unknown): ErrorReport {
     name: 'app_error',
     props: { kind: report.kind, name: report.name, message: report.message },
     at: serverTimestamp(),
+    expireAt: expireAtFrom(),
   }).catch(() => undefined)
 
   return report

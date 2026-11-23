@@ -43,11 +43,11 @@ function peekCertificate(host) {
   })
 }
 
-/** Fetches `/` and returns status, headers, and body. Follows the edge's 301. */
-function getRoot(host) {
+/** Fetches `path` and returns status, headers, and body. Follows the edge's 301. */
+function getPath(host, path = '/') {
   return new Promise((resolve, reject) => {
     const req = request(
-      { host, path: '/', method: 'GET', headers: { 'user-agent': 'firemd-uptime' } },
+      { host, path, method: 'GET', headers: { 'user-agent': 'firemd-uptime' } },
       (res) => {
         const chunks = []
         res.on('data', (chunk) => chunks.push(chunk))
@@ -81,7 +81,7 @@ async function probeHost(host) {
     `${days.toFixed(1)} days (expires ${cert.valid_to})`
   )
 
-  const res = await getRoot(host)
+  const res = await getPath(host, '/')
   check(res.status === 200, `${host} GET / == 200`, String(res.status))
   check(res.body.includes('FireMD'), `${host} serves the app`, `${res.body.length} bytes`)
   check(
@@ -99,6 +99,27 @@ async function probeHost(host) {
     res.body.includes(`rel="canonical" href="https://${CANONICAL_HOST}/"`),
     `${host} canonical points at ${CANONICAL_HOST}`
   )
+  // The layout Google's OAuth review depends on: `/` is a readable page that
+  // names and explains the app, and the single-page app lives at `/app/`. When
+  // `/` served the app shell the reviewer saw `<div id="root"></div>` and
+  // rejected it as "behind a login" and "does not explain the purpose".
+  check(
+    /FireMD is a notes app for Markdown/.test(res.body),
+    `${host} / explains the app in the HTML`,
+    res.body.includes('<div id="root">') ? 'served the SPA shell' : 'landing copy'
+  )
+  check(
+    res.body.includes('href="/app/"'),
+    `${host} / links into the app`
+  )
+  const app = await getPath(host, '/app/')
+  check(app.status === 200, `${host} GET /app/ == 200`, String(app.status))
+  check(
+    app.body.includes('id="root"') && app.body.includes('/assets/'),
+    `${host} /app/ serves the app`,
+    `${app.body.length} bytes`
+  )
+
   check(
     res.headers['content-type']?.startsWith('text/html'),
     `${host} content-type html`,

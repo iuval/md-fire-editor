@@ -37,16 +37,60 @@ decoración: son la diferencia del producto hecha visible en el material elegido
 Corolario: la dirección **Signal** (03) queda descartada como base — rompe la familiaridad al
 poner la presencia como navegación principal. Sus ideas sobreviven como capa de sorpresa.
 
+## Alcance acotado: solo theme
+
+**No hay cambios estructurales.** Se toca únicamente lo que ya está en `src/index.css` como
+tokens y reglas de presentación: colores, tipografías, bordes, radios, tamaños, márgenes,
+icons. El layout (sidebar a la izquierda, tabs arriba, editor a la derecha, árbol de carpetas,
+lista de etiquetas) queda exactamente como está.
+
+Consecuencia: las "sorpresas" que dependían de estructura (presencia como nota al margen,
+session log, autor por línea en el gutter) quedan **fuera de alcance** en esta fase. Las
+sorpresas posibles dentro del alcance son de material: tipografía del documento, tratamiento
+de etiquetas, densidad, peso de íconos, forma de las reglas, numerales mono en metadatos.
+
+## El color no es parte del diseño
+
+El color lo controla la persona: `src/lib/theme.ts` deriva los 13 tokens desde dos semillas
+(fondo + acento), hay 12 presets y el que se pinta por defecto es **`nordico`**. Por lo tanto
+un skin **no puede definirse por su paleta** — tiene que definirse por lo que la paleta no
+toca:
+
+- familia y escala tipográfica (documento, chrome, metadatos)
+- lenguaje de bordes (hairline / 0 / grueso / sólo reglas laterales) y radio
+- densidad (padding de fila, altura de línea, ancho del sidebar)
+- **cómo se usa el acento**: regla lateral, relleno tenue, subrayado, o etiqueta de sección
+- peso de íconos
+
+Comparación hecha con la paleta real de Nordic (light), extraída de `themeCssVars(presetState('nordico'))`:
+
+`bg #eef1f6 · bg2 #e1e6ee · bg3 #d6dce5 · line #c7d1df · accent #4c6a92 · accent-ink #4a678f · text #111418 · muted #535960`
+
+Hallazgo del ejercicio: con el color fijo, **S1, S3 y S4 convergen**; lo único que las separa
+es la tipografía y el radio. S2 (mono + radio 0) es el único que sigue siendo inconfundible.
+Eso implica que la decisión real no es "qué skin" sino **qué tipografía y qué geometría**.
+
+## Skins (mismo DOM, solo tokens)
+
+| Skin | bg | línea | acento | radius | tipografía | densidad |
+|------|----|-------|--------|--------|------------|----------|
+| **S1 Ink & Paper** | serif en el documento, sans en chrome | 2px | regla lateral + lomo en bloques de código | fila 4px |
+| **S2 Instrument** | todo mono | 0 | etiquetas de sección en acento | fila 2.5px |
+| **S3 Signal** | sans | 7px | relleno tenue (`color-mix` 14%) en links y badges | fila 4px |
+| **S4 Ruled Ledger** | sans + numerales mono | 3px | lomo 2px + links subrayados | fila 3.5px |
+
 ## Decision log
 
 | # | Decisión | Estado |
 |---|----------|--------|
 | D1 | Dirección base: **A** Ink & Paper · **B** Instrument · **D** Ruled Ledger · híbrido | pendiente |
 | D2 | Público y estrategia: migrantes de Obsidian, esqueleto familiar + capa de sorpresas | **fijada** |
-| D3 | Cómo se representa la presencia multi-usuario (margen / session log / autor por línea) | pendiente |
+| D2b | Alcance: solo theme (tokens y presentación), sin cambios estructurales | **fijada** |
+| D3 | Cómo se representa la presencia multi-usuario (margen / session log / autor por línea) | fuera de alcance (requiere estructura) |
 | D4 | Dónde vive el medidor de uso prepago | pendiente |
-| D5 | Tipografía de títulos y de chrome | pendiente |
+| D5 | Tipografía de títulos, cuerpo y chrome | pendiente |
 | D6 | Acento de marca definitivo | pendiente |
 | D7 | Modo claro vs oscuro como default | pendiente |
+| D10 | Lenguaje de íconos (stroke, relleno, o sin íconos) | pendiente |
 | D8 | Qué se reescribe del CSS actual (`src/index.css`, 4.012 líneas) y qué se tira | pendiente |
 | D9 | Primera sorpresa que se implementa | pendiente |

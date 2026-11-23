@@ -664,7 +664,7 @@ service cloud.firestore {
       allow create: if signedIn()
         && notAnonymous()
         && uid() == userId
-        && request.resource.data.keys().hasOnly(['name', 'props', 'at'])
+        && request.resource.data.keys().hasOnly(['name', 'props', 'at', 'expireAt'])
         && request.resource.data.name in [
             'app_open', 'note_created', 'note_shared', 'collab_session',
             'agent_linked', 'export', 'import', 'app_error',
@@ -673,7 +673,11 @@ service cloud.firestore {
           ]
         && request.resource.data.props is map
         && request.resource.data.props.size() <= 5
-        && isTimestamp(request.resource.data.at);
+        && isTimestamp(request.resource.data.at)
+        // Retention is enforced by a TTL policy on `expireAt`. Optional so a
+        // cached bundle written before the field existed is not rejected.
+        && (!request.resource.data.keys().hasAny(['expireAt'])
+          || isTimestamp(request.resource.data.expireAt));
 
       allow update, delete: if false;
     }

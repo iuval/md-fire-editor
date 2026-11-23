@@ -1020,6 +1020,7 @@ describe('analytics events', () => {
     name: 'app_open',
     props: { platform: 'web' },
     at: ts(),
+    expireAt: ts(),
     ...overrides,
   })
 
@@ -1062,6 +1063,25 @@ describe('analytics events', () => {
         collection(db(OWNER), 'analytics', OWNER, 'events'),
         event({ name: 'app_error', props: { kind: 'global', message: 'y'.repeat(100) } })
       )
+    )
+  })
+
+  it('takes a retention field, and only as a timestamp', async () => {
+    // A Firestore TTL policy deletes on `expireAt`; it must be a real timestamp.
+    await assertSucceeds(
+      addDoc(collection(db(OWNER), 'analytics', OWNER, 'events'), event())
+    )
+    await assertFails(
+      addDoc(
+        collection(db(OWNER), 'analytics', OWNER, 'events'),
+        event({ expireAt: 'in a while' })
+      )
+    )
+    // Cached bundles written before the field existed still get through.
+    const withoutExpiry: Record<string, unknown> = event()
+    delete withoutExpiry.expireAt
+    await assertSucceeds(
+      addDoc(collection(db(OWNER), 'analytics', OWNER, 'events'), withoutExpiry)
     )
   })
 
