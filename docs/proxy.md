@@ -124,7 +124,11 @@ La service account necesita `roles/datastore.user` y `roles/firebaseauth.viewer`
 
 ```bash
 # 2. Cliente: el proxy pasa a ser el escritor
-VITE_PROXY_URL=https://firemd-proxy-xxx.run.app npm run build && firebase deploy --only hosting
+#    `.env.production` (versionado) ya fija `VITE_PROXY_URL=/api`, así que
+#    cualquier `npm run build` de producción escribe por el proxy. Sin esa
+#    variable, Vite pliega `proxyEnabled = false` y el minificador borra el
+#    cliente del proxy del bundle: la app vuelve a escribir directo.
+npm run build && firebase deploy --only hosting
 ```
 
 **Mismo origen (recomendado)**: `firebase.json` ya tiene la rewrite
@@ -162,6 +166,14 @@ Tests automáticos que cubren 1-5 sin emulador: `tests/proxy-core.test.ts`
 (24 casos) y `tests/proxy-http.test.ts` (13 casos). El 6 lo cubre
 `tests/firestore.rules.test.ts` ("allowance y corte del proxy").
 
+El adaptador real (`server/src/firestore.mjs`: transacción, `DELETE_FIELD`,
+`Timestamp`) tiene su propio test contra el emulador, que necesita
+`npm --prefix server install`:
+
+```bash
+npm run test:proxy:store
+```
+
 ## 7. Lo que falta para cerrar E1/E5
 
 - **Presencia**: hoy se escribe directo (`presence/{uid}`), no se cobra.
@@ -173,10 +185,12 @@ Tests automáticos que cubren 1-5 sin emulador: `tests/proxy-core.test.ts`
 - **Escritorio**: sigue con pull/push cada 15 s contra Firestore (D4).
 - **Storage**: el cargo mensual por MB extra no se debita todavía (E5).
 
-**Riesgo abierto, sin verificar en el árbol**: el adaptador de Firestore
-(`server/src/firestore.mjs`) y la verificación de ID tokens (`server/src/auth.mjs`) no se
-llegaron a ejecutar — dependen de `firebase-admin`, que no está instalado en el repo. El
-core, el router y el webhook están cubiertos por tests con un store en memoria. Primer paso
-del despliegue: `npm --prefix server install` y un smoke test contra el emulador
-(`FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 node server/src/index.mjs`) antes de tocar el
-proyecto real.
+**Verificado**: el adaptador de Firestore corre contra el emulador en
+`tests/proxy-store.integration.test.ts` (5 casos: transacción, idempotencia, débito, libro,
+`DELETE_FIELD`, rechazo sin escritura). El servicio desplegado arrancó, sirve `/health` y
+rechaza tokens inválidos con `401`.
+
+**Sin verificar todavía**: `verifyIdToken` con un ID token real de usuario — nadie escribió
+desde una sesión firmada después del despliegue. La prueba de 30 segundos: abrir la app,
+tipear en una nota y ver que `allowance/{tu-uid}/days/{hoy}.opsUsed` sube y que el diálogo
+de uso muestra "Medido por el servidor".

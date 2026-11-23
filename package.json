@@ -23,7 +23,8 @@
     "firemd-mcp": "node agent/mcp.mjs",
     "bench:sync": "node scripts/java-env.mjs firebase emulators:exec --only firestore --project demo-firemd \"BENCH=1 vitest run tests/sync.bench.test.ts\"",
     "test:vault": "node scripts/java-env.mjs firebase emulators:exec --only firestore,auth --project demo-firemd \"vitest run tests/vault-cli.test.ts\"",
-    "dev:gallery": "vite --config vite.gallery.config.ts --port 5198"
+    "dev:gallery": "vite --config vite.gallery.config.ts --port 5198",
+    "test:proxy:store": "node scripts/java-env.mjs firebase emulators:exec --only firestore --project demo-firemd \"vitest run tests/proxy-store.integration.test.ts\""
   },
   "dependencies": {
     "@tiptap/extension-collaboration": "^3.35.0",
