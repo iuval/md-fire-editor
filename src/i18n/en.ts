@@ -290,17 +290,39 @@ export const en = {
       deleteConfirm:
         'Delete the folder “{name}”? Its notes go back to the root list and become private.',
     },
-    vault: {
-      export: 'Export',
-      import: 'Import',
-    },
-    account: {
-      signIn: 'Sign in',
+  },
+  settings: {
+    heading: 'Settings',
+    sections: 'Settings sections',
+    back: 'Back to settings',
+    tabs: {
+      account: 'Account',
+      appearance: 'Appearance',
+      order: 'Order',
       usage: 'Usage',
       agents: 'Agents',
-      appearance: 'Appearance',
-      listOrder: 'Order',
+      vault: 'Vault',
+    },
+    hints: {
+      appearance: 'Theme and typefaces',
+      order: 'How the root list is sorted',
+      usage: 'Cost, balance and diagnostics',
+      agents: 'Agents connected to this account',
+      vault: 'Export or import your notes',
+    },
+    account: {
+      signedIn: 'Your notes sync to this account on every device you sign in to.',
+      guest: 'Not signed in. Your notes live in this browser; sign in to keep them in your account.',
+      signIn: 'Sign in',
       signOut: 'Sign out',
+    },
+    order: {
+      hint: 'Applies to the list outside any folder. Each folder keeps its own order.',
+    },
+    vault: {
+      export: 'Export everything',
+      import: 'Import notes',
+      hint: 'Export downloads a .zip of your notes and folders. Import reads Markdown, .canvas and Obsidian vaults.',
     },
   },
   share: {
@@ -591,7 +613,6 @@ export const en = {
       'Anything you leave alone is recalculated so text, borders and warnings stay readable. The other appearance comes from the same design.',
     clearOverrides: 'Clear my colour tweaks',
     reset: 'Reset “{name}”',
-    done: 'Done',
     background: 'Background',
     backgroundHint: 'The base colour of the bars and the list.',
     accent: 'Accent',

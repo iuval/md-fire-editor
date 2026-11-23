@@ -2280,6 +2280,13 @@ body.tab-dragging .pane-drop {
 
 /* ---------- agentes conectados ---------- */
 
+/* Settings hosts the agent list too: a plain column, no dialog shell. */
+.agents-panel-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .agent-list {
   list-style: none;
   margin: 0;
@@ -2435,16 +2442,18 @@ body.tab-dragging .pane-drop {
 
 /* ---------- usage ---------- */
 
-.usage {
-  width: min(560px, calc(100vw - 32px));
-  /* The title, the headline and the tabs stay put: only the panel scrolls. */
-  overflow: hidden;
+/* Hosted by Settings: a column that lays out the headline, the tabs and the
+   section. The settings scroll moves them, so nothing here scrolls twice. */
+.usage-panel-root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
 }
 
 /* Fixed chrome — never squeeze these to make room for the panel. */
-.usage > .row:first-child,
-.usage-hero,
-.usage-tabs {
+.usage-panel-root > .usage-hero,
+.usage-panel-root > .usage-tabs {
   flex: none;
 }
 
@@ -2548,12 +2557,7 @@ body.tab-dragging .pane-drop {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  /* Only this part scrolls, so the title row and the tabs never leave the view. */
-  flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 2px;
 }
 
 /* The panel is display:flex, so the UA rule for [hidden] would lose. */
@@ -3280,25 +3284,341 @@ body.tab-dragging .pane-drop {
   }
 }
 
+/* ---------- settings ---------- */
+
+/* One panel for every preference. Desktop: a side tablist and a scrolling
+   section beside it. Below 768px the component renders the same sections as a
+   full page with push navigation, so this box becomes the page. */
+.settings {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(860px, calc(100vw - 48px));
+  /* One height for every section: switching tabs must not resize the dialog
+     under the pointer. Each section scrolls inside it instead. */
+  height: min(88svh, 660px);
+  overflow: hidden;
+  border-radius: var(--radius-panel);
+  background: light-dark(var(--color-bg), var(--color-bg-2-dark));
+  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: none;
+  padding: 11px 12px 11px 16px;
+  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 216px;
+  padding: 10px;
+  overflow-y: auto;
+  border-right: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  background: light-dark(var(--color-bg-2), var(--color-bg-3-dark));
+}
+
+.settings-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 8px 12px;
+}
+
+.settings-identity-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-identity-sub {
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+.settings-tab[aria-selected='true'] {
+  background: light-dark(var(--color-bg), var(--color-bg-2-dark));
+  color: light-dark(var(--color-text), var(--color-text-dark));
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px light-dark(var(--color-border), var(--color-border-dark));
+}
+
+.settings-tab:focus-visible {
+  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  outline-offset: 1px;
+}
+
+.settings-tab-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  color: inherit;
+}
+
+/* The scrolling half: one scrollbar per panel, and the padding the sections
+   count on. The vars let a section's own sticky bar bleed to the edges. */
+.settings-content {
+  --settings-pad: 18px;
+  --settings-pad-top: 16px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--settings-pad-top) var(--settings-pad) 20px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.avatar--lg {
+  width: 38px;
+  height: 38px;
+  font-size: 15px;
+}
+
+.settings-account-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.settings-account-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.settings-account-sub {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+/* Phone: the panel is the page. Same sections, no floating card and no
+   scrim-sized padding — the list leads, the section follows. */
+.settings.is-mobile {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: none;
+  width: 100%;
+  height: 100svh;
+  /* The safe area is padding, not extra height, so nothing hides behind the
+     home indicator. */
+  max-height: 100svh;
+  border: none;
+  border-radius: 0;
+}
+
+.settings.is-mobile .settings-head {
+  min-height: 52px;
+  padding: 4px 8px 4px 6px;
+  padding-top: max(4px, env(safe-area-inset-top));
+}
+
+.settings.is-mobile .settings-title {
+  padding-left: 10px;
+  font-size: 17px;
+}
+
+.settings.is-mobile .settings-content {
+  --settings-pad: 16px;
+  --settings-pad-top: 8px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+}
+
+/* The list owns the padding: its rows run edge to edge, and the last one
+   stops above the home indicator. */
+.settings.is-mobile .settings-content--list {
+  gap: 0;
+  padding: 0 0 env(safe-area-inset-bottom);
+}
+
+.settings.is-mobile .settings-identity {
+  padding: 10px 16px 16px;
+}
+
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 0 10px 0 2px;
+  border: none;
+  background: none;
+  color: light-dark(var(--color-accent), var(--color-accent-dark));
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.settings-back:focus-visible {
+  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.settings-page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 54px;
+  padding: 10px 16px;
+  border: none;
+  border-top: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  background: none;
+  color: light-dark(var(--color-text), var(--color-text-dark));
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-row:last-child {
+  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+}
+
+.settings-row:active {
+  background: light-dark(var(--color-bg-2), var(--color-bg-3-dark));
+}
+
+.settings-row:focus-visible {
+  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  outline-offset: -2px;
+}
+
+.settings-row-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: light-dark(var(--color-bg-3), var(--color-bg-3-dark));
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.settings-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.settings-row-label {
+  font-size: 14px;
+}
+
+.settings-row-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.settings-row-chevron {
+  flex: none;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
 /* ---------- appearance (temas) ---------- */
 
 /* Everything here is painted from the same --color-* tokens as the app, so the
    dialog looks like the theme you are choosing while you choose it. */
 
-.theme-dialog {
-  width: min(560px, calc(100vw - 32px));
-  /* One height for both tabs. Without it the dialog shrinks to the typeface
-     list and grows back to the theme grid, and the whole thing jumps under the
-     cursor. The panel scrolls instead. */
-  height: min(88svh, 700px);
-  overflow: hidden;
-  /* No top padding: the sticky bar has to meet the dialog's top edge. */
-  padding: 0 18px;
-  gap: 0;
+/* The panel is hosted by Settings, so it never draws a shell of its own: it
+   is a column whose bar pins to the top of the settings scroll. */
+.theme-panel-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
-/* Title and Done, pinned while the preset list scrolls. The negative margin lets
-   the bar span the dialog's full width; the padding puts the text back in line. */
+/* Title and tabs, pinned while the preset list scrolls. The negative margins
+   cancel the settings padding so the bar spans the section's full width; the
+   padding puts the text back in line. */
 .theme-bar {
   position: sticky;
   top: 0;
@@ -3307,8 +3627,8 @@ body.tab-dragging .pane-drop {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin: 0 -18px;
-  padding: 14px 18px;
+  margin: calc(-1 * var(--settings-pad-top, 0px)) calc(-1 * var(--settings-pad, 0px)) 0;
+  padding: 12px var(--settings-pad, 0px);
   background: light-dark(var(--color-bg), var(--color-bg-2-dark));
   border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
 }
@@ -3366,14 +3686,13 @@ body.tab-dragging .pane-drop {
   outline-offset: 1px;
 }
 
+/* The settings content is the only scroller: the panel lays out, it does not
+   scroll again inside. */
 .theme-panel {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 16px 0 18px;
+  padding: 16px 0 0;
 }
 
 /* Two roles side by side: the prose you read, the app you click. */

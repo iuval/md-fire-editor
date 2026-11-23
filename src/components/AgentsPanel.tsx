@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import { Bot, Check, Pencil, X } from 'lucide-react'
-import { Modal } from './Modal'
 import { roleLabel, type Folder, type Role } from '../lib/notes'
 import { cleanAgentName, MAX_AGENT_NAME, type Agent } from '../lib/agents'
 import { t, useT } from '../i18n/index.ts'
 
-interface AgentsDialogProps {
+interface AgentsPanelProps {
   agents: Agent[]
   /** Error del listener de Firestore, si la lista no se pudo leer. */
   error?: string | null
   folders: Folder[]
   onRename: (agentId: string, name: string) => Promise<void>
   onLink: (agentUid: string, folder: Folder, role: Role) => Promise<void>
-  onClose: () => void
 }
 
 /** "hace 2 min", sin dependencias: la lista es corta y se refresca sola. */
@@ -36,7 +34,7 @@ function since(date: Date | null): string {
  * El pareado por uid sigue disponible para el modo `login --agent`, que crea
  * una cuenta anónima aparte en vez de usar la tuya.
  */
-export function AgentsDialog({ agents, error: listError, folders, onRename, onLink, onClose }: AgentsDialogProps) {
+export function AgentsPanel({ agents, error: listError, folders, onRename, onLink }: AgentsPanelProps) {
   const t = useT()
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -103,14 +101,7 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
   }
 
   return (
-    <Modal labelledBy="agents-heading" onClose={onClose}>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h2 id="agents-heading">{t('agents.heading')}</h2>
-        <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
-          <X size={15} />
-        </button>
-      </div>
-
+    <div className="agents-panel-root">
       <p className="share-hint-box">
         {t('agents.intro')}{' '}
         <a href="https://firemd.app/agent.md" target="_blank" rel="noreferrer">
@@ -239,6 +230,6 @@ export function AgentsDialog({ agents, error: listError, folders, onRename, onLi
       </details>
 
       {error && <p className="hint tone-danger">{error}</p>}
-    </Modal>
+    </div>
   )
 }

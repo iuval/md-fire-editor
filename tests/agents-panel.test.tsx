@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { AgentsDialog } from '../src/components/AgentsDialog'
+import { AgentsPanel } from '../src/components/AgentsPanel'
 import type { Agent } from '../src/lib/agents'
 
 let root: Root | null = null
@@ -23,13 +23,12 @@ function mount(
   root = createRoot(host)
   act(() =>
     root!.render(
-      <AgentsDialog
+      <AgentsPanel
         agents={agents}
         error={error}
         folders={[]}
         onRename={onRename}
         onLink={vi.fn(async () => undefined)}
-        onClose={vi.fn()}
       />
     )
   )

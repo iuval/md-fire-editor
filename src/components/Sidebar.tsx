@@ -635,7 +635,7 @@ export function Sidebar({
           onClick={onAccountClick}
           aria-label={userName ? t('sidebar.accountOf', { name: userName }) : t('sidebar.account')}
           title={userName ? t('sidebar.accountOf', { name: userName }) : t('sidebar.account')}
-          aria-haspopup="menu"
+          aria-haspopup="dialog"
         >
           {/* The same gear the collapsed rail uses: this is the preferences
               entry, not a row's "more" menu. */}

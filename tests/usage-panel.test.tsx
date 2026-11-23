@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { UsageDialog } from '../src/components/UsageDialog'
+import { UsagePanel } from '../src/components/UsagePanel'
 import type { UsageTotals } from '../src/lib/usage'
 import { FREE_TIER } from '../src/lib/quota'
 
@@ -28,7 +28,7 @@ const usage: UsageTotals = {
 }
 
 function mount(
-  overrides: Partial<Parameters<typeof UsageDialog>[0]> = {}
+  overrides: Partial<Parameters<typeof UsagePanel>[0]> = {}
 ) {
   const onUpdateCredits = vi.fn(async () => undefined)
   const onRequestTopUp = vi.fn(async () => undefined)
@@ -37,7 +37,7 @@ function mount(
   root = createRoot(host)
   act(() =>
     root!.render(
-      <UsageDialog
+      <UsagePanel
         usage={usage}
         credits={{ balanceUsd: 3.5, thresholdUsd: 1, topUpUsd: 5, autoTopUp: false }}
         notes={12}
@@ -54,7 +54,6 @@ function mount(
         onMigrateBodies={vi.fn()}
         onUpdateCredits={onUpdateCredits}
         onRequestTopUp={onRequestTopUp}
-        onClose={vi.fn()}
         {...overrides}
       />
     )

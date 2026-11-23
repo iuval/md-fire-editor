@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FilePlus, FolderPlus, Hash, Link2, LogIn, LogOut, Move, Palette, Pencil, Trash2, Upload } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownWideNarrow, ArrowUp, Bot, Download, FileDown, FilePlus, FolderPlus, HardDrive, Hash, Link2, LogIn, LogOut, Move, Palette, Pencil, Trash2, Upload, User } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { SidebarRail } from './components/SidebarRail'
 import { PaneBar } from './components/PaneBar'
@@ -22,9 +22,10 @@ const NotePane = lazy(() =>
 import { ShareDialog } from './components/ShareDialog'
 import { MoveDialog } from './components/MoveDialog'
 import { InputDialog } from './components/InputDialog'
-import { AgentsDialog } from './components/AgentsDialog'
-import { UsageDialog } from './components/UsageDialog'
-import { ThemeDialog } from './components/ThemeDialog'
+import { AgentsPanel } from './components/AgentsPanel'
+import { UsagePanel } from './components/UsagePanel'
+import { ThemePanel } from './components/ThemePanel'
+import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
 import { useAgents, useAuth, useIsAdmin, useWorkspace } from './hooks/useFirebase'
 import type { AwarenessUser } from './lib/collab/awareness'
 import { download, noteToMarkdown, safeFileName } from './lib/export'
@@ -53,6 +54,7 @@ import {
   type SortMode,
 } from './lib/sorting'
 import { SortDialog } from './components/SortDialog'
+import { SortPanel } from './components/SortPanel'
 import { MAX_FOLDER_DEPTH } from './lib/folders'
 import {
   activeNoteId,
@@ -169,17 +171,14 @@ function keepIds<T>(map: Record<string, T>, ids: string[]): Record<string, T> {
 
 type Dialog =
   | { kind: 'none' }
-  | { kind: 'account-menu' }
+  | { kind: 'settings'; tab: string }
   | { kind: 'share-note'; noteId: string }
   | { kind: 'share-folder'; folderId: string }
   | { kind: 'move'; noteId: string }
   | { kind: 'rename-folder'; folderId: string }
   | { kind: 'folder-tags'; folderId: string }
-  | { kind: 'agents' }
-  | { kind: 'usage' }
-  | { kind: 'sort'; folderId: string | null }
+  | { kind: 'sort'; folderId: string }
   | { kind: 'rename-tag' }
-  | { kind: 'theme' }
 
 function noteFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get('note')
@@ -509,7 +508,9 @@ function AppTree() {
 
   // Usage and credits are only read by the usage dialog: subscribe when it
   // opens instead of using two of the startup listeners.
-  const usageOpen = dialog.kind === 'usage'
+  /** The settings section on screen, or null when the dialog is closed. */
+  const settingsTab = dialog.kind === 'settings' ? dialog.tab : null
+  const usageOpen = settingsTab === 'usage'
   useEffect(() => {
     if (!user) {
       setUsage(null)
@@ -749,8 +750,8 @@ function AppTree() {
   }, [notes, refreshDiagnostics, t])
 
   useEffect(() => {
-    if (dialog.kind === 'usage') refreshDiagnostics()
-  }, [dialog.kind, refreshDiagnostics])
+    if (settingsTab === 'usage') refreshDiagnostics()
+  }, [settingsTab, refreshDiagnostics])
 
 
   const handleSaveGuestDraft = useCallback(async () => {
@@ -1045,15 +1046,17 @@ function AppTree() {
   }, [])
 
   const handleChooseSort = useCallback(
-    async (mode: SortMode) => {
-      if (!uid || dialog.kind !== 'sort') return
-      if (dialog.folderId) await setFolderSort(dialog.folderId, mode)
-      else {
-        setRootSortState(mode)
-        await setRootSort(uid, mode)
+    async (mode: SortMode, folderId: string | null) => {
+      if (folderId) {
+        await setFolderSort(folderId, mode)
+        return
       }
+      // The root list is local first: a visitor has an order too, they just
+      // have nowhere to save it.
+      setRootSortState(mode)
+      if (uid) await setRootSort(uid, mode)
     },
-    [dialog, uid]
+    [uid]
   )
 
   /** Moves a note one position inside its folder (manual order only). */
@@ -1714,83 +1717,176 @@ function AppTree() {
     presence: presence.length,
   })
 
+  /** The gear opens this one panel, at the section it was asked for. */
+  const openSettings = useCallback(
+    (tab: string) => {
+      setDialog({ kind: 'settings', tab })
+      // A phone shows the panel as a full page: the drawer behind it is done.
+      if (isMobile) setSidebarOpen(false)
+    },
+    [isMobile]
+  )
+
   /**
-   * The account menu. A visitor gets the same export, import and appearance as
-   * anyone else — those work on the local store — plus the sign-in button where
-   * a session would have "sign out". Nothing that needs a server is offered.
+   * Everything the gear opens, as one panel: the account first, then the
+   * preferences that used to be separate dialogs. A visitor gets the same
+   * export, import, order and appearance as anyone else — those work on the
+   * local store — and the server-backed sections are simply not there.
    */
-  const accountMenuItems: MenuItem[] = guest
-    ? [
-        {
-          label: t('menu.account.signIn'),
-          icon: <LogIn size={14} />,
-          onSelect: () => {
-            setDialog({ kind: 'none' })
-            void doGoogleSignIn()
+  // Built only while the panel is open: the usage section reads live
+  // diagnostics, which are not worth collecting for a closed dialog.
+  const settingsTabs: SettingsTab[] = dialog.kind === 'settings' ? [
+    {
+      id: 'account',
+      label: t('settings.tabs.account'),
+      icon: <User size={15} />,
+      hint: guest ? t('account.guestSubtitle') : viewer.email ?? undefined,
+      content: (
+        <div className="settings-section">
+          <div className="settings-account">
+            {viewer.photoURL ? (
+              <img
+                className="avatar avatar--lg"
+                src={viewer.photoURL}
+                alt=""
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <span className="avatar avatar--lg" aria-hidden="true">
+                <User size={16} />
+              </span>
+            )}
+            <span className="settings-account-text">
+              <span className="settings-account-name">
+                {guest ? t('account.guest') : userName || t('account.label')}
+              </span>
+              <span className="settings-account-sub">
+                {guest ? t('account.guestSubtitle') : viewer.email ?? ''}
+              </span>
+            </span>
+          </div>
+          <p className="hint">
+            {guest ? t('settings.account.guest') : t('settings.account.signedIn')}
+          </p>
+          {guest ? (
+            <button
+              className="btn"
+              onClick={() => {
+                setDialog({ kind: 'none' })
+                void doGoogleSignIn()
+              }}
+            >
+              <LogIn size={14} /> {t('settings.account.signIn')}
+            </button>
+          ) : (
+            <button className="btn ghost" onClick={() => void handleSignOut()}>
+              <LogOut size={14} /> {t('settings.account.signOut')}
+            </button>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'appearance',
+      label: t('settings.tabs.appearance'),
+      icon: <Palette size={15} />,
+      hint: t('settings.hints.appearance'),
+      content: <ThemePanel />,
+    },
+    {
+      id: 'order',
+      label: t('settings.tabs.order'),
+      icon: <ArrowDownWideNarrow size={15} />,
+      hint: t('settings.hints.order'),
+      content: (
+        <div className="settings-section">
+          <SortPanel
+            current={rootSort}
+            onChoose={(mode) => void handleChooseSort(mode, null)}
+            hint={t('settings.order.hint')}
+          />
+        </div>
+      ),
+    },
+    ...(guest
+      ? []
+      : [
+          {
+            id: 'usage',
+            label: t('settings.tabs.usage'),
+            icon: <Activity size={15} />,
+            hint: t('settings.hints.usage'),
+            content: (
+              <UsagePanel
+                usage={usage}
+                credits={credits}
+                serverAllowance={serverAllowance}
+                isAdmin={isAdmin}
+                notes={notes.length}
+                folders={folders.length}
+                diagnostics={{
+                  usedHeap: memory?.usedHeap ?? null,
+                  heapLimit: memory?.heapLimit ?? null,
+                  domNodes: memory?.domNodes ?? 0,
+                  openNoteSessions: memory?.openNoteSessions ?? 0,
+                  pendingBodies: pendingBodies(notes),
+                  storage,
+                }}
+                onRefreshDiagnostics={refreshDiagnostics}
+                onMigrateBodies={() => void handleMigrateBodies()}
+                onUpdateCredits={async (settings) => {
+                  if (user) await updateCreditSettings(user.uid, settings)
+                }}
+                onRequestTopUp={async (amountUsd) => {
+                  // Con el proxy, cargar saldo es una sesión de checkout del MoR: el
+                  // saldo se acredita cuando el webhook firmado confirma el pago.
+                  if (proxyEnabled) {
+                    const session = await startCheckout(amountUsd)
+                    location.assign(session.url)
+                    return
+                  }
+                  if (user) await requestTopUp(user.uid, amountUsd)
+                }}
+              />
+            ),
           },
-        },
-        {
-          label: t('menu.vault.export'),
-          icon: <Download size={14} />,
-          separatorBefore: true,
-          onSelect: handleExportAll,
-        },
-        {
-          label: t('menu.vault.import'),
-          icon: <Upload size={14} />,
-          onSelect: () => importRef.current?.click(),
-        },
-        {
-          label: t('menu.account.appearance'),
-          icon: <Palette size={14} />,
-          separatorBefore: true,
-          onSelect: () => setDialog({ kind: 'theme' }),
-        },
-        {
-          label: t('menu.account.listOrder'),
-          icon: <ArrowDownWideNarrow size={14} />,
-          onSelect: () => setDialog({ kind: 'sort', folderId: null }),
-        },
-      ]
-    : [
-        {
-          label: t('menu.vault.export'),
-          icon: <Download size={14} />,
-          onSelect: handleExportAll,
-        },
-        {
-          label: t('menu.vault.import'),
-          icon: <Upload size={14} />,
-          onSelect: () => importRef.current?.click(),
-        },
-        {
-          label: t('menu.account.usage'),
-          icon: <Activity size={14} />,
-          separatorBefore: true,
-          onSelect: () => setDialog({ kind: 'usage' }),
-        },
-        {
-          label: t('menu.account.agents'),
-          icon: <Bot size={14} />,
-          onSelect: () => setDialog({ kind: 'agents' }),
-        },
-        {
-          label: t('menu.account.appearance'),
-          icon: <Palette size={14} />,
-          onSelect: () => setDialog({ kind: 'theme' }),
-        },
-        {
-          label: t('menu.account.listOrder'),
-          icon: <ArrowDownWideNarrow size={14} />,
-          onSelect: () => setDialog({ kind: 'sort', folderId: null }),
-        },
-        {
-          label: t('menu.account.signOut'),
-          icon: <LogOut size={14} />,
-          separatorBefore: true,
-          onSelect: () => void handleSignOut(),
-        },
-      ]
+          {
+            id: 'agents',
+            label: t('settings.tabs.agents'),
+            icon: <Bot size={15} />,
+            hint: t('settings.hints.agents'),
+            content: (
+              <AgentsPanel
+                agents={agents}
+                error={agentsError}
+                folders={folders}
+                onRename={renameAgent}
+                onLink={async (agentUid, folder, role) => {
+                  await updateFolderSharing(folder, { addMember: { uid: agentUid, role } })
+                  track('agent_linked', viewer.uid, { role })
+                }}
+              />
+            ),
+          },
+        ]),
+    {
+      id: 'vault',
+      label: t('settings.tabs.vault'),
+      icon: <HardDrive size={15} />,
+      hint: t('settings.hints.vault'),
+      content: (
+        <div className="settings-section">
+          <p className="hint">{t('settings.vault.hint')}</p>
+          <button className="btn" onClick={() => void handleExportAll()}>
+            <Download size={14} /> {t('settings.vault.export')}
+          </button>
+          <button className="btn ghost" onClick={() => importRef.current?.click()}>
+            <Upload size={14} /> {t('settings.vault.import')}
+          </button>
+        </div>
+      ),
+    },
+  ] : []
 
   if (authLoading) return <div className="empty">{t('app.loading')}</div>
 
@@ -1850,7 +1946,7 @@ function AppTree() {
           onNewNote={() => void handleNewNote(targetFolder ?? undefined)}
           onNewFolder={() => void handleNewFolder(targetFolder?.id ?? null)}
           onNewCanvas={() => handleNewCanvas(targetFolder ?? undefined)}
-          onAccountClick={() => setDialog({ kind: 'account-menu' })}
+          onAccountClick={() => openSettings('account')}
         />
       )}
 
@@ -1892,7 +1988,7 @@ function AppTree() {
         uid={viewer.uid}
         userName={userName}
         photoURL={viewer.photoURL}
-        onAccountClick={() => setDialog({ kind: 'account-menu' })}
+        onAccountClick={() => openSettings('account')}
         notice={notice}
         onDismissNotice={() => setNotice(null)}
       />
@@ -2014,23 +2110,15 @@ function AppTree() {
         />
       )}
 
-      {dialog.kind === 'theme' && <ThemeDialog onClose={() => setDialog({ kind: 'none' })} />}
-
-      {dialog.kind === 'account-menu' && (
-        <>
-          <div
-            className="scrim"
-            style={{ background: 'transparent' }}
-            onClick={() => setDialog({ kind: 'none' })}
-          />
-          <Menu
-            items={accountMenuItems}
-            title={guest ? t('account.guest') : userName || t('account.label')}
-            label={t('menu.label')}
-            onClose={() => setDialog({ kind: 'none' })}
-            anchor="bottom-left"
-          />
-        </>
+      {dialog.kind === 'settings' && (
+        <SettingsDialog
+          tabs={settingsTabs}
+          title={guest ? t('account.guest') : userName || t('account.label')}
+          subtitle={guest ? t('account.guestSubtitle') : viewer.email ?? undefined}
+          initialTab={dialog.tab}
+          mobile={isMobile}
+          onClose={() => setDialog({ kind: 'none' })}
+        />
       )}
 
       {dialog.kind === 'share-note' && shareNote && (
@@ -2108,17 +2196,9 @@ function AppTree() {
 
       {dialog.kind === 'sort' && (
         <SortDialog
-          target={
-            dialog.folderId
-              ? folderPath(dialog.folderId, foldersById) || t('folder.unnamed')
-              : t('sidebar.noFolder')
-          }
-          current={
-            dialog.folderId
-              ? resolveSort(dialog.folderId, foldersById, rootSort)
-              : rootSort
-          }
-          onChoose={(mode) => void handleChooseSort(mode)}
+          target={folderPath(dialog.folderId, foldersById) || t('folder.unnamed')}
+          current={resolveSort(dialog.folderId, foldersById, rootSort)}
+          onChoose={(mode) => void handleChooseSort(mode, dialog.folderId)}
           onClose={() => setDialog({ kind: 'none' })}
         />
       )}
@@ -2143,41 +2223,6 @@ function AppTree() {
         />
       )}
 
-      {dialog.kind === 'usage' && (
-        <UsageDialog
-          usage={usage}
-          credits={credits}
-          serverAllowance={serverAllowance}
-          isAdmin={isAdmin}
-          notes={notes.length}
-          folders={folders.length}
-          diagnostics={{
-            usedHeap: memory?.usedHeap ?? null,
-            heapLimit: memory?.heapLimit ?? null,
-            domNodes: memory?.domNodes ?? 0,
-            openNoteSessions: memory?.openNoteSessions ?? 0,
-            pendingBodies: pendingBodies(notes),
-            storage,
-          }}
-          onRefreshDiagnostics={refreshDiagnostics}
-          onMigrateBodies={() => void handleMigrateBodies()}
-          onUpdateCredits={async (settings) => {
-            if (user) await updateCreditSettings(user.uid, settings)
-          }}
-          onRequestTopUp={async (amountUsd) => {
-            // Con el proxy, cargar saldo es una sesión de checkout del MoR: el
-            // saldo se acredita cuando el webhook firmado confirma el pago.
-            if (proxyEnabled) {
-              const session = await startCheckout(amountUsd)
-              location.assign(session.url)
-              return
-            }
-            if (user) await requestTopUp(user.uid, amountUsd)
-          }}
-          onClose={() => setDialog({ kind: 'none' })}
-        />
-      )}
-
       <input
         ref={importRef}
         type="file"
@@ -2189,20 +2234,6 @@ function AppTree() {
           e.target.value = ''
         }}
       />
-
-      {dialog.kind === 'agents' && (
-        <AgentsDialog
-          agents={agents}
-          error={agentsError}
-          folders={folders}
-          onClose={() => setDialog({ kind: 'none' })}
-          onRename={renameAgent}
-          onLink={async (agentUid, folder, role) => {
-            await updateFolderSharing(folder, { addMember: { uid: agentUid, role } })
-            track('agent_linked', viewer.uid, { role })
-          }}
-        />
-      )}
 
       {dialog.kind === 'folder-tags' && (
         <InputDialog

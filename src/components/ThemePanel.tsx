@@ -1,7 +1,5 @@
 import { useT, type MessageKey } from '../i18n/index.ts'
 import { useMemo, useState, type KeyboardEvent } from 'react'
-import { Palette as PaletteIcon } from 'lucide-react'
-import { Modal } from './Modal'
 import { ColorField } from './ColorField'
 import { SeedSquares } from './SeedSquares'
 import {
@@ -32,6 +30,9 @@ import {
  * is edited, and the other appearance is mirrored from it. Every color is on
  * screen at once — nothing hides behind a "advanced" toggle — and the whole
  * panel repaints as you pick, because a palette is a thing you look at.
+ *
+ * A panel, not a dialog: Settings hosts it, and the pinned bar belongs to the
+ * panel so its title and tabs stay reachable however far the grid scrolls.
  */
 
 const TOKEN_LABEL_KEYS: Record<ThemeToken, MessageKey> = {
@@ -96,7 +97,7 @@ const FAMILIES: Array<{ titleKey: MessageKey; tokens: ThemeToken[] }> = [
   { titleKey: 'themeDialog.families.states', tokens: ['danger', 'success', 'warning'] },
 ]
 
-export function ThemeDialog({ onClose }: { onClose: () => void }) {
+export function ThemePanel() {
   const t = useT()
   const state = useTheme()
   // The fields edit the design itself, so a tweak always lands somewhere.
@@ -126,14 +127,12 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal labelledBy="theme-heading" onClose={onClose} className="share theme-dialog">
-      {/* Sticky: title, tabs and Done stay reachable however far the list
-          scrolls. Escape and the scrim still close the dialog. */}
+    <div className="theme-panel-root">
+      {/* Sticky inside the hosting scroll: the heading and the two faces of
+          the panel never scroll away from the colors they switch. */}
       <div className="theme-bar">
-        <h2 id="theme-heading" className="row" style={{ gap: 7 }}>
-          <PaletteIcon size={15} />
-          {t('themeDialog.heading')}
-        </h2>
+        {/* No heading of its own: Settings names the section, so the bar only
+            has to carry the two faces of the panel and the way out. */}
         <div
           className="theme-tabs"
           role="tablist"
@@ -156,9 +155,6 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
             </button>
           ))}
         </div>
-        <button type="button" className="btn" onClick={onClose}>
-          {t('themeDialog.done')}
-        </button>
       </div>
 
       {tab === 'colors' ? (
@@ -324,6 +320,6 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       )}
-    </Modal>
+    </div>
   )
 }

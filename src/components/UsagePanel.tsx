@@ -15,9 +15,7 @@ import {
   Server,
   Trash2,
   Upload,
-  X,
 } from 'lucide-react'
-import { Modal } from './Modal'
 import {
   MAX_TOP_UP_USD,
   MIN_AUTO_TOP_UP_USD,
@@ -68,7 +66,7 @@ export interface Diagnostics {
   storage: { usage: number; quota: number } | null
 }
 
-interface UsageDialogProps {
+interface UsagePanelProps {
   usage: UsageTotals | null
   credits: Credits | null
   /** Cuota contada por el proxy: es la que se cobra, no la del cliente. */
@@ -82,14 +80,13 @@ interface UsageDialogProps {
   onMigrateBodies: () => void
   onUpdateCredits: (settings: CreditSettings) => Promise<void>
   onRequestTopUp: (amountUsd: number) => Promise<void>
-  onClose: () => void
 }
 
 /**
  * The one number people open this for is the cost, so it leads; everything else
  * is the receipt behind it. Two groups instead of three nested boxes.
  */
-export function UsageDialog({
+export function UsagePanel({
   usage,
   credits,
   serverAllowance = null,
@@ -101,8 +98,7 @@ export function UsageDialog({
   onMigrateBodies,
   onUpdateCredits,
   onRequestTopUp,
-  onClose,
-}: UsageDialogProps) {
+}: UsagePanelProps) {
   const t = useT()
   const totals: UsageTotals = usage ?? {
     day: '',
@@ -212,14 +208,7 @@ export function UsageDialog({
   }
 
   return (
-    <Modal labelledBy="usage-heading" onClose={onClose} className="share usage">
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h2 id="usage-heading">{t('usage.heading')}</h2>
-        <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
-          <X size={15} />
-        </button>
-      </div>
-
+    <div className="usage-panel-root">
       <div className="usage-hero">
         <div className="usage-hero-main">
           <span className="usage-hero-value">{formatUsd(todayCharge)}</span>
@@ -560,7 +549,7 @@ export function UsageDialog({
           </div>
         </section>
       </div>
-    </Modal>
+    </div>
   )
 }
 

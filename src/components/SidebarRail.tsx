@@ -67,14 +67,14 @@ export function SidebarRail({
               <SquareDashed size={15} />
             </button>
           </div>
-          {/* A gear, not the footer's ⋯: this is the one menu in the app — the
-              account and the appearance settings — and it should say so. */}
+          {/* A gear, not the footer's ⋯: this is the one settings panel in the
+              app — the account and everything behind it — and it says so. */}
           <button
             className="icon-btn"
             onClick={onAccountClick}
             aria-label={t('rail.account')}
             title={t('rail.account')}
-            aria-haspopup="menu"
+            aria-haspopup="dialog"
           >
             <Settings size={15} />
           </button>

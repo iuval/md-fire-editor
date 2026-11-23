@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { ThemeDialog } from '../src/components/ThemeDialog'
+import { ThemePanel } from '../src/components/ThemePanel'
 import { t } from '../src/i18n/index.ts'
 import {
   DEFAULT_PRESET_ID,
@@ -71,7 +71,7 @@ function tabByRole(label: string): HTMLButtonElement {
 
 describe('theme dialog', () => {
   it('shows one card per ready-made theme, each with its two colors', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     expect(PRESETS.length).toBeGreaterThanOrEqual(10)
     expect(cards()).toHaveLength(PRESETS.length)
     for (const card of cards()) {
@@ -86,7 +86,7 @@ describe('theme dialog', () => {
   })
 
   it('offers no appearance switch: the two columns are the choice', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     expect(document.querySelector('.theme-appearance')).toBeNull()
     for (const label of ['System', 'Day', 'Night']) {
       expect(() => buttonByText(label), label).toThrow()
@@ -105,7 +105,7 @@ describe('theme dialog', () => {
   })
 
   it('builds a combination from the squares of two different cards', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     const obsidian = presetState('obsidiana')
     const honeyCanvas = '#f2e7c9' // Honey's background
     const tobaccoAccent = '#dcbb8c' // Tobacco's accent
@@ -149,7 +149,7 @@ describe('theme dialog', () => {
   })
 
   it('paints a theme the moment its card is chosen', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     const target = PRESETS[5]
     const before = cssVar('--color-bg')
     act(() => cards()[5].querySelector<HTMLButtonElement>('.theme-card-select')!.click())
@@ -164,7 +164,7 @@ describe('theme dialog', () => {
   })
 
   it('shows every color at once, with no appearance switch to babysit', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     // Fondo and Acento are the seeds; every other token has its own field, and
     // all of them are visible at once — nothing hides behind a disclosure.
     expect(document.querySelectorAll('.color-field')).toHaveLength(THEME_TOKENS.length)
@@ -180,7 +180,7 @@ describe('theme dialog', () => {
   })
 
   it('re-derives the palette when the fondo swatch is picked', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     const fondo = document.querySelector<HTMLInputElement>('input[aria-label="Background"]')
     expect(fondo).not.toBeNull()
 
@@ -207,7 +207,7 @@ describe('theme dialog', () => {
       value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
     })
     try {
-      mount(<ThemeDialog onClose={() => {}} />)
+      mount(<ThemePanel />)
       // Every preset is written in one appearance; on a dark screen the fields
       // still show the light half, so a tweak is never painted nowhere.
       const paneles = document.querySelector<HTMLInputElement>('input[aria-label="Panels"]')
@@ -231,17 +231,16 @@ describe('theme dialog', () => {
     }
   })
 
-  it('keeps the title and Done pinned in a bar that never scrolls away', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+  it('keeps the tab strip pinned in a bar that never scrolls away', () => {
+    mount(<ThemePanel />)
     const bar = document.querySelector('.theme-bar')
     expect(bar, 'title bar').not.toBeNull()
-    expect(bar?.querySelector('#theme-heading'), 'title inside the bar').not.toBeNull()
-    // Done has to travel with the bar, so it is reachable without scrolling.
-    expect(bar?.contains(buttonByText(t('themeDialog.done')))).toBe(true)
+    // The two faces travel with the bar, so switching them needs no scrolling.
+    expect(bar?.querySelectorAll('[role="tab"]')).toHaveLength(2)
   })
 
   it('splits the panel into a Colors tab and a Typeface tab', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
     expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Colors', 'Typeface'])
     expect(tabs[0].getAttribute('aria-selected')).toBe('true')
@@ -262,7 +261,7 @@ describe('theme dialog', () => {
   })
 
   it('offers five faces per role, in two columns', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     act(() => tabByRole('Typeface').click())
 
     const columns = [...document.querySelectorAll<HTMLElement>('.theme-typeface-col')]
@@ -292,7 +291,7 @@ describe('theme dialog', () => {
   })
 
   it('folds Reset into the Advanced section, with no footer row', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     const preset = findPreset(DEFAULT_PRESET_ID)
     const reset = buttonByText(t('themeDialog.reset', { name: t(preset.nameKey) }))
     const advanced = document.querySelector('details.theme-advanced')
@@ -303,7 +302,7 @@ describe('theme dialog', () => {
   })
 
   it('restores the preset after the colors were touched', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     const preset = findPreset(DEFAULT_PRESET_ID)
     const original = resolvePalette(presetState(preset.id), 'light').bg
 
@@ -317,7 +316,7 @@ describe('theme dialog', () => {
   })
 
   it('drops the per-color tweaks when asked', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     const original = resolvePalette(presetState(DEFAULT_PRESET_ID), 'light').bg2
     const field = document.querySelector<HTMLInputElement>('input[aria-label="Panels"]')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -331,17 +330,14 @@ describe('theme dialog', () => {
     expect(cssVar('--color-bg-2')).toBe(original)
   })
 
-  it('reports the chosen theme inside a normal dialog shell', () => {
-    const onClose = vi.fn()
-    mount(<ThemeDialog onClose={onClose} />)
-    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
-    expect(document.getElementById('theme-heading')?.textContent).toContain('Appearance')
-    act(() => buttonByText('Done').click())
-    expect(onClose).toHaveBeenCalledTimes(1)
+  it('hosts no dialog of its own: Settings is the dialog', () => {
+    mount(<ThemePanel />)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('.settings, .share')).toBeNull()
   })
 
   it('drops the preview and keeps the colour editor folded away', () => {
-    mount(<ThemeDialog onClose={() => {}} />)
+    mount(<ThemePanel />)
     expect(document.querySelector('.theme-thumb')).toBeNull()
     expect(document.querySelector('.theme-preview-wrap')).toBeNull()
 
