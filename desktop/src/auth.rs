@@ -16,9 +16,11 @@ use crate::error::{AppError, Result};
 
 pub const DEFAULT_PROJECT: &str = "md-sync-app";
 pub const DEFAULT_REFERER: &str = "https://md-sync-app.web.app/";
-/// La clave web de Firebase es pública (viaja en el bundle) y está restringida
-/// por referrer. Se puede cambiar con `FIREMD_API_KEY` o en los ajustes.
-pub const DEFAULT_API_KEY: &str = "AIzaSyAl9EyRLFIni3XliwC_WCc_yRvhIrWX0YQ";
+/// Clave web de Firebase del proyecto `md-sync-app`. Es pública por diseño
+/// (viaja en el bundle de la web y en `/__/firebase/init.json`) y está
+/// restringida por referrer, pero no se versiona: se inyecta al compilar desde
+/// `FIREMD_API_KEY` o el `.env` del repo (ver `desktop/build.rs`).
+pub const DEFAULT_API_KEY: &str = env!("FIREMD_DEFAULT_API_KEY");
 
 fn default_project() -> String {
     DEFAULT_PROJECT.to_string()
@@ -171,13 +173,20 @@ pub fn logout() -> Result<()> {
     save_credentials(&creds)
 }
 
-pub fn api_key() -> String {
+/// `FIREMD_API_KEY` del entorno manda; si no, la clave inyectada al compilar.
+pub fn api_key() -> Result<String> {
     if let Ok(key) = std::env::var("FIREMD_API_KEY") {
-        if !key.is_empty() {
-            return key;
+        if !key.trim().is_empty() {
+            return Ok(key.trim().to_string());
         }
     }
-    DEFAULT_API_KEY.to_string()
+    if DEFAULT_API_KEY.is_empty() {
+        return Err(AppError::Auth(
+            "falta la clave de Firebase: compilá con FIREMD_API_KEY o poné el .env del repo"
+                .into(),
+        ));
+    }
+    Ok(DEFAULT_API_KEY.to_string())
 }
 
 fn auth_base() -> String {
@@ -237,7 +246,7 @@ fn now_ms() -> u64 {
 
 /// Crea una cuenta anónima nueva y devuelve las credenciales a persistir.
 pub fn login_anonymous(project_id: &str, referer: &str) -> Result<Credentials> {
-    let url = format!("{}/v1/accounts:signUp?key={}", auth_base(), api_key());
+    let url = format!("{}/v1/accounts:signUp?key={}", auth_base(), api_key()?);
     let data = post_json(
         &url,
         serde_json::json!({ "returnSecureToken": true }),
@@ -277,7 +286,7 @@ pub fn login_anonymous(project_id: &str, referer: &str) -> Result<Credentials> {
 }
 
 fn revoke(refresh_token: &str) -> Result<()> {
-    let url = format!("{}/v1/token?key={}", token_base(), api_key());
+    let url = format!("{}/v1/token?key={}", token_base(), api_key()?);
     post_json(
         &url,
         serde_json::json!({
@@ -300,7 +309,7 @@ struct Session {
 /// Cambia un refresh token por un ID token nuevo. Es el único lugar donde se
 /// valida un token: si Google lo rechaza, no se guarda nada en disco.
 fn refresh_session(refresh_token: &str, referer: &str) -> Result<Session> {
-    let url = format!("{}/v1/token?key={}", token_base(), api_key());
+    let url = format!("{}/v1/token?key={}", token_base(), api_key()?);
     let data = post_json(
         &url,
         serde_json::json!({
