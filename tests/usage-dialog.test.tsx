@@ -120,11 +120,13 @@ describe('diálogo de uso', () => {
 
   it('no guarda una configuración inválida', () => {
     const { host, onUpdateCredits } = mount()
-    const numbers = host.querySelectorAll('input[type="number"]')
+    const amount = host.querySelector<HTMLInputElement>(
+      '[aria-label="Monto de recarga automática"]'
+    )!
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     act(() => {
-      setValue.call(numbers[1], '1')
-      numbers[1].dispatchEvent(new Event('input', { bubbles: true }))
+      setValue.call(amount, '1')
+      amount.dispatchEvent(new Event('input', { bubbles: true }))
     })
     clickText(host, 'Guardar')
     expect(onUpdateCredits).not.toHaveBeenCalled()

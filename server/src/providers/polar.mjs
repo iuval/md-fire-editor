@@ -66,6 +66,7 @@ export function verifySignature({ rawBody, headers, secret, now = Date.now }) {
 export function createPolar({
   accessToken,
   productId,
+  customProductId,
   products = {},
   webhookSecret,
   server = 'production',
@@ -77,8 +78,10 @@ export function createPolar({
       .filter(([, id]) => typeof id === 'string' && id)
       .map(([pack, id]) => [Number(pack), id])
   )
-  if (!accessToken || (!productId && Object.keys(byPack).length === 0)) {
-    throw new Error('polar: faltan POLAR_ACCESS_TOKEN y POLAR_PRODUCT_1/5/20 (o POLAR_PRODUCT_ID)')
+  if (!accessToken || (!productId && !customProductId && Object.keys(byPack).length === 0)) {
+    throw new Error(
+      'polar: faltan POLAR_ACCESS_TOKEN y POLAR_CUSTOM_PRODUCT_ID (o POLAR_PRODUCT_1/5/20)'
+    )
   }
   if (!webhookSecret) throw new Error('polar: falta POLAR_WEBHOOK_SECRET')
   const apiBase = BASE_URLS[server]
@@ -93,7 +96,9 @@ export function createPolar({
       const cents = Math.round(pack * 100)
       if (!Number.isInteger(cents) || cents <= 0) throw new Error('polar: pack inválido')
 
-      const product = byPack[pack]
+      // Un producto de precio libre acepta cualquier monto: es el modo normal.
+      const custom = Boolean(customProductId)
+      const product = custom ? customProductId : byPack[pack]
       if (!product && !productId) throw new Error(`polar: no hay producto para el pack ${pack}`)
 
       const response = await fetchImpl(`${apiBase}/checkouts/`, {
@@ -104,10 +109,13 @@ export function createPolar({
           Accept: 'application/json',
         },
         body: JSON.stringify({
-          // Con un producto por pack el precio sale del catálogo; sin producto
-          // propio, el monto viaja como precio ad-hoc del producto único.
+          // Precio libre: el monto va en `amount` (el precio del producto es
+          // `custom`). Con un producto por pack, el precio sale del catálogo.
           products: [product ?? productId],
-          ...(product ? {} : { prices: { [productId]: [{ amount_type: 'fixed', price_amount: cents }] } }),
+          ...(custom ? { amount: cents } : {}),
+          ...(custom || product
+            ? {}
+            : { prices: { [productId]: [{ amount_type: 'fixed', price_amount: cents }] } }),
           // Sin descuentos: el saldo acreditado tiene que ser exactamente el pack.
           allow_discount_codes: false,
           metadata: { uid },

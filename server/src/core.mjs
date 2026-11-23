@@ -20,7 +20,10 @@ export const QUOTA_PERIOD = 'UTC-day'
 /** 100 MB: es un stock, no un flujo. */
 export const STORAGE_LIMIT_BYTES = 100 * 1024 * 1024
 export const MIN_TOP_UP_USD = 1
+/** Techo de una recarga suelta: corta el dedazo, no el uso real. */
+export const MAX_TOP_UP_USD = 100
 export const MIN_AUTO_TOP_UP_USD = 5
+/** Presets de la app; el usuario puede escribir cualquier monto en el rango. */
 export const CREDIT_PACKS = [1, 5, 20]
 export const CREDIT_EXPIRY_MONTHS = 24
 

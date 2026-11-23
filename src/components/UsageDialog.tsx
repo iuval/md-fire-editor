@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { Modal } from './Modal'
 import {
+  MAX_TOP_UP_USD,
   MIN_AUTO_TOP_UP_USD,
+  MIN_TOP_UP_USD,
   RATE_DELETES_PER_100K,
   RATE_READS_PER_100K,
   RATE_WRITES_PER_100K,
@@ -99,6 +101,8 @@ export function UsageDialog({
     autoTopUp: credits?.autoTopUp ?? false,
   })
   const [feedback, setFeedback] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  /** Monto libre: los presets son atajos, el input manda. */
+  const [customAmount, setCustomAmount] = useState('')
   const settingsError = validateCreditSettings(settings)
 
   // `credits` llega por snapshot después de abrir el diálogo; cuando cambia,
@@ -137,6 +141,13 @@ export function UsageDialog({
 
   const requestPack = async (amountUsd: number) => {
     try {
+      if (!Number.isFinite(amountUsd) || amountUsd < MIN_TOP_UP_USD || amountUsd > MAX_TOP_UP_USD) {
+        setFeedback({
+          tone: 'error',
+          text: `El monto tiene que estar entre ${formatUsd(MIN_TOP_UP_USD)} y ${formatUsd(MAX_TOP_UP_USD)}.`,
+        })
+        return
+      }
       await onRequestTopUp(amountUsd)
       setFeedback({ tone: 'ok', text: `Pedido de ${formatUsd(amountUsd)} enviado. Se acredita al confirmarse el pago.` })
     } catch (error) {
@@ -278,12 +289,32 @@ export function UsageDialog({
             Recargar {formatUsd(pack)}
           </button>
         ))}
+        <input
+          className="field"
+          type="number"
+          inputMode="decimal"
+          min={MIN_TOP_UP_USD}
+          max={MAX_TOP_UP_USD}
+          step="0.5"
+          placeholder="Otro monto"
+          aria-label="Otro monto a recargar"
+          value={customAmount}
+          onChange={(event) => setCustomAmount(event.target.value)}
+          style={{ width: 96 }}
+        />
+        <button
+          className="btn ghost"
+          disabled={!customAmount}
+          onClick={() => void requestPack(Number(customAmount))}
+        >
+          Recargar
+        </button>
       </div>
       <p className="hint">
         El saldo vence a los 24 meses. El cargo se descuenta del saldo cada día y solo se
-        cobra por el uso que pasa la cuota diaria; las cuentas admin no pagan. El pago con
-        tarjeta todavía no está habilitado: el pedido queda pendiente y se acredita cuando se
-        confirme.
+        cobra por el uso que pasa la cuota diaria; las cuentas admin no pagan. Podés cargar
+        cualquier monto entre {formatUsd(MIN_TOP_UP_USD)} y {formatUsd(MAX_TOP_UP_USD)}: el
+        saldo se acredita cuando el pago se confirma.
       </p>
 
       <div className="usage-sep" />
@@ -305,6 +336,7 @@ export function UsageDialog({
             type="number"
             min={0}
             step={0.5}
+            aria-label="Umbral de recarga automática"
             value={settings.thresholdUsd}
             onChange={(event) => setSettings({ ...settings, thresholdUsd: Number(event.target.value) })}
             style={{ width: 74 }}
@@ -317,6 +349,7 @@ export function UsageDialog({
             type="number"
             min={MIN_AUTO_TOP_UP_USD}
             step={0.5}
+            aria-label="Monto de recarga automática"
             value={settings.topUpUsd}
             onChange={(event) => setSettings({ ...settings, topUpUsd: Number(event.target.value) })}
             style={{ width: 74 }}

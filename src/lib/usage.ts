@@ -64,6 +64,8 @@ export const PRICE_EGRESS_GIB = 0.2
  * nueva que quiere probar el modo de saldo.
  */
 export const MIN_TOP_UP_USD = 1
+/** Techo de una recarga suelta: corta el dedazo, no el uso real. */
+export const MAX_TOP_UP_USD = 100
 /**
  * Piso de la recarga AUTOMÁTICA. Se dispara sola y repite el fee fijo del MoR
  * (~$0,30-0,40 + %), así que con $1 el procesamiento se come el margen: para

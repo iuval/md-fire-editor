@@ -157,18 +157,22 @@ describe('proxy HTTP', () => {
     expect(account).toMatchObject({ day: DAY, opsUsed: 0, quota: 700, state: 'free', admin: false })
   })
 
-  it('crea la sesión de checkout solo con un pack válido', async () => {
-    const ok = await post('/v1/billing/checkout', { packUsd: 20 })
+  it('acepta cualquier monto dentro del rango, no solo los presets', async () => {
+    const ok = await post('/v1/billing/checkout', { amountUsd: 20 })
     expect(ok.status).toBe(200)
-    expect(await ok.json()).toMatchObject({ url: 'https://checkout.test/20?uid=owner', packUsd: 20 })
+    expect(await ok.json()).toMatchObject({ url: 'https://checkout.test/20?uid=owner', amountUsd: 20 })
+
+    // Monto libre y decimal: los presets son de la UI.
+    const custom = await post('/v1/billing/checkout', { amountUsd: 3.5 })
+    expect(custom.status).toBe(200)
+    expect(await custom.json()).toMatchObject({ amountUsd: 3.5 })
     expect(checkout.createSession).toHaveBeenCalledWith(
-      expect.objectContaining({ uid: 'owner', packUsd: 20 })
+      expect.objectContaining({ uid: 'owner', packUsd: 3.5 })
     )
 
-    // El pack de entrada de $1 es válido; $15 (pack viejo) y $7 no existen.
-    expect((await post('/v1/billing/checkout', { packUsd: 1 })).status).toBe(200)
-    expect((await post('/v1/billing/checkout', { packUsd: 15 })).status).toBe(400)
-    expect((await post('/v1/billing/checkout', { packUsd: 7 })).status).toBe(400)
+    // Fuera de rango no hay checkout.
+    expect((await post('/v1/billing/checkout', { amountUsd: 0.5 })).status).toBe(400)
+    expect((await post('/v1/billing/checkout', { amountUsd: 100.01 })).status).toBe(400)
   })
 
   it('acredita el saldo desde el webhook del MoR', async () => {

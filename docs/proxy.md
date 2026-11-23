@@ -35,7 +35,7 @@ Todas las rutas salvo el health check y el webhook piden
 | `POST` | `/v1/notes/{noteId}/blocks` | `{ opId, block }` | recibo de la operación |
 | `POST` | `/v1/notes/{noteId}/body` | `{ opId, body }` | recibo de la operación |
 | `POST` | `/v1/notes/{noteId}/compact` | `{ opId, compact: { blockIds, manifest } }` | recibo (hasta 400 borrados por mensaje) |
-| `POST` | `/v1/billing/checkout` | `{ packUsd, successUrl? }` | `{ url, id, packUsd }` |
+| `POST` | `/v1/billing/checkout` | `{ amountUsd, successUrl? }` ($1 a $100) | `{ url, id, amountUsd }` |
 | `POST` | `/v1/billing/portal` | `{ returnUrl? }` | `{ url, id }` (portal de Polar para guardar la tarjeta) |
 | `POST` | `/v1/billing/webhook` | evento del MoR (crudo) | `{ ok, idempotent }` |
 
@@ -151,8 +151,8 @@ Variables:
 | `GOOGLE_CLOUD_PROJECT` | proyecto de Firestore (o el default de Cloud Run) |
 | `ALLOWED_ORIGINS` | lista separada por comas para CORS (`https://md-sync-app.web.app`) |
 | `POLAR_ACCESS_TOKEN` | OAT de Polar (`polar_oat_…`), scope `checkouts:write` (E6) |
-| `POLAR_PRODUCT_1` / `_5` / `_20` | un producto por pack en Polar (`Firemd Credits — $1`, `— $5`, `— $20`) |
-| `POLAR_PRODUCT_ID` | opcional: un solo producto + precio ad-hoc por checkout (fallback) |
+| `POLAR_CUSTOM_PRODUCT_ID` | producto "Firemd Credits" con precio libre (`custom`, mínimo $1) |
+| `POLAR_PRODUCT_1/5/20` | opcional: un producto por pack, si algún día se vuelve a precios fijos |
 | `POLAR_WEBHOOK_SECRET` | secreto del endpoint (`whsec_…`), firma Standard Webhooks |
 | `POLAR_SERVER` | `production` (default) o `sandbox` |
 
@@ -165,11 +165,9 @@ Lemon Squeezy ya no acepta altas nuevas y cierra el 31-mar-2027; el adaptador es
 
 ```bash
 polar auth login --production
-# Un producto por pack: así los tres se ven y se editan en el dashboard
-for pack in 1 5 20; do
-  polar products create --name "Firemd Credits — \$$pack" --visibility private \
-    --prices "[{\"amount_type\":\"fixed\",\"price_amount\":$((pack*100))}]" --json
-done
+# Un producto con precio libre: el monto lo elige el usuario en la app
+polar products create --name "Firemd Credits" --visibility private \
+  --prices '[{"amount_type":"custom","minimum_amount":100,"maximum_amount":10000,"preset_amount":500}]' --json
 # Webhook: solo order.paid, formato raw, a la ruta del proxy
 polar webhooks create_webhook_endpoint \
   --url https://firemd-proxy-XXX.southamerica-east1.run.app/v1/billing/webhook \
@@ -185,13 +183,17 @@ printf %s "$OAT"    | gcloud secrets create polar-access-token --data-file=-
 printf %s "$WHSEC"  | gcloud secrets create polar-webhook-secret --data-file=-
 gcloud run services update firemd-proxy --region southamerica-east1 \
   --set-secrets POLAR_ACCESS_TOKEN=polar-access-token:latest,POLAR_WEBHOOK_SECRET=polar-webhook-secret:latest \
-  --update-env-vars POLAR_PRODUCT_1=<id_$1>,POLAR_PRODUCT_5=<id_$5>,POLAR_PRODUCT_20=<id_$20>,POLAR_SERVER=production
+  --update-env-vars POLAR_CUSTOM_PRODUCT_ID=<product_id>,POLAR_SERVER=production
 ```
 
-Cada pack es un producto del catálogo (precio fijo), así que cambiar un precio es
-editar el producto en el dashboard, sin tocar código ni redeployar. Si en cambio
-se configura un único `POLAR_PRODUCT_ID`, el monto viaja como precio ad-hoc en
-cada checkout.
+Hay **un** producto con **precio libre** (`amount_type: custom`, mínimo $1, máximo
+$100, preset $5): el monto viaja en `amount` en cada checkout, así que la app
+ofrece presets ($1/$5/$20) y deja escribir cualquier número. Cambiar el rango es
+editar el producto en el dashboard.
+
+La recarga automática usa el mismo producto: la orden off-session manda su propio
+`amount`, por eso el piso de la automática ($5) y el mínimo de compra ($1) pueden
+diferir sin tocar el catálogo.
 
 El saldo se acredita con el **neto** de la orden (`net_amount`), sin impuestos ni
 descuentos, para que el saldo sea exactamente el valor del pack. `allow_discount_codes`

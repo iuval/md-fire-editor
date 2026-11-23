@@ -159,9 +159,10 @@ export function startPortal(): Promise<{ url: string; id: string }> {
   })
 }
 
-export function startCheckout(packUsd: number): Promise<{ url: string; packUsd: number }> {
-  return call<{ url: string; packUsd: number }>('/v1/billing/checkout', {
+/** Sesión de checkout del MoR para cargar saldo: cualquier monto del rango (E6). */
+export function startCheckout(amountUsd: number): Promise<{ url: string; amountUsd: number }> {
+  return call<{ url: string; amountUsd: number }>('/v1/billing/checkout', {
     method: 'POST',
-    body: JSON.stringify({ packUsd, successUrl: `${location.origin}/?topup=ok` }),
+    body: JSON.stringify({ amountUsd, successUrl: `${location.origin}/?topup=ok` }),
   })
 }

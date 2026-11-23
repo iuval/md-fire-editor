@@ -14,12 +14,19 @@ const port = Number(process.env.PORT ?? 8080)
  * nuevas (cierra el 31-mar-2027), así que el adaptador es el de Polar.
  */
 function buildCheckout() {
-  const { POLAR_ACCESS_TOKEN, POLAR_PRODUCT_ID, POLAR_WEBHOOK_SECRET, POLAR_SERVER } = process.env
+  const {
+    POLAR_ACCESS_TOKEN,
+    POLAR_PRODUCT_ID,
+    POLAR_CUSTOM_PRODUCT_ID,
+    POLAR_WEBHOOK_SECRET,
+    POLAR_SERVER,
+  } = process.env
   if (!POLAR_ACCESS_TOKEN) return null
   // Un producto por pack: así el dashboard de Polar muestra los tres.
   return createPolar({
     accessToken: POLAR_ACCESS_TOKEN,
     productId: POLAR_PRODUCT_ID,
+    customProductId: POLAR_CUSTOM_PRODUCT_ID,
     products: Object.fromEntries(
       [1, 5, 20]
         .map((pack) => [pack, process.env[`POLAR_PRODUCT_${pack}`]])

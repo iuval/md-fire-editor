@@ -1,7 +1,12 @@
 // Router del proxy: sin framework, sin dependencias, testeable con objetos
 // request/response falsos o con el servidor HTTP real.
 import { creditTopUp } from './billing.mjs'
-import { CREDIT_PACKS, describeAccount, executeNoteOperation } from './core.mjs'
+import {
+  MAX_TOP_UP_USD,
+  MIN_TOP_UP_USD,
+  describeAccount,
+  executeNoteOperation,
+} from './core.mjs'
 
 const MAX_BODY_BYTES = 1024 * 1024
 
@@ -192,18 +197,23 @@ export function createProxyHandler({
         if (!checkout) throw new HttpError(503, 'checkout-not-configured')
         const raw = await readBody(req)
         const payload = parseJson(raw)
-        const packUsd = Number(payload.packUsd)
-        if (!CREDIT_PACKS.includes(packUsd)) {
-          throw new HttpError(400, 'invalid-pack')
+        // Monto libre: los presets son de la UI, el único límite es el rango.
+        const amountUsd = Number(payload.amountUsd ?? payload.packUsd)
+        if (
+          !Number.isFinite(amountUsd) ||
+          amountUsd < MIN_TOP_UP_USD ||
+          amountUsd > MAX_TOP_UP_USD
+        ) {
+          throw new HttpError(400, 'invalid-amount')
         }
         const session = await checkout.createSession({
           uid: identity.uid,
-          packUsd,
+          packUsd: amountUsd,
           email: identity.email,
           successUrl: payload.successUrl,
           cancelUrl: payload.cancelUrl,
         })
-        json(res, 200, { ...session, packUsd }, cors)
+        json(res, 200, { ...session, amountUsd }, cors)
         return
       }
 

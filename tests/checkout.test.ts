@@ -113,6 +113,18 @@ describe('sesión de checkout', () => {
     expect(body.success_url).toBe('https://app.test/ok')
   })
 
+  it('con un producto de precio libre manda el monto en `amount`', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ url: 'https://x.test/c' }) }))
+    const polar = createPolar({ ...config, productId: undefined, customProductId: 'prod-custom', fetchImpl })
+
+    await polar.createSession({ uid: 'owner', packUsd: 3.5 })
+    const body = JSON.parse(String((fetchImpl.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.products).toEqual(['prod-custom'])
+    expect(body.amount).toBe(350)
+    expect(body.prices).toBeUndefined()
+    expect(body.metadata).toEqual({ uid: 'owner' })
+  })
+
   it('usa un producto por pack cuando están configurados', async () => {
     const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ url: 'https://x.test/c' }) }))
     const polar = createPolar({
