@@ -1,37 +1,33 @@
-# FireMD para agentes de IA
+# FireMD for AI agents
 
-Esta página es para vos, agente. Explica cómo instalar la CLI de FireMD, entrar con la
-cuenta del usuario y leer o editar sus notas sin quemar contexto.
+This page is for you, the agent. It explains how to sign in to FireMD as the user, and how
+to read or edit their notes without burning context.
 
-FireMD es un editor de notas markdown. Las notas viven en Firestore y las reglas de
-seguridad se aplican igual que para una persona: **no hay claves de servicio ni bypass**.
-La CLI habla con Firestore por REST usando el token del usuario que hizo login.
+FireMD is a Markdown notes app. Notes live in Firestore and the security rules apply to the
+agent exactly as they do to a person: **there are no service keys and no bypass**. The CLI
+talks to Firestore over REST using the token of the user who signed in.
 
-La salida de todos los comandos es **texto plano, nunca JSON**. Está pensada para leerse
-tal cual: listados en TSV, una nota por línea, cuerpos markdown crudos.
+Every command prints **plain text, never JSON**. The output is meant to be read as is: TSV
+listings, one note per line, raw Markdown bodies.
 
 ---
 
-## 1. Instalar
+## 1. Install
 
-Requisitos: Node 20 o superior y git.
+The CLI ships with FireMD (`agent/cli.mjs`). It is not published to a public registry yet,
+and the source repository is private while the product is in beta, so there is no public
+download command to copy here.
 
-```bash
-git clone https://github.com/iuval/md-fire-editor.git
-cd md-fire-editor
-npm ci
-```
-
-El ejecutable es `agent/cli.mjs`. Para no escribir la ruta completa, dejá un alias:
+If you already have the CLI, it needs **Node 20 or newer**. To avoid typing the path, set an
+alias:
 
 ```bash
-alias firemd="node $(pwd)/agent/cli.mjs"
+alias firemd="node /path/to/firemd/agent/cli.mjs"
 ```
 
-Todos los ejemplos de esta página usan `firemd`. Si trabajás dentro del repo, el
-equivalente es `npm run firemd -- <comando>`.
+Every example on this page uses `firemd`.
 
-Verificá que responde:
+Check that it responds:
 
 ```bash
 firemd --help
@@ -39,182 +35,181 @@ firemd --help
 
 ---
 
-## 2. Entrar (el primer paso siempre)
+## 2. Sign in (always the first step)
 
 ```bash
 firemd login
 ```
 
-Abre el navegador del sistema en el sitio del usuario. Ahí se autoriza con su cuenta de
-Google y la sesión vuelve a la CLI. Al terminar imprime:
+This opens the system browser on the user's site. They authorise with their Google account
+and the session comes back to the CLI. When it finishes it prints:
 
 ```
-ok MacBook de Ana
-ana@ejemplo.com
-agente 3f9a1c2b
+ok Ana's MacBook
+ana@example.com
+agent 3f9a1c2b
 ```
 
-Esa sesión queda registrada como un **agente conectado** de la cuenta. El usuario la ve en
-la app (menú de cuenta → Agentes conectados) y puede renombrarla ahí o con
-`firemd name "otro nombre"`.
+That session is registered as a **connected agent** of the account. The user sees it in the
+app (account menu → Connected agents) and can rename it there or with
+`firemd name "another name"`.
 
-Las credenciales se guardan en `~/.config/firemd/credentials.json` con permisos 0600. El
-token de acceso se renueva solo; no hace falta volver a entrar salvo que el usuario
-desconecte la sesión.
+Credentials are stored in `~/.config/firemd/credentials.json` with 0600 permissions. The
+access token refreshes itself; there is no need to sign in again unless the user disconnects
+the session.
 
-### Si el navegador no está disponible
+### When no browser is available
 
-`firemd login` necesita un navegador. En una máquina sin entorno gráfico, el usuario puede
-generar el token desde la app web y pasarlo por variable de entorno:
+`firemd login` needs a browser. On a machine without a graphical environment, the user can
+generate a token in the web app and pass it through an environment variable:
 
 ```bash
 export FIREMD_ID_TOKEN="<token>"
 ```
 
-Un token externo no se renueva: vence en una hora. Es la vía de último recurso, para tests
-y CI.
+An external token does not refresh: it expires in one hour. This is the last resort, for
+tests and CI.
 
-### Modo agente anónimo (opcional)
+### Anonymous agent mode (optional)
 
-Si el usuario no quiere dar acceso a su cuenta completa, puede crear una identidad aparte:
+If the user does not want to grant their whole account, they can create a separate identity:
 
 ```bash
 firemd login --agent
 ```
 
-Imprime un uid y un código de vinculación. El usuario lo pega en la app, en
-*Agentes conectados → Vincular agente anónimo*, elige una carpeta y un rol (Lectura o
-Escritura). Desde ahí esa identidad sólo ve esa carpeta. Es el modelo anterior y sigue
-funcionando, pero el login normal es más simple.
+It prints a uid and a linking code. The user pastes it into the app, under *Connected agents
+→ Link an anonymous agent*, picks a folder and a role (Read only or Can edit). From then on
+that identity only sees that folder. It is the older model and still works, but the normal
+login is simpler.
 
 ---
 
-## 3. Comprobar quién sos
+## 3. Check who you are
 
 ```bash
 firemd whoami
 ```
 
 ```
-ana@ejemplo.com
-agente MacBook de Ana 3f9a1c2b
+ana@example.com
+agent Ana's MacBook 3f9a1c2b
 ```
 
-Si además querés ver todos los agentes conectados a la cuenta:
+To see every agent connected to the account:
 
 ```bash
 firemd agents
 ```
 
 ```
-3f9a1c2b *	MacBook de Ana	cli	2026-02-11
+3f9a1c2b *	Ana's MacBook	cli	2026-02-11
 9d2e4f01	iPad	desktop	2026-02-09
 ```
 
-El asterisco marca la sesión actual. Cuatro columnas separadas por tab: id corto, nombre,
-tipo y último uso.
+The asterisk marks the current session. Four tab-separated columns: short id, name, kind and
+last use.
 
-`firemd name "Nombre nuevo"` renombra la sesión actual. El cambio se ve en la app.
+`firemd name "New name"` renames the current session. The change shows up in the app.
 
 ---
 
-## 4. Comandos
+## 4. Commands
 
-| Comando | Qué hace |
+| Command | What it does |
 |---|---|
-| `firemd login` | Entra con la cuenta del sitio (abre el navegador) |
-| `firemd login --agent` | Crea una identidad anónima aparte |
-| `firemd whoami` | Email y agente de la sesión actual |
-| `firemd agents` | Agentes conectados a la cuenta |
-| `firemd name "Nombre"` | Renombra esta sesión |
-| `firemd logout` | Revoca el token y borra las credenciales |
-| `firemd ls [--folder <f\|root>] [--limit n]` | Lista notas: `id`, título, fecha, carpeta |
-| `firemd folders` | Lista carpetas: `id`, nombre |
-| `firemd tags` | Etiquetas con su cantidad de notas |
-| `firemd cat <id> [--max-bytes n] [--etag]` | Markdown crudo de una nota |
-| `firemd find <texto> [--tag t] [--limit n]` | Busca y devuelve `id:línea: texto` |
-| `firemd patch <id> [--etag e] [--find a --replace b]... [--all]` | Reemplaza texto |
-| `firemd append <id> [--text t]` | Agrega al final (o por stdin) |
-| `firemd new --folder f --title t [--body t]` | Crea una nota |
-| `firemd rm <id>` | Elimina una nota |
-| `firemd vault pull [--dir ruta] [--prune]` | Nube → archivos `.md` |
-| `firemd vault push [--dir ruta]` | Archivos `.md` → nube |
+| `firemd login` | Sign in with the site account (opens the browser) |
+| `firemd login --agent` | Create a separate anonymous identity |
+| `firemd whoami` | Email and agent of the current session |
+| `firemd agents` | Agents connected to the account |
+| `firemd name "Name"` | Rename this session |
+| `firemd logout` | Revoke the token and delete the credentials |
+| `firemd ls [--folder <f\|root>] [--limit n]` | List notes: `id`, title, date, folder |
+| `firemd folders` | List folders: `id`, name |
+| `firemd tags` | Tags with their note count |
+| `firemd cat <id> [--max-bytes n] [--etag]` | Raw Markdown of one note |
+| `firemd find <text> [--tag t] [--limit n]` | Search and return `id:line: text` |
+| `firemd patch <id> [--etag e] [--find a --replace b]... [--all]` | Replace text |
+| `firemd append <id> [--text t]` | Append at the end (or from stdin) |
+| `firemd new --folder f --title t [--body t]` | Create a note |
+| `firemd rm <id>` | Delete a note |
+| `firemd vault pull [--dir path] [--prune]` | Cloud → `.md` files |
+| `firemd vault push [--dir path]` | `.md` files → cloud |
 
-Los ids son de 8 caracteres: alcanza con el prefijo único. Si el prefijo es ambiguo, el
-comando falla con `E_AMBIGUOUS` y no toca nada.
+Ids are 8 characters: the unique prefix is enough. If the prefix is ambiguous the command
+fails with `E_AMBIGUOUS` and changes nothing.
 
-### Ejemplos
+### Examples
 
 ```bash
 firemd ls --limit 10
-firemd find harina --limit 5
+firemd find flour --limit 5
 firemd cat 3f9a1c2b
-firemd patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find '- dos' --replace '- dos
-- tres'
-firemd append 3f9a1c2b --text '- sal'
-firemd new --folder recetas --title "Pan de masa madre" --body "## Ingredientes"
+firemd patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find '- two' --replace '- two
+- three'
+firemd append 3f9a1c2b --text '- salt'
+firemd new --folder recipes --title "Sourdough" --body "## Ingredients"
 ```
 
 ---
 
-## 5. Editar sin pisar el trabajo de nadie
+## 5. Edit without stepping on anyone
 
-`cat` devuelve el markdown y, con `--etag`, también el etag:
+`cat` returns the Markdown and, with `--etag`, the etag too:
 
 ```bash
 firemd cat 3f9a1c2b --etag
 ```
 
-Pasalo en el `patch`:
+Pass it to `patch`:
 
 ```bash
-firemd patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find 'viejo' --replace 'nuevo'
+firemd patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find 'old' --replace 'new'
 ```
 
-El parche se rechaza si:
+The patch is rejected when:
 
-- el etag quedó viejo (`E_ETAG`, código 2) — alguien editó la nota mientras la leías;
-- el texto buscado no existe (`E_NOT_FOUND`, código 3);
-- el texto aparece más de una vez (`E_AMBIGUOUS`, código 4); usá `--all` si querés
-  reemplazar todas las apariciones.
+- the etag is stale (`E_ETAG`, code 2) — someone edited the note while you were reading it;
+- the text you are looking for does not exist (`E_NOT_FOUND`, code 3);
+- the text appears more than once (`E_AMBIGUOUS`, code 4); use `--all` to replace every
+  occurrence.
 
-Cuando un `patch` falla por etag, **volvé a leer la nota** y reintentá con el etag nuevo. No
-reintentes con el mismo.
+When a `patch` fails on the etag, **read the note again** and retry with the new etag. Never
+retry with the same one.
 
 ---
 
-## 6. Vault: las notas como archivos
+## 6. Vault: notes as files
 
 ```bash
-firemd vault pull --dir ~/notas
-firemd vault push --dir ~/notas
+firemd vault pull --dir ~/notes
+firemd vault push --dir ~/notes
 ```
 
-`pull` baja todas las notas visibles como archivos `.md` (respeta subcarpetas). `push` sube
-los cambios locales y nunca pisa una nota que cambió en la nube: si hay conflicto, escribe
-`<nota>.conflicto-AAAAMMDDhhmm.md` y te avisa. `--prune` borra los archivos locales que ya
-no existen en la nube.
+`pull` downloads every visible note as a `.md` file (subfolders preserved). `push` uploads
+local changes and never overwrites a note that changed in the cloud: on a conflict it writes
+`<note>.conflict-YYYYMMDDhhmm.md` and tells you. `--prune` deletes local files that no longer
+exist in the cloud.
 
-Es la vía más barata para trabajar con muchas notas: un `grep` local no cuesta una lectura
-por nota.
-
----
-
-## 7. Permisos
-
-La sesión tiene exactamente los permisos del usuario que hizo login. Con el login normal
-ves todas sus carpetas. Con `login --agent`, sólo las carpetas donde el dueño agregó esa
-identidad como miembro.
-
-Si un comando falla con `PERMISSION_DENIED`, no es un bug: la cuenta no tiene acceso a esa
-nota. Decile al usuario que revise el rol en la app. No intentes sortearlo.
+This is the cheapest way to work with many notes: a local `grep` costs no reads per note.
 
 ---
 
-## 8. MCP (opcional)
+## 7. Permissions
 
-Si el agente habla MCP, el repo trae un servidor con siete tools de texto:
-`notes_list`, `notes_read`, `notes_patch`, `notes_append`, `notes_search`, `notes_create`,
+The session has exactly the permissions of the user who signed in. With the normal login you
+see all of their folders. With `login --agent` you only see the folders where the owner added
+that identity as a member.
+
+If a command fails with `PERMISSION_DENIED`, it is not a bug: the account has no access to
+that note. Ask the user to check the role in the app. Do not try to work around it.
+
+---
+
+## 8. MCP (optional)
+
+If the agent speaks MCP, FireMD ships a server with seven text tools: `notes_list`,
+`notes_read`, `notes_patch`, `notes_append`, `notes_search`, `notes_create`,
 `folders_list`.
 
 ```jsonc
@@ -223,37 +218,37 @@ Si el agente habla MCP, el repo trae un servidor con siete tools de texto:
   "mcpServers": {
     "firemd": {
       "command": "node",
-      "args": ["/ruta/al/repo/agent/mcp.mjs"]
+      "args": ["/path/to/firemd/agent/mcp.mjs"]
     }
   }
 }
 ```
 
-Comparte las credenciales con la CLI: si `firemd login` ya se corrió, el servidor arranca
-autenticado.
+It shares credentials with the CLI: if `firemd login` already ran, the server starts
+authenticated.
 
 ---
 
-## 9. Códigos de salida
+## 9. Exit codes
 
-| Código | Significado |
+| Code | Meaning |
 |---|---|
-| 0 | Bien |
-| 1 | Error inesperado |
-| 2 | `E_ETAG`: el etag quedó viejo |
-| 3 | `E_NOT_FOUND` o sin sesión |
-| 4 | `E_AMBIGUOUS`: el prefijo o el texto coincide con varios |
-| 64 | `E_USAGE`: argumentos mal |
+| 0 | Fine |
+| 1 | Unexpected error |
+| 2 | `E_ETAG`: the etag is stale |
+| 3 | `E_NOT_FOUND`, or no session |
+| 4 | `E_AMBIGUOUS`: the prefix or the text matches several |
+| 64 | `E_USAGE`: bad arguments |
 
 ---
 
-## 10. Reglas de oro
+## 10. Golden rules
 
-1. **Entrá primero.** Sin `firemd login` todo lo demás falla con código 3.
-2. **Leé antes de escribir.** `cat --etag` y después `patch --etag`.
-3. **No inventes ids.** Salen de `ls`, `find` o `new`.
-4. **Un `patch` por cambio semántico.** Varios `--find/--replace` en un comando es más
-   barato que varias llamadas.
-5. **No reintentes un etag viejo.** Releé.
-6. **Si el usuario cambió el nombre del agente en la app, no hace falta nada:** el id no
-   cambia y la sesión sigue válida.
+1. **Sign in first.** Without `firemd login` everything else fails with code 3.
+2. **Read before writing.** `cat --etag` and then `patch --etag`.
+3. **Do not invent ids.** They come from `ls`, `find` or `new`.
+4. **One `patch` per semantic change.** Several `--find/--replace` in one command is cheaper
+   than several calls.
+5. **Never retry a stale etag.** Read again.
+6. **If the user renamed the agent in the app, nothing to do:** the id does not change and
+   the session stays valid.

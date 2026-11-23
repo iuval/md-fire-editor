@@ -1,44 +1,45 @@
 # FireMD
 
-> FireMD es un editor de notas markdown colaborativo (React + Firestore) con una CLI y un
-> servidor MCP para que un agente de IA lea y edite las notas del usuario. Las reglas de
-> seguridad de Firestore se aplican igual que para una persona: no hay claves de servicio
-> ni bypass. La CLI devuelve texto plano, nunca JSON.
+> FireMD is a collaborative Markdown notes app (React + Firestore) with a CLI and an MCP
+> server so that an AI agent can read and edit the user's notes. Firestore security rules
+> apply to the agent exactly as they do to a person: there are no service keys and no
+> bypass. The CLI returns plain text, never JSON.
 
-## Para agentes
+## For agents
 
-- [Guía completa de la CLI](https://firemd.app/agent.md): instalación, login, todos los
-  comandos, permisos y códigos de salida. **Empezá por acá.**
-- [Repositorio](https://github.com/iuval/md-fire-editor): código de la CLI en `agent/`.
+- [Full CLI and MCP guide](https://firemd.app/agent.md): login, every command, permissions
+  and exit codes. **Start here.**
+- The CLI ships with FireMD. It is not on a public registry yet and the source repository is
+  private while the product is in beta, so the guide documents the contract rather than a
+  clone command.
 
-## Lo mínimo
+## The minimum
 
-1. Instalar: `git clone https://github.com/iuval/md-fire-editor.git && cd md-fire-editor && npm ci`
-2. Entrar: `node agent/cli.mjs login` (abre el navegador con la cuenta del usuario)
-3. Leer: `node agent/cli.mjs ls`, `node agent/cli.mjs cat <id>`
-4. Editar: `node agent/cli.mjs patch <id> --etag <etag> --find <texto> --replace <texto>`
+1. Sign in: `firemd login` (opens the browser with the user's account).
+2. Read: `firemd ls`, `firemd cat <id>`.
+3. Edit: `firemd patch <id> --etag <etag> --find <text> --replace <text>`.
 
-## Servidor MCP
+## MCP server
 
-`node agent/mcp.mjs` expone siete tools de texto: `notes_list`, `notes_read`,
-`notes_patch`, `notes_append`, `notes_search`, `notes_create`, `folders_list`. Comparte las
-credenciales de la CLI.
+`firemd-mcp` exposes seven text tools: `notes_list`, `notes_read`, `notes_patch`,
+`notes_append`, `notes_search`, `notes_create`, `folders_list`. It shares the CLI's
+credentials.
 
-## Planes y cuota
+## Pricing and quota
 
-- Cuota gratuita diaria que se renueva a las 00:00 UTC: 100 MB de almacenamiento y 700
-  operaciones por día.
-- Saldo prepago con recarga (top-up) en packs de USD 5, 15 y 50; vence a los 24 meses.
-- Cargo diario: solo el uso que pasa la cuota, con el margen de la app incluido. Las cuentas
-  admin no pagan.
-- El tiempo real (presencia y cursores) se paga con saldo; el modo gratuito edita en modo liviano.
-- [Planes y uso](https://firemd.app/pricing): detalle de la cuota, los packs y las preguntas
-  frecuentes.
-- La app muestra el consumo y el costo estimado. El cobro con tarjeta todavía no está
-  habilitado: la recarga se solicita desde la app y se acredita al confirmarse.
+- Free daily quota, renewed at 00:00 UTC: 100 MB of storage and 700 operations per day.
+- Prepaid balance, bought in packs of USD 1, 5 and 20, up to USD 100 per purchase. Unused
+  credit expires 24 months after purchase and has no cash value.
+- Charged per unit only for usage above the free quota: writes $0.50, reads $0.30 and
+  deletes $0.10 per 100,000 operations, storage $0.60 per GB-month, transfer $0.20 per GB,
+  agent operations $0.50 per 100,000. Admin accounts do not pay.
+- Card payments are handled by Polar, the merchant of record, which also handles sales tax
+  and VAT at checkout. There is no subscription: you add credit and it is spent on usage.
+- [Pricing](https://firemd.app/pricing): the full per-unit tariff, the packs, the free tier
+  and the FAQ.
 
-## Sitio
+## Site
 
-- [Editor](https://firemd.app): la aplicación web.
-- [Planes y uso](https://firemd.app/pricing): cuota gratuita, saldo prepago y FAQ.
-- [Guía para agentes](https://firemd.app/agent.md): CLI y servidor MCP.
+- [Editor](https://firemd.app): the web app.
+- [Pricing](https://firemd.app/pricing): free tier, prepaid balance and tariff.
+- [Agent guide](https://firemd.app/agent.md): CLI and MCP server.
