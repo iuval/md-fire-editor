@@ -169,7 +169,7 @@ firemd patch 3f9a1c2b --etag 3-a1b2c3d4e5f6 --find 'old' --replace 'new'
 
 The patch is rejected when:
 
-- the etag is stale (`E_ETAG`, code 2) — someone edited the note while you were reading it;
+- the etag is stale (`E_ETAG`, code 2): someone edited the note while you were reading it;
 - the text you are looking for does not exist (`E_NOT_FOUND`, code 3);
 - the text appears more than once (`E_AMBIGUOUS`, code 4); use `--all` to replace every
   occurrence.

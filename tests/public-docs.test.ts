@@ -125,6 +125,23 @@ describe('agent.md', () => {
   })
 })
 
+describe('public surfaces stay plain', () => {
+  it('uses no em dashes, in the copy or in the titles', () => {
+    const files = [
+      'index.html',
+      'public/pricing/index.html',
+      'public/privacy/index.html',
+      'public/llms.txt',
+      'public/agent.md',
+    ]
+    for (const file of files) {
+      const body = readFileSync(resolve(ROOT, file), 'utf8')
+      // The character itself, not the intent: a stray U+2014 is the tell.
+      expect(body.includes('\u2014'), file).toBe(false)
+    }
+  })
+})
+
 describe('privacy policy', () => {
   const privacy = readFileSync(resolve(ROOT, 'public/privacy/index.html'), 'utf8')
   const sitemap = readFileSync(resolve(ROOT, 'public/sitemap.xml'), 'utf8')
@@ -143,12 +160,12 @@ describe('privacy policy', () => {
   })
 
   it('answers the questions a policy has to answer', () => {
-    for (const section of ['What is stored', 'Why it is processed', 'How long it is kept', 'Your rights']) {
+    for (const section of ['What is stored', 'Why it is stored', 'How long it is kept', 'What you can do']) {
       expect(privacy).toContain(section)
     }
     // Export and delete are real features, not promises: both must be described.
     expect(privacy).toMatch(/exports every note as Markdown/)
-    expect(privacy).toMatch(/deleting a note removes it/)
+    expect(privacy).toMatch(/deleting a note removes it and its content/)
     // A contact route that actually exists: the domain has no mailbox yet.
     expect(privacy).toMatch(/mailto:iuvalgoldansky@gmail\.com/)
   })
