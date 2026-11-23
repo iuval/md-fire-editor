@@ -120,7 +120,7 @@ Variables:
 | `GOOGLE_CLOUD_PROJECT` | proyecto de Firestore (o el default de Cloud Run) |
 | `ALLOWED_ORIGINS` | lista separada por comas para CORS (`https://md-sync-app.web.app`) |
 | `POLAR_ACCESS_TOKEN` | OAT de Polar (`polar_oat_…`), scope `checkouts:write` (E6) |
-| `POLAR_PRODUCT_ID` | producto "Saldo FireMD" (un precio nominal; el pack va como precio ad-hoc) |
+| `POLAR_PRODUCT_ID` | producto "Firemd Credits" (un precio nominal; el pack va como precio ad-hoc) |
 | `POLAR_WEBHOOK_SECRET` | secreto del endpoint (`whsec_…`), firma Standard Webhooks |
 | `POLAR_SERVER` | `production` (default) o `sandbox` |
 
@@ -134,7 +134,7 @@ Lemon Squeezy ya no acepta altas nuevas y cierra el 31-mar-2027; el adaptador es
 ```bash
 polar auth login --production
 # Un producto con un precio nominal: el pack se manda como precio ad-hoc ($1/$5/$20)
-polar products create --name "Saldo FireMD" --visibility private \
+polar products create --name "Firemd Credits" --visibility private \
   --prices '[{"amount_type":"fixed","price_amount":2000}]' --json
 # Webhook: solo order.paid, formato raw, a la ruta del proxy
 polar webhooks create_webhook_endpoint \
