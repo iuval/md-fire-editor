@@ -17,6 +17,7 @@ import {
   presetState,
   relativeLuminance,
   selectPreset,
+  setTypeface,
   resolvePalette,
   saveThemeState,
   setTokenOverride,
@@ -272,6 +273,41 @@ describe('applying a theme', () => {
 
     expect(root.style.getPropertyValue('--color-bg')).toMatch(HEX)
     expect(root.style.getPropertyValue('--color-bg-dark')).toMatch(HEX)
+  })
+
+  it('sets the note face and the app face independently', () => {
+    const root = document.documentElement
+    const base = presetState('nordico')
+    expect(base.typefaces).toEqual({ note: 'sans', ui: 'sans' })
+
+    applyTheme(base, root)
+    expect(root.style.getPropertyValue('--font-reading')).toBe('var(--font-sans)')
+    expect(root.style.getPropertyValue('--font-ui')).toBe('var(--font-sans)')
+
+    // A serif note does not move the chrome.
+    applyTheme(setTypeface(base, 'note', 'serif'), root)
+    expect(root.style.getPropertyValue('--font-reading')).toContain('Georgia')
+    expect(root.style.getPropertyValue('--font-heading')).toContain('Georgia')
+    expect(root.style.getPropertyValue('--font-ui')).toBe('var(--font-sans)')
+
+    // And a mono app does not move the prose.
+    applyTheme(setTypeface(base, 'ui', 'mono'), root)
+    expect(root.style.getPropertyValue('--font-ui')).toBe('var(--font-mono)')
+    expect(root.style.getPropertyValue('--font-ui-heading')).toBe('var(--font-mono)')
+    expect(root.style.getPropertyValue('--font-reading')).toBe('var(--font-sans)')
+
+    // Hybrid is a note idea: serif titles over sans prose.
+    applyTheme(setTypeface(base, 'note', 'hybrid'), root)
+    expect(root.style.getPropertyValue('--font-reading')).toBe('var(--font-sans)')
+    expect(root.style.getPropertyValue('--font-heading')).toContain('Georgia')
+  })
+
+  it('remembers both faces and falls back to sans on nonsense', () => {
+    const base = presetState('nordico')
+    const chosen = setTypeface(setTypeface(base, 'note', 'serif'), 'ui', 'mono')
+    expect(parseThemeState(JSON.stringify(chosen)).typefaces).toEqual({ note: 'serif', ui: 'mono' })
+    const mangled = { ...chosen, typefaces: { note: 'comic', ui: 'mono' } }
+    expect(parseThemeState(JSON.stringify(mangled)).typefaces).toEqual({ note: 'sans', ui: 'mono' })
   })
 
   it('fades a design change and never a colour edit', () => {

@@ -61,6 +61,14 @@ afterEach(() => {
   host = null
 })
 
+function tabByRole(label: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (tab) => (tab.textContent ?? '').trim() === label,
+  )
+  if (!found) throw new Error(`no tab "${label}"`)
+  return found
+}
+
 describe('theme dialog', () => {
   it('shows one card per ready-made theme, each with its two colors', () => {
     mount(<ThemeDialog onClose={() => {}} />)
@@ -96,17 +104,63 @@ describe('theme dialog', () => {
     }
   })
 
+  it('builds a combination from the squares of two different cards', () => {
+    mount(<ThemeDialog onClose={() => {}} />)
+    const obsidian = presetState('obsidiana')
+    const honeyCanvas = '#f2e7c9' // Honey's background
+    const tobaccoAccent = '#dcbb8c' // Tobacco's accent
+
+    // Baseline: the whole Obsidian design.
+    act(() => cards()[0].querySelector<HTMLButtonElement>('.theme-card-select')!.click())
+
+    // A background on its own: the surface moves, and the ink is solved against
+    // it, but it is still Obsidian's ink.
+    act(() => cards()[5].querySelector<HTMLButtonElement>('.theme-card-square--canvas')!.click())
+    const withHoney = resolvePalette(
+      { ...obsidian, seeds: { ...obsidian.seeds, canvas: honeyCanvas } },
+      'light',
+    )
+    expect(cssVar('--color-bg')).toBe(withHoney.bg)
+    expect(cssVar('--color-accent')).toBe(withHoney.accent)
+    expect(cards()[5].querySelector('.theme-card-square--canvas')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+    expect(cards()[0].querySelector('.theme-card-square--canvas')?.getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+
+    // An accent from a different card: now the two halves come from two designs.
+    act(() => cards()[11].querySelector<HTMLButtonElement>('.theme-card-square--accent')!.click())
+    const mixed = resolvePalette(
+      { ...obsidian, seeds: { canvas: honeyCanvas, accent: tobaccoAccent } },
+      'light',
+    )
+    expect(cssVar('--color-bg')).toBe(mixed.bg)
+    expect(cssVar('--color-accent')).toBe(mixed.accent)
+    expect(cards()[11].querySelector('.theme-card-square--accent')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+
+    // The name still takes a whole design in one click.
+    act(() => cards()[1].querySelector<HTMLButtonElement>('.theme-card-select')!.click())
+    const nordic = resolvePalette(presetState(PRESETS[1].id), 'light')
+    expect(cssVar('--color-bg')).toBe(nordic.bg)
+    expect(cssVar('--color-accent')).toBe(nordic.accent)
+  })
+
   it('paints a theme the moment its card is chosen', () => {
     mount(<ThemeDialog onClose={() => {}} />)
     const target = PRESETS[5]
     const before = cssVar('--color-bg')
-    act(() => cards()[5].click())
+    act(() => cards()[5].querySelector<HTMLButtonElement>('.theme-card-select')!.click())
 
     const expected = resolvePalette(presetState(target.id), 'light')
     expect(cssVar('--color-bg')).toBe(expected.bg)
     expect(cssVar('--color-bg')).not.toBe(before)
     expect(cssVar('--color-accent')).toBe(expected.accent)
-    expect(cards()[5].getAttribute('aria-pressed')).toBe('true')
+    expect(cards()[5].querySelector('.theme-card-select')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    )
   })
 
   it('shows every color at once, with no appearance switch to babysit', () => {
@@ -184,6 +238,57 @@ describe('theme dialog', () => {
     expect(bar?.querySelector('#theme-heading'), 'title inside the bar').not.toBeNull()
     // Done has to travel with the bar, so it is reachable without scrolling.
     expect(bar?.contains(buttonByText(t('themeDialog.done')))).toBe(true)
+  })
+
+  it('splits the panel into a Colors tab and a Typeface tab', () => {
+    mount(<ThemeDialog onClose={() => {}} />)
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Colors', 'Typeface'])
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true')
+
+    // Colors is the tab that opens: the themes are there, the faces are not.
+    expect(document.querySelector('.theme-grid')).not.toBeNull()
+    expect(document.querySelector('.theme-typefaces')).toBeNull()
+
+    act(() => tabs[1].click())
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true')
+    expect(tabs[0].getAttribute('aria-selected')).toBe('false')
+    expect(document.querySelector('.theme-grid')).toBeNull()
+    expect(document.querySelector('.theme-typefaces')).not.toBeNull()
+
+    // The two panels are wired to their tabs, not just swapped in place.
+    const panel = document.querySelector('[role="tabpanel"]')
+    expect(panel?.getAttribute('aria-labelledby')).toBe('theme-tab-typeface')
+  })
+
+  it('offers five faces per role, in two columns', () => {
+    mount(<ThemeDialog onClose={() => {}} />)
+    act(() => tabByRole('Typeface').click())
+
+    const columns = [...document.querySelectorAll<HTMLElement>('.theme-typeface-col')]
+    expect(columns).toHaveLength(2)
+    expect(columns.map((c) => c.querySelector('.theme-typeface-col-title')?.textContent)).toEqual([
+      'Note text',
+      'App UI',
+    ])
+    for (const column of columns) {
+      const names = [...column.querySelectorAll('.typeface-name')].map((n) => n.textContent)
+      expect(names).toEqual(['Sans', 'Serif', 'Old style', 'Hybrid', 'Mono'])
+    }
+    // Each option is drawn in its own face, or the choice is made by name alone.
+    expect(columns[0].querySelectorAll<HTMLElement>('.typeface-sample')[1].style.fontFamily).toContain(
+      'Georgia',
+    )
+
+    // The roles are independent: serif notes, sans app.
+    const noteSerif = columns[0].querySelectorAll<HTMLButtonElement>('.theme-typeface')[1]
+    act(() => noteSerif.click())
+    expect(cssVar('--font-reading')).toContain('Georgia')
+    expect(cssVar('--font-ui')).toBe('var(--font-sans)')
+    expect(noteSerif.getAttribute('aria-pressed')).toBe('true')
+    expect(
+      columns[1].querySelectorAll('.theme-typeface')[1].getAttribute('aria-pressed'),
+    ).toBe('false')
   })
 
   it('folds Reset into the Advanced section, with no footer row', () => {

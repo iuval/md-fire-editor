@@ -253,6 +253,12 @@ html[data-theme-fade] {
      silently resolved to SF Pro on macOS and Segoe UI on Windows. */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* What the app is set in. applyTheme() rewrites these from the chosen
+     typeface; the defaults keep the sheet honest before any JS runs. */
+  --font-reading: var(--font-sans);
+  --font-heading: var(--font-reading);
+  --font-ui: var(--font-sans);
+  --font-ui-heading: var(--font-ui);
 }
 
 html {
@@ -261,7 +267,16 @@ html {
 
 body {
   margin: 0;
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-ui-heading);
   font-size: 15px;
   background: light-dark(var(--color-bg), var(--color-bg-dark));
   color: light-dark(var(--color-text), var(--color-text-dark));
@@ -1229,6 +1244,10 @@ body.tab-dragging .pane-drop {
   caret-color: light-dark(var(--color-accent), var(--color-accent-dark));
 }
 
+.md-editor-content {
+  font-family: var(--font-reading);
+}
+
 .md-editor-content > * + * {
   margin-top: 0.55em;
 }
@@ -1237,6 +1256,7 @@ body.tab-dragging .pane-drop {
 .md-editor-content h2,
 .md-editor-content h3,
 .md-editor-content h4 {
+  font-family: var(--font-heading);
   font-weight: 650;
   letter-spacing: -0.015em;
   line-height: 1.3;
@@ -3267,9 +3287,14 @@ body.tab-dragging .pane-drop {
 
 .theme-dialog {
   width: min(560px, calc(100vw - 32px));
+  /* One height for both tabs. Without it the dialog shrinks to the typeface
+     list and grows back to the theme grid, and the whole thing jumps under the
+     cursor. The panel scrolls instead. */
+  height: min(88svh, 700px);
+  overflow: hidden;
   /* No top padding: the sticky bar has to meet the dialog's top edge. */
-  padding: 0 18px 18px;
-  gap: 16px;
+  padding: 0 18px;
+  gap: 0;
 }
 
 /* Title and Done, pinned while the preset list scrolls. The negative margin lets
@@ -3303,6 +3328,115 @@ body.tab-dragging .pane-drop {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+/* The two faces of the panel, in the bar. A tablist, so arrows and the
+   screen reader follow the same model as any other tab strip. */
+.theme-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: light-dark(var(--color-bg-2), var(--color-bg-3-dark));
+}
+
+.theme-tab {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.theme-tab:hover {
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+.theme-tab[aria-selected='true'] {
+  background: light-dark(var(--color-bg), var(--color-bg-2-dark));
+  color: light-dark(var(--color-text), var(--color-text-dark));
+  font-weight: 600;
+}
+
+.theme-tab:focus-visible {
+  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  outline-offset: 1px;
+}
+
+.theme-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 0 18px;
+}
+
+/* Two roles side by side: the prose you read, the app you click. */
+.theme-typefaces {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.theme-typeface-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.theme-typeface-col-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+}
+
+.theme-typeface-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theme-typeface {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-typeface:hover {
+  background: light-dark(var(--color-bg-2), var(--color-bg-3-dark));
+}
+
+.theme-typeface[aria-pressed='true'] .typeface-name {
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
+}
+
+.typeface-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: light-dark(var(--color-text), var(--color-text-dark));
+}
+
+.typeface-sample {
+  font-size: 12px;
+  color: light-dark(var(--color-muted), var(--color-muted-dark));
+  white-space: nowrap;
 }
 
 .theme-advanced {
@@ -3358,14 +3492,28 @@ body.tab-dragging .pane-drop {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
-  padding: 10px 8px;
+  gap: 6px;
+  padding: 8px 6px;
   border-radius: 9px;
-  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   background: none;
   color: inherit;
   text-align: left;
+}
+
+/* Only the name is the button; the squares above it are colour controls. */
+.theme-card-select {
+  max-width: 100%;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
   cursor: pointer;
+}
+
+.theme-card-select:focus-visible {
+  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  outline-offset: 1px;
 }
 
 /* The two colours of a design, stacked: the canvas underneath, the accent on
@@ -3373,8 +3521,8 @@ body.tab-dragging .pane-drop {
    separates them where they overlap. */
 .theme-card-colors {
   position: relative;
-  width: 50px;
-  height: 50px;
+  width: 68px;
+  height: 68px;
   flex: none;
 }
 
@@ -3382,31 +3530,51 @@ body.tab-dragging .pane-drop {
    these two, and everything else is derived from them. */
 .theme-card-square {
   position: absolute;
-  width: 38px;
-  height: 38px;
-  border-radius: 9px;
+  width: 48px;
+  height: 48px;
+  border-radius: 11px;
   border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
 }
 
-.theme-card-square:first-child {
+/* Pulled further apart than they used to be, so each square has an area of its
+   own to be clicked on. */
+.theme-card-square--canvas {
   top: 0;
   left: 0;
 }
 
-.theme-card-square:last-child {
-  top: 12px;
-  left: 12px;
+.theme-card-square--accent {
+  top: 20px;
+  left: 20px;
   z-index: 1;
-  box-shadow: 0 0 0 2px light-dark(var(--color-bg), var(--color-bg-2-dark));
+  box-shadow: 0 0 0 3px light-dark(var(--color-bg), var(--color-bg-2-dark));
 }
 
-.theme-card:hover {
+/* Each square is a button, so it needs the reset a button always needs. */
+.theme-card-square {
+  padding: 0;
+  cursor: pointer;
+}
+
+.theme-card-square:hover {
   border-color: light-dark(var(--color-muted), var(--color-muted-dark));
 }
 
-.theme-card[aria-pressed='true'] {
-  border-color: light-dark(var(--color-accent), var(--color-accent-dark));
-  box-shadow: inset 0 0 0 1px light-dark(var(--color-accent), var(--color-accent-dark));
+/* Which half of the combination this square is currently supplying. */
+.theme-card-square[aria-pressed='true'] {
+  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  outline-offset: 2px;
+}
+
+.theme-card-square:focus-visible {
+  outline: 2px solid light-dark(var(--color-accent), var(--color-accent-dark));
+  outline-offset: 3px;
+}
+
+
+
+.theme-card-select[aria-pressed='true'] .theme-card-name {
+  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
 }
 
 .theme-card-text {
@@ -3458,7 +3626,7 @@ body.tab-dragging .pane-drop {
   flex-wrap: wrap;
   padding: 6px 8px;
   border-radius: 7px;
-  border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+  border: none;
 }
 
 .color-field-main {

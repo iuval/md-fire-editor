@@ -19,6 +19,35 @@ export type Appearance = 'light' | 'dark'
 /** Which half to paint: a fixed appearance, or whatever the OS is doing. */
 export type AppearanceChoice = Appearance | 'system'
 
+/** The five faces a person can choose. Sans ships as the default. */
+export const TYPEFACES = ['sans', 'serif', 'oldstyle', 'hybrid', 'mono'] as const
+export type TypefaceId = (typeof TYPEFACES)[number]
+
+/**
+ * The stacks themselves. System faces on purpose: zero bytes, no license, no
+ * request. `reading` is what prose and chrome are set in; `heading` may differ,
+ * which is the whole point of "hybrid" — serif titles over sans text.
+ */
+export const TYPEFACE_STACKS: Record<TypefaceId, { reading: string; heading?: string }> = {
+  sans: { reading: 'var(--font-sans)' },
+  serif: { reading: "Georgia, 'Times New Roman', serif" },
+  oldstyle: {
+    reading: "'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif",
+  },
+  hybrid: { reading: 'var(--font-sans)', heading: "Georgia, 'Times New Roman', serif" },
+  mono: { reading: 'var(--font-mono)' },
+}
+
+/** Two independent choices: the prose you read and the app you click. */
+export type TypefaceRole = 'note' | 'ui'
+export type Typefaces = Record<TypefaceRole, TypefaceId>
+
+const TYPEFACE_ROLES: readonly TypefaceRole[] = ['note', 'ui']
+
+function isTypeface(value: unknown): value is TypefaceId {
+  return typeof value === 'string' && (TYPEFACES as readonly string[]).includes(value)
+}
+
 /** Every color the stylesheet reads. Keep in sync with the tokens in index.css. */
 export const THEME_TOKENS = [
   'bg',
@@ -56,6 +85,8 @@ export interface ThemeState {
    * light was never visible in its own colours, only as its mirror.
    */
   appearance: AppearanceChoice
+  /** The note's face and the app's face, chosen separately. */
+  typefaces: Typefaces
 }
 
 export interface ThemePreset {
@@ -443,6 +474,7 @@ export function presetState(presetId: string): ThemeState {
     overrides: {},
     edited: false,
     appearance: 'system',
+    typefaces: { note: 'sans', ui: 'sans' },
   }
 }
 
@@ -452,6 +484,16 @@ const DEFAULT_THEME_STATE: ThemeState = presetState(DEFAULT_PRESET_ID)
  * The palette actually painted. Both appearances come from the one design: the
  * appearance it was written in is used as is, the other is mirrored.
  */
+export function setTypeface(
+  state: ThemeState,
+  role: TypefaceRole,
+  typeface: TypefaceId,
+): ThemeState {
+  if (!TYPEFACE_ROLES.includes(role) || !isTypeface(typeface)) return state
+  if (state.typefaces[role] === typeface) return state
+  return { ...state, typefaces: { ...state.typefaces, [role]: typeface } }
+}
+
 export function resolvePalette(state: ThemeState, appearance: Appearance): Palette {
   const written = designAppearance(state.seeds)
   const base =
@@ -590,6 +632,15 @@ export function applyTheme(state: ThemeState, root?: HTMLElement | null): void {
   // One appearance, so native widgets (scrollbars, form controls, the caret)
   // agree with the palette instead of following the OS on their own.
   target.style.setProperty('color-scheme', painted)
+  // Fonts ride along in the same pass. Two roles, four tokens: index.css reads
+  // `--font-reading`/`--font-heading` for the note and `--font-ui`/
+  // `--font-ui-heading` for everything around it.
+  const note = TYPEFACE_STACKS[state.typefaces.note] ?? TYPEFACE_STACKS.sans
+  const ui = TYPEFACE_STACKS[state.typefaces.ui] ?? TYPEFACE_STACKS.sans
+  target.style.setProperty('--font-reading', note.reading)
+  target.style.setProperty('--font-heading', note.heading ?? note.reading)
+  target.style.setProperty('--font-ui', ui.reading)
+  target.style.setProperty('--font-ui-heading', ui.heading ?? ui.reading)
 }
 
 /* -------------------------------------------------------- storage & React API */
@@ -622,6 +673,16 @@ function parseOverrides(value: unknown): TokenOverrides {
   return parsed
 }
 
+function parseTypefaces(value: unknown, legacy: unknown): Typefaces {
+  const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  // `typeface` was a single choice before it split into two roles; honour it.
+  const fallback = isTypeface(legacy) ? legacy : 'sans'
+  return {
+    note: isTypeface(record.note) ? record.note : fallback,
+    ui: isTypeface(record.ui) ? record.ui : fallback,
+  }
+}
+
 function parseAppearance(value: unknown): AppearanceChoice {
   return value === 'light' || value === 'dark' ? value : 'system'
 }
@@ -646,6 +707,7 @@ export function parseThemeState(raw: string | null): ThemeState {
     overrides: parseOverrides(record.overrides),
     edited: record.edited === true,
     appearance: parseAppearance(record.appearance),
+    typefaces: parseTypefaces(record.typefaces, record.typeface),
   }
 }
 
