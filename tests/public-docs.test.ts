@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { CREDIT_PACKS } from '../src/lib/credits'
+import { CREDIT_PACKS, REFUND_WINDOW_DAYS } from '../src/lib/credits'
 import { CREDIT_EXPIRY_MONTHS, MAX_TOP_UP_USD } from '../src/lib/usage'
 
 /**
@@ -131,6 +131,8 @@ describe('public surfaces stay plain', () => {
       'index.html',
       'public/pricing/index.html',
       'public/privacy/index.html',
+      'public/terms/index.html',
+      'public/refund/index.html',
       'public/llms.txt',
       'public/agent.md',
     ]
@@ -178,5 +180,63 @@ describe('privacy policy', () => {
   it('is reachable from the pricing page footer', () => {
     const pricing = readFileSync(resolve(ROOT, 'public/pricing/index.html'), 'utf8')
     expect(pricing).toContain('href="/privacy/"')
+  })
+})
+
+describe('terms of service and refund policy', () => {
+  const terms = readFileSync(resolve(ROOT, 'public/terms/index.html'), 'utf8')
+  const refund = readFileSync(resolve(ROOT, 'public/refund/index.html'), 'utf8')
+  const sitemap = readFileSync(resolve(ROOT, 'public/sitemap.xml'), 'utf8')
+  const pricing = readFileSync(resolve(ROOT, 'public/pricing/index.html'), 'utf8')
+
+  it('both are real pages, in English, canonical and in the sitemap', () => {
+    for (const [name, body, url] of [
+      ['terms', terms, 'https://firemd.app/terms/'],
+      ['refund', refund, 'https://firemd.app/refund/'],
+    ] as const) {
+      expect(body, name).toContain('<html lang="en">')
+      expect(body, name).toContain(`<link rel="canonical" href="${url}" />`)
+      expect(sitemap, name).toContain(`<loc>${url}</loc>`)
+    }
+  })
+
+  it('the terms cover what a prepaid service has to cover', () => {
+    for (const topic of [
+      'Acceptable use',
+      'Your content',
+      'Prepaid credit',
+      'Payments and taxes',
+      'Liability',
+      'Governing law',
+    ]) {
+      expect(terms).toContain(topic)
+    }
+    expect(terms).toContain('Polar')
+    expect(terms).toContain('merchant of record')
+    // Credit never becomes money, and it expires: both statements must exist.
+    expect(terms).toMatch(/cannot be transferred, gifted, resold or exchanged for\s+cash/)
+    expect(terms).toContain(`${CREDIT_EXPIRY_MONTHS} months`)
+  })
+
+  it('the refund page states the window the code uses, and how to claim it', () => {
+    expect(refund).toContain(`within ${REFUND_WINDOW_DAYS} days`)
+    expect(refund).toMatch(new RegExp(`${REFUND_WINDOW_DAYS} day window`))
+    expect(refund).toMatch(/mailto:iuvalgoldansky@gmail\.com/)
+    expect(refund).toMatch(/Duplicate or unauthorised charge/)
+    // Statutory rights must survive the policy, in both documents.
+    expect(refund).toMatch(/statutory rights/i)
+    expect(terms).toMatch(/mandatory consumer law/)
+  })
+
+  it('the pricing page links both, next to privacy', () => {
+    for (const href of ['/terms/', '/privacy/', '/refund/']) {
+      expect(pricing).toContain(`href="${href}"`)
+    }
+  })
+
+  it('no page invents a mailbox the domain cannot receive', () => {
+    for (const body of [terms, refund]) {
+      expect(body).not.toContain('@firemd.app')
+    }
   })
 })

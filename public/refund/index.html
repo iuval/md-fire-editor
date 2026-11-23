@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FireMD refund policy</title>
+    <meta name="description" content="How refunds work for prepaid FireMD credit: the 14 day window, what is refundable, how to ask, and how long it takes." />
+    <link rel="canonical" href="https://firemd.app/refund/" />
+    <link rel="alternate" hreflang="en" href="https://firemd.app/refund/" />
+    <link rel="alternate" hreflang="x-default" href="https://firemd.app/refund/" />
+    <meta name="robots" content="index,follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://firemd.app/refund/" />
+    <meta property="og:title" content="FireMD refund policy" />
+    <meta property="og:site_name" content="FireMD" />
+    <meta property="og:locale" content="en_US" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+        src: url("/fonts/inter-latin-var.woff2") format("woff2");
+      }
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --page: #ffffff;
+        --text: #22222a;
+        --muted: #5c5c66;
+        --border: #e3e3e6;
+        --accent: #6f5ce0;
+        --accent-ink: #5646c4;
+        --tint: #f4f2ff;
+        --radius: 10px;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1e1e1e;
+          --page: #181818;
+          --text: #dadada;
+          --muted: #a8a8a8;
+          --border: #3a3a3a;
+          --accent: #8b7cf8;
+          --accent-ink: #c3b9ff;
+          --tint: #262232;
+        }
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--accent-ink); text-underline-offset: 3px; }
+      a:hover { text-decoration-thickness: 2px; }
+      .wrap { width: min(100% - 40px, 960px); margin: 0 auto; }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 20px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 650;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-size: 13px;
+        color: var(--text);
+        text-decoration: none;
+      }
+      .brand img { width: 22px; height: 22px; display: block; }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 38px;
+        padding: 8px 16px;
+        border-radius: var(--radius);
+        background: var(--accent);
+        color: #fff;
+        font-weight: 550;
+        text-decoration: none;
+        border: 1px solid transparent;
+      }
+      .button:hover { filter: brightness(1.06); }
+      .button.secondary {
+        background: transparent;
+        color: var(--text);
+        border-color: var(--border);
+      }
+      main { padding: 56px 0 72px; }
+      .eyebrow {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin: 0 0 14px;
+      }
+      h1 {
+        font-size: clamp(32px, 6vw, 52px);
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        margin: 0 0 18px;
+        text-wrap: balance;
+        max-width: 18ch;
+      }
+      .lede {
+        font-size: clamp(17px, 2.4vw, 20px);
+        color: var(--muted);
+        max-width: 62ch;
+        margin: 0 0 28px;
+      }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+      section { margin-top: 64px; }
+      h2 {
+        font-size: clamp(22px, 3.4vw, 30px);
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        margin: 0 0 10px;
+      }
+      .section-lede { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
+      .pillars {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        background: var(--page);
+      }
+      .card h3 { margin: 0 0 8px; font-size: 16px; letter-spacing: -0.01em; }
+      .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+      .plans {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .plan {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 22px;
+        background: var(--page);
+      }
+      .plan.featured { border-color: var(--accent); background: var(--tint); }
+      .plan .label {
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      .plan .price { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 4px; }
+      .plan .price small { font-size: 14px; font-weight: 500; color: var(--muted); }
+      .plan ul { margin: 14px 0 0; padding-left: 18px; color: var(--muted); font-size: 14.5px; }
+      .plan li { margin: 6px 0; }
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .faq { margin-top: 22px; border-top: 1px solid var(--border); }
+      .faq details { border-bottom: 1px solid var(--border); padding: 16px 0; }
+      .faq summary { cursor: pointer; font-weight: 600; }
+      .faq p { color: var(--muted); margin: 10px 0 0; }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 28px 0 40px;
+        color: var(--muted);
+        font-size: 13.5px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 22px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      footer nav { display: flex; flex-wrap: wrap; gap: 12px 18px; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92em;
+        background: var(--tint);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      @media (max-width: 560px) {
+        main { padding: 40px 0 56px; }
+        section { margin-top: 48px; }
+        .actions .button { flex: 1 1 auto; justify-content: center; }
+      }
+    
+      /* ---------- tariff table ---------- */
+      .tariff {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 14px 0 10px;
+        font-size: 14.5px;
+      }
+      .tariff caption {
+        text-align: left;
+        color: var(--muted);
+        font-size: 13px;
+        padding-bottom: 8px;
+      }
+      .tariff th,
+      .tariff td {
+        text-align: left;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .tariff th {
+        font-weight: 600;
+      }
+      .tariff td:last-child,
+      .tariff th:last-child {
+        text-align: right;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .tariff tr:last-child td {
+        border-bottom: none;
+      }
+      .tariff-scroll {
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/">
+          <img src="/favicon.svg" alt="" width="22" height="22" />
+          FireMD
+        </a>
+        <a class="button" href="/">Open the editor</a>
+      </header>
+
+      <main>
+        <p class="eyebrow">Refund policy</p>
+        <h1>Getting your money back</h1>
+        <p class="lede">
+          You can ask for a refund of unused credit within 14 days of buying it. This page explains
+          what counts as unused, how to ask, and what happens next.
+        </p>
+        <p class="note">Last updated 23 November 2026.</p>
+
+        <section id="window">
+          <h2>The 14 day window</h2>
+          <p>
+            A top-up can be refunded in full if you ask within 14 days of the purchase and none of
+            that credit has been spent. Credit is spent as you use the service above the free daily
+            quota, at the per-unit prices on the <a href="/pricing/">pricing page</a>.
+          </p>
+          <p>
+            If part of the credit has been spent, we refund what is left of that purchase, in whole
+            cents. After 14 days the credit is no longer refundable, but it stays usable for 24
+            months from the purchase date.
+          </p>
+        </section>
+
+        <section id="how">
+          <h2>How to ask</h2>
+          <p>
+            Write to <a href="mailto:iuvalgoldansky@gmail.com">iuvalgoldansky@gmail.com</a> from the
+            email address of your FireMD account, and include the receipt or order number that Polar
+            sent you. If you do not have it, tell us the date and amount and we will find the order.
+          </p>
+          <p>
+            You do not need to give a reason. Asking is enough.
+          </p>
+        </section>
+
+        <section id="what">
+          <h2>What is refundable</h2>
+          <table class="tariff">
+            <tbody>
+              <tr>
+                <td>Credit bought in the last 14 days, unspent</td>
+                <td>Refunded in full.</td>
+              </tr>
+              <tr>
+                <td>Credit bought in the last 14 days, partly spent</td>
+                <td>Refunded for the unspent remainder.</td>
+              </tr>
+              <tr>
+                <td>Credit bought more than 14 days ago</td>
+                <td>Not refundable, still usable until it expires.</td>
+              </tr>
+              <tr>
+                <td>Duplicate or unauthorised charge</td>
+                <td>Refunded in full, whenever we find it.</td>
+              </tr>
+              <tr>
+                <td>Paid feature not delivered, or a long outage</td>
+                <td>Refunded in full or credited, whichever you prefer.</td>
+              </tr>
+              <tr>
+                <td>The free quota</td>
+                <td>Nothing was paid, so nothing to refund.</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="process">
+          <h2>What happens next</h2>
+          <p>
+            We answer within 5 business days. Approved refunds are issued by Polar, our merchant of
+            record, to the original payment method, with the corresponding tax returned. The money
+            reaches your card or bank on your provider's timeline, usually 5 to 10 business days
+            after the refund is issued.
+          </p>
+          <p>
+            Refunds are processed through Polar because it is the seller on record. You will receive
+            its confirmation, and the refund appears on the same statement as the original charge.
+          </p>
+        </section>
+
+        <section id="chargebacks">
+          <h2>Before a chargeback</h2>
+          <p>
+            If a charge looks wrong, write to us first. We can usually refund it faster than a bank
+            dispute, and a chargeback during an open conversation only delays the money.
+          </p>
+        </section>
+
+        <section id="rights">
+          <h2>Your statutory rights</h2>
+          <p>
+            Nothing on this page reduces rights you have under mandatory consumer law where you
+            live, including withdrawal rights that may apply in your jurisdiction. If the two
+            conflict, the law wins and we apply it.
+          </p>
+        </section>
+
+        <footer>
+          <p>FireMD, collaborative Markdown notes.</p>
+          <p>
+            <a href="/">Editor</a> · <a href="/pricing/">Pricing</a> ·
+            <a href="/terms/">Terms</a> · <a href="/privacy/">Privacy</a> ·
+            <a href="/agent.md">Agents (CLI/MCP)</a> · <a href="/llms.txt">llms.txt</a>
+          </p>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

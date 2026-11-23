@@ -43,3 +43,6 @@ credentials.
 - [Editor](https://firemd.app): the web app.
 - [Pricing](https://firemd.app/pricing): free tier, prepaid balance and tariff.
 - [Agent guide](https://firemd.app/agent.md): CLI and MCP server.
+- [Terms of service](https://firemd.app/terms/): the rules for using the service and the prepaid credit.
+- [Privacy policy](https://firemd.app/privacy/): what is stored and how to delete it.
+- [Refund policy](https://firemd.app/refund/): the 14 day window on unused credit.
