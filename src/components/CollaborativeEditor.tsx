@@ -40,6 +40,12 @@ interface CollaborativeEditorProps {
   local?: boolean
   /** Overrides the empty-document placeholder (the visitor's welcome text). */
   placeholder?: string
+  /**
+   * Bumped when the body has to take the caret — Enter on the title, the way
+   * Obsidian moves from a note's name to its first line. Every other change of
+   * this number is a fresh request; 0 means "never asked".
+   */
+  focusSignal?: number
 }
 
 export function CollaborativeEditor({
@@ -55,6 +61,7 @@ export function CollaborativeEditor({
   isMobile = false,
   local = false,
   placeholder,
+  focusSignal = 0,
 }: CollaborativeEditorProps) {
   const [ready, setReady] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -168,6 +175,12 @@ export function CollaborativeEditor({
     emitter.adopt(incoming)
     editor.commands.setContent(incoming)
   }, [editor, body, emitter, session, owner])
+
+  useEffect(() => {
+    if (!focusSignal || !ready || !editor || !editable) return
+    // `start`: the caret lands at the top of the body, not after the last word.
+    editor.commands.focus('start', { scrollIntoView: false })
+  }, [editor, editable, focusSignal, ready])
 
   useEffect(() => {
     if (!editor) return

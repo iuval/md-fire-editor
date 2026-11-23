@@ -84,6 +84,21 @@ function NoteDocument({
 
   const editable = noteCanEdit(note, folders, uid)
   const isCanvas = note.kind === 'canvas'
+  /**
+   * Read once: `creating` turns false the moment the document lands, and the
+   * caret still has to reach a field that mounted while it was true.
+   */
+  const [justCreated] = useState(creating)
+  const titleRef = useRef<HTMLInputElement>(null)
+  /** Bumped on Enter in the title: the body takes the caret from there. */
+  const [bodyFocus, setBodyFocus] = useState(0)
+
+  // A new note is created to be named: the caret starts in the title, so the
+  // first keystroke after the + button is already the note's name.
+  useEffect(() => {
+    if (!justCreated || !editable) return
+    titleRef.current?.focus()
+  }, [justCreated, editable])
 
   useEffect(() => {
     // Follow external renames (agent, another device) unless the user is typing.
@@ -206,6 +221,7 @@ function NoteDocument({
     <div className="doc-header">
       <DocCrumbs folderId={note.folderId} folders={folders} />
       <input
+        ref={titleRef}
         className="inline-title"
         value={title}
         onChange={(event) => handleTitleChange(event.target.value)}
@@ -214,6 +230,13 @@ function NoteDocument({
         placeholder="Sin título"
         aria-label="Título de la nota"
         spellCheck={false}
+        onKeyDown={(event) => {
+          // Enter on the name writes the note: same hand-off as Obsidian, where
+          // the title is the first line of the document.
+          if (event.key !== 'Enter') return
+          event.preventDefault()
+          setBodyFocus((count) => count + 1)
+        }}
         onFocus={() => {
           titleFocused.current = true
         }}
@@ -275,6 +298,7 @@ function NoteDocument({
         onStats={onStats}
         isMobile={isMobile}
         local={isLocalMode()}
+        focusSignal={bodyFocus}
       />
     </div>
   )

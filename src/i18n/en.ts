@@ -322,32 +322,21 @@ export const en = {
     folderOf: 'Note folder',
   },
   guest: {
-    titleLabel: 'Note title',
-    titlePlaceholder: 'Untitled',
-    bodyLabel: 'Note body',
-    welcome:
-      'This is FireMD. Write here now: no account needed.\n' +
-      'What you write stays in this browser until you decide to save it.\n\n' +
-      'Collaboration: two people in the same paragraph without stepping on each other (CRDT).\n' +
-      'Folders and permissions: Owner, Can edit, Read only, per folder and per note.\n' +
-      'Agents: firemd ls, firemd cat, firemd patch --etag … and an MCP server.\n' +
-      'Your Markdown stays Markdown: export the vault whenever you want.\n' +
-      'Save this note in your account when you want to share it.',
-    stripLabel: 'About FireMD',
-    whatIs: 'What is FireMD?',
-    plans: 'Plans and usage',
-    quota: 'Free: 100 MB and 700 actions a day, no card.',
+    /**
+     * The note a visitor finds on their first visit: what FireMD is, written as
+     * a note they can read, keep and delete — not as a popup over their work.
+     */
     welcomeTitle: 'Welcome to FireMD',
-    infoTitle: 'What is FireMD?',
-    infoLead:
-      'A real-time collaborative Markdown editor. Everything you just wrote stays in this browser until you sign in.',
-    infoCollab: 'Two people in the same paragraph without stepping on each other (CRDT).',
-    infoFolders: 'Folders and permissions: Owner, Can edit, Read only, per folder and per note.',
-    infoAgents: 'Agents: firemd ls, firemd cat, firemd patch --etag … and an MCP server.',
-    infoPortable: 'Your Markdown stays Markdown: export the vault whenever you want.',
-    infoPlans:
-      'Free tier: 100 MB of storage and 700 actions a day. Past that, prepaid credits — no subscription.',
-    infoClose: 'Keep writing',
+    welcomeBody:
+      'FireMD is a real-time collaborative Markdown editor. What you write here ' +
+      'stays in this browser until you sign in.\n\n' +
+      '- **Collaboration**: two people in the same paragraph without stepping on each other (CRDT).\n' +
+      '- **Folders and permissions**: Owner, Can edit, Read only, per folder and per note.\n' +
+      '- **Agents**: `firemd ls`, `firemd cat`, `firemd patch --etag …` and an MCP server.\n' +
+      '- **Portable**: your Markdown stays Markdown. Export the vault whenever you want.\n\n' +
+      'The free tier is 100 MB of storage and 700 actions a day, no card. Past that, ' +
+      'prepaid credits — no subscription.\n\n' +
+      'Sign in from the gear menu to keep these notes in your account and share them.',
     storeSaved: 'Saved {notes} notes and {folders} folders in your account.',
     storeSaveFailed: 'I could not save your local workspace. It is still in this browser.',
     save: 'Save to my account',

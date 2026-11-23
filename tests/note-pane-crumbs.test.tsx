@@ -11,7 +11,9 @@ vi.mock('../src/components/CanvasEditor', () => ({
   CanvasEditor: () => <div data-testid="canvas-surface" />,
 }))
 vi.mock('../src/components/CollaborativeEditor', () => ({
-  CollaborativeEditor: () => <div data-testid="markdown-body" />,
+  CollaborativeEditor: ({ focusSignal }: { focusSignal?: number }) => (
+    <div data-testid="markdown-body" data-focus={focusSignal ?? 0} />
+  ),
 }))
 
 const { NotePane } = await import('../src/components/NotePane')
@@ -75,7 +77,7 @@ function pane(noteId: string): PaneLeaf {
   return { kind: 'pane', id: 'p1', tabs: [{ id: 't1', noteId }], activeTabId: 't1' }
 }
 
-function renderPane(value: Note) {
+function renderPane(value: Note, creating = false) {
   return mount(
     <NotePane
       pane={pane(value.id)}
@@ -88,6 +90,7 @@ function renderPane(value: Note) {
       folders={folders}
       isMobile={false}
       canvasFiles={[]}
+      creating={creating}
       onOpenNote={() => {}}
       onFocus={() => {}}
       onActivateTab={() => {}}
@@ -131,5 +134,43 @@ describe('the note pane header', () => {
       'Los Muchachos - Feature Film',
     ])
     expect(host.textContent).not.toContain('permisos heredados')
+  })
+})
+
+describe('a note that was just created', () => {
+  it('starts with the caret in the title, ready to be named', () => {
+    const host = renderPane({ ...note('note', ''), title: '' }, true)
+    const title = host.querySelector<HTMLInputElement>('.inline-title')!
+    expect(document.activeElement).toBe(title)
+  })
+
+  it('leaves the caret alone when an existing note is opened', () => {
+    const host = renderPane(note('note', '# Hola'))
+    const title = host.querySelector<HTMLInputElement>('.inline-title')!
+    expect(document.activeElement).not.toBe(title)
+  })
+})
+
+describe('the title', () => {
+  it('hands the caret to the body on Enter, like Obsidian', () => {
+    const host = renderPane(note('note', '# Hola'))
+    const title = host.querySelector<HTMLInputElement>('.inline-title')!
+    const body = () => host.querySelector('[data-testid="markdown-body"]')!
+    expect(body().getAttribute('data-focus')).toBe('0')
+
+    act(() => {
+      title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(body().getAttribute('data-focus')).toBe('1')
+  })
+
+  it('leaves every other key to the title', () => {
+    const host = renderPane(note('note', '# Hola'))
+    const title = host.querySelector<HTMLInputElement>('.inline-title')!
+    act(() => {
+      title.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+      title.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    expect(host.querySelector('[data-testid="markdown-body"]')!.getAttribute('data-focus')).toBe('0')
   })
 })

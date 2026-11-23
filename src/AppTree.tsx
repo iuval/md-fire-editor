@@ -94,7 +94,6 @@ import { requestTopUp, updateCreditSettings } from './lib/credits'
 import { subscribeAllowance, type ServerAllowance } from './lib/allowance'
 import { proxyEnabled, startCheckout } from './lib/proxy'
 import { GuestDraftDialog } from './components/GuestDraftDialog'
-import { GuestInfoDialog, GuestStrip } from './components/GuestStrip'
 import { clearGuestDraft, readGuestDraft, isMigratable, guestDraftTitle, type GuestDraft } from './lib/guestDraft'
 import { migrateGuestDraft } from './lib/guestMigration'
 import { shouldShowGuestView } from './lib/guestMode'
@@ -178,7 +177,6 @@ type Dialog =
   | { kind: 'share-note'; noteId: string }
   | { kind: 'share-folder'; folderId: string }
   | { kind: 'move'; noteId: string }
-  | { kind: 'new-folder'; parentId: string | null }
   | { kind: 'rename-folder'; folderId: string }
   | { kind: 'folder-tags'; folderId: string }
   | { kind: 'agents' }
@@ -186,7 +184,6 @@ type Dialog =
   | { kind: 'sort'; folderId: string | null }
   | { kind: 'rename-tag' }
   | { kind: 'theme' }
-  | { kind: 'guest-info' }
 
 function noteFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get('note')
@@ -368,6 +365,17 @@ function AppTree() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
+  /** The folder that was just created: its row names it in place. */
+  const [newFolderId, setNewFolderId] = useState<string | null>(null)
+  /**
+   * Where the panel's + buttons put new items: the folder you were last working
+   * in. Creating a folder makes it the target, so the note you create next
+   * lands inside it instead of at the root.
+   */
+  const [targetFolderId, setTargetFolderId] = useState<string | null>(null)
+  /** Names typed while their rename is still in flight, so the row never
+   *  falls back to the placeholder name it was created with. */
+  const [typedFolderNames, setTypedFolderNames] = useState<Record<string, string>>({})
   const [folderMenu, setFolderMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null)
   /** The row's own menu: the tree is where a file's actions live. */
   const [noteMenu, setNoteMenu] = useState<{ note: Note; x: number; y: number } | null>(null)
@@ -427,6 +435,19 @@ function AppTree() {
   }, [folders, foldersById, notes, orderOverrides, rootSort])
 
   /**
+   * Where a new item lands: the folder you picked (created, or clicked), else
+   * the folder of the note on screen — you are already working there. Null means
+   * the root, and also covers a folder that was deleted in the meantime.
+   */
+  const targetFolder = useMemo(() => {
+    const noteFolderId = activeId
+      ? (notes.find((note) => note.id === activeId)?.folderId ?? null)
+      : null
+    const id = targetFolderId ?? noteFolderId
+    return id ? (folders.find((folder) => folder.id === id) ?? null) : null
+  }, [activeId, folders, notes, targetFolderId])
+
+  /**
    * With a single pane there is no reason for a second bar: its tabs move into
    * the top bar and the panel actions join that bar's menu. Splits keep a slim
    * strip per pane, because each pane owns its tabs.
@@ -465,6 +486,18 @@ function AppTree() {
       return { ...ws, layout: replaceActiveTab(ws.layout, ws.focusedPaneId, id, newId('tab')) }
     })
   }, [])
+
+  /**
+   * Opening a note also says where you are working: its folder is where the +
+   * buttons will put the next note, canvas or folder.
+   */
+  const openNote = useCallback(
+    (id: string) => {
+      selectNote(id)
+      setTargetFolderId(notes.find((note) => note.id === id)?.folderId ?? null)
+    },
+    [notes, selectNote]
+  )
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768)
@@ -574,36 +607,6 @@ function AppTree() {
     const draft = readGuestDraft()
     if (isMigratable(draft)) setGuestDraft(draft)
   }, [user, t])
-
-  /**
-   * The visitor's first frame: one welcome note, already open and writable.
-   *
-   * It is a real note in the local store, not a placeholder and not a modal: the
-   * visitor can type in it, create more, organise them in folders, and the whole
-   * workspace travels to the account on sign-in. Seeded once per browser, so a
-   * returning visitor gets their own notes back.
-   */
-  const guestSeeded = useRef(false)
-  useEffect(() => {
-    if (!guest || guestSeeded.current) return
-    guestSeeded.current = true
-    if (localStoreSummary().notes > 0) return
-    void (async () => {
-      try {
-        const note = await createNote(LOCAL_UID)
-        await saveNoteContent(note.id, {
-          title: t('guest.welcomeTitle'),
-          markdown: t('guest.welcome'),
-        })
-        setWorkspace((ws) => ({
-          layout: openTab(ws.layout, ws.focusedPaneId, note.id, newId('tab')),
-          focusedPaneId: ws.focusedPaneId,
-        }))
-      } catch {
-        // A failed seed leaves the empty workspace; the visitor can create a note.
-      }
-    })()
-  }, [guest, t])
 
   // Only *visible* notes cost a subscription, and it is a body subscription: the
   // metadata already arrives with the workspace list, so a tab no longer holds a
@@ -1170,6 +1173,8 @@ function AppTree() {
   )
 
   const toggleFolder = useCallback((id: string) => {
+    // Opening a folder is how you say "I am working here": new items follow.
+    setTargetFolderId(id)
     setExpanded((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -1273,32 +1278,91 @@ function AppTree() {
   )
 
   /**
-   * Creates a folder on the first frame.
+   * The visitor's first frame: a blank note with the caret in it, plus the
+   * "Welcome to FireMD" note that says what this is.
    *
-   * The id is reserved on the client and the row is shown immediately; the write
-   * and its snapshot used to be two round trips with nothing on screen. If the
-   * write fails, the row disappears and the user is told.
+   * A note taker first: the first thing on screen is a page waiting for the first
+   * keystroke, not a brochure. Both are real notes in the local store, so the
+   * visitor can type, keep them, delete the welcome one, and the whole workspace
+   * travels to the account on sign-in. Seeded once per browser, so a returning
+   * visitor gets their own notes back.
+   */
+  const guestSeeded = useRef(false)
+  useEffect(() => {
+    if (!guest || guestSeeded.current) return
+    guestSeeded.current = true
+    if (localStoreSummary().notes > 0) return
+    void (async () => {
+      try {
+        const welcome = await createNote(LOCAL_UID)
+        await saveNoteContent(welcome.id, {
+          title: t('guest.welcomeTitle'),
+          markdown: t('guest.welcomeBody'),
+        })
+        setWorkspace((ws) => ({
+          layout: openTab(ws.layout, ws.focusedPaneId, welcome.id, newId('tab')),
+          focusedPaneId: ws.focusedPaneId,
+        }))
+        // The blank note goes through the app's own "new note" path: it opens
+        // on top with the caret in its title, exactly like pressing + does.
+        await handleNewNote()
+      } catch {
+        // A failed seed leaves the empty workspace; the visitor can create a note.
+      }
+    })()
+  }, [guest, handleNewNote, t])
+
+  /**
+   * Creates a folder on the first frame, under the parent it belongs to.
+   *
+   * No dialog: the row appears with an empty name and an input already focused,
+   * so the button press *is* the first keystroke. The id is reserved on the
+   * client and the row is shown immediately; the write and its snapshot used to
+   * be two round trips with nothing on screen. If the write fails, the row
+   * disappears and the user is told.
    */
   const handleNewFolder = useCallback(
-    async (name: string, parentId: string | null = null) => {
+    async (parentId: string | null = null) => {
+      // The name is typed in the panel: a collapsed panel has to come back first.
+      if (!isMobile && collapsed) {
+        setCollapsed(false)
+        try {
+          localStorage.setItem(SIDEBAR_KEY, 'expanded')
+        } catch {
+          /* ignore */
+        }
+      }
       const inherited = parentId ? resolveSort(parentId, foldersById, rootSort) : rootSort
       const siblings = folders.filter((f) => (f.parentId ?? null) === parentId)
       const options = { sort: inherited, order: nextOrder(siblings) }
       const id = reserveFolderId()
-      const optimistic = id && uid ? optimisticFolder(uid, id, name, parentId, options) : null
-      if (optimistic) addOptimisticFolder(optimistic)
+      const optimistic = id && uid ? optimisticFolder(uid, id, '', parentId, options) : null
+      if (optimistic) {
+        addOptimisticFolder(optimistic)
+        setNewFolderId(optimistic.id)
+        setTargetFolderId(optimistic.id)
+      }
       if (parentId) setExpanded((prev) => new Set(prev).add(parentId))
 
       let folder: Folder | null = null
       try {
-        folder = await addFolder(name, parentId, options, id ?? undefined)
+        folder = await addFolder('', parentId, options, id ?? undefined)
       } catch {
         folder = null
       }
       if (!folder) {
-        if (optimistic) dropOptimisticFolder(optimistic.id)
+        if (optimistic) {
+          const failedId = optimistic.id
+          dropOptimisticFolder(failedId)
+          setNewFolderId((current) => (current === failedId ? null : current))
+        }
         setNotice('No se pudo crear la carpeta. Revisá la conexión.')
         return null
+      }
+      // Without a reserved id the row only exists now.
+      if (!optimistic) {
+        setNewFolderId(folder.id)
+        setTargetFolderId(folder.id)
       }
       setExpanded((prev) => new Set(prev).add(folder.id))
       return folder
@@ -1306,14 +1370,47 @@ function AppTree() {
     [
       addFolder,
       addOptimisticFolder,
+      collapsed,
       dropOptimisticFolder,
       folders,
       foldersById,
+      isMobile,
       reserveFolderId,
       rootSort,
       uid,
     ]
   )
+
+  /** The new folder's row closed: keep the typed name, or the placeholder. */
+  const commitNewFolderName = useCallback(
+    (folderId: string, name: string) => {
+      setNewFolderId((current) => (current === folderId ? null : current))
+      const clean = name.trim()
+      if (!clean) return
+      // Shown right away: the rename is a round trip and the row would otherwise
+      // fall back to the placeholder name it was created with.
+      setTypedFolderNames((prev) => ({ ...prev, [folderId]: clean }))
+      void renameFolder(folderId, clean)
+    },
+    []
+  )
+
+  const cancelNewFolderName = useCallback((folderId: string) => {
+    setNewFolderId((current) => (current === folderId ? null : current))
+  }, [])
+
+  /**
+   * A typed name stops counting the moment the document agrees with it, so the
+   * row follows the folder again (an agent renaming it, another device).
+   */
+  const folderNameOverrides = useMemo(() => {
+    const next: Record<string, string> = {}
+    for (const [id, name] of Object.entries(typedFolderNames)) {
+      const folder = folders.find((candidate) => candidate.id === id)
+      if (!folder || folder.name !== name) next[id] = name
+    }
+    return next
+  }, [folders, typedFolderNames])
 
   const handleDeleteNote = useCallback(
     async (note: Note) => {
@@ -1441,12 +1538,15 @@ function AppTree() {
         {
           label: 'Nueva nota acá',
           icon: <FolderPlus size={14} />,
-          onSelect: () => void handleNewNote(folderMenu.folder),
+          onSelect: () => {
+            setTargetFolderId(folderMenu!.folder.id)
+            void handleNewNote(folderMenu!.folder)
+          },
         },
         {
           label: 'Nueva subcarpeta…',
           icon: <FolderPlus size={14} />,
-          onSelect: () => setDialog({ kind: 'new-folder', parentId: folderMenu!.folder.id }),
+          onSelect: () => void handleNewFolder(folderMenu!.folder.id),
         },
         {
           label: 'Renombrar…',
@@ -1565,7 +1665,7 @@ function AppTree() {
       onDropTab={isMobile ? undefined : (source, index) => dropTabAt(source, inlinePane.id, index)}
       onActivate={(tabId) => activateTab(inlinePane.id, tabId)}
       onClose={(tabId) => closePaneTab(inlinePane.id, tabId)}
-      onNewNote={() => void handleNewNote(undefined, inlinePane.id)}
+      onNewNote={() => void handleNewNote(targetFolder ?? undefined, inlinePane.id)}
       onRename={(tabId, title) => {
         const tab = inlinePane.tabs.find((candidate) => candidate.id === tabId)
         if (tab) renameNote(tab.noteId, title)
@@ -1718,9 +1818,9 @@ function AppTree() {
         <SidebarRail
           collapsed={collapsed}
           onExpand={toggleSidebar}
-          onNewNote={() => void handleNewNote(undefined)}
-          onNewFolder={() => setDialog({ kind: 'new-folder', parentId: null })}
-          onNewCanvas={() => handleNewCanvas()}
+          onNewNote={() => void handleNewNote(targetFolder ?? undefined)}
+          onNewFolder={() => void handleNewFolder(targetFolder?.id ?? null)}
+          onNewCanvas={() => handleNewCanvas(targetFolder ?? undefined)}
           onAccountClick={() => setDialog({ kind: 'account-menu' })}
         />
       )}
@@ -1731,14 +1831,19 @@ function AppTree() {
         activeId={activeId}
         onSelect={(id) => {
           setPresence([])
-          selectNote(id)
+          openNote(id)
           setSidebarOpen(false)
         }}
         onNewNote={(folder) => void handleNewNote(folder)}
-        onNewFolder={() => setDialog({ kind: 'new-folder', parentId: null })}
-        onNewCanvas={() => handleNewCanvas()}
+        onNewFolder={() => void handleNewFolder(targetFolder?.id ?? null)}
+        onNewCanvas={() => handleNewCanvas(targetFolder ?? undefined)}
         onNoteMenu={(note, pos) => setNoteMenu({ note, ...pos })}
         rootSort={rootSort}
+        editingFolderId={newFolderId}
+        targetFolderId={targetFolder?.id ?? null}
+        nameOverrides={folderNameOverrides}
+        onFolderNameCommit={commitNewFolderName}
+        onFolderNameCancel={cancelNewFolderName}
         onFolderMenu={(folder, pos) => setFolderMenu({ folder, ...pos })}
         expanded={expanded}
         onToggleFolder={toggleFolder}
@@ -1773,17 +1878,6 @@ function AppTree() {
         <span className="sr-only" role="status">
           {notice ?? ''}
         </span>
-
-        {/* The visitor's only extra chrome: the free quota and one sign-in
-            button. Nothing here interrupts typing, and collapsing the panel
-            leaves just the button, so the page stays clean. */}
-        {guest && (
-          <GuestStrip
-            compact={!isMobile && collapsed}
-            onSignIn={() => void doGoogleSignIn()}
-            onInfo={() => setDialog({ kind: 'guest-info' })}
-          />
-        )}
 
         {/* The bar exists only when it carries something. With more than one
             pane the tabs live in each pane's own strip, so an empty row above
@@ -1835,11 +1929,11 @@ function AppTree() {
                 folders={folders}
                 isMobile={isMobile}
                 canvasFiles={canvasFiles}
-                onOpenNote={selectNote}
+                onOpenNote={openNote}
                 onFocus={() => focusPane(pane.id)}
                 onActivateTab={(tabId) => activateTab(pane.id, tabId)}
                 onCloseTab={(tabId) => closePaneTab(pane.id, tabId)}
-                onNewNote={() => void handleNewNote(undefined, pane.id)}
+                onNewNote={() => void handleNewNote(targetFolder ?? undefined, pane.id)}
                 onRenameNote={renameNote}
                 onClosePane={panes.length > 1 ? () => closePaneAt(pane.id) : undefined}
                 hideTabs={pane.id === inlinePane?.id}
@@ -1890,16 +1984,6 @@ function AppTree() {
       )}
 
       {dialog.kind === 'theme' && <ThemeDialog onClose={() => setDialog({ kind: 'none' })} />}
-
-      {dialog.kind === 'guest-info' && (
-        <GuestInfoDialog
-          onSignIn={() => {
-            setDialog({ kind: 'none' })
-            void doGoogleSignIn()
-          }}
-          onClose={() => setDialog({ kind: 'none' })}
-        />
-      )}
 
       {dialog.kind === 'account-menu' && (
         <>
@@ -2084,20 +2168,6 @@ function AppTree() {
             await updateFolderSharing(folder, { addMember: { uid: agentUid, role } })
             track('agent_linked', viewer.uid, { role })
           }}
-        />
-      )}
-
-      {dialog.kind === 'new-folder' && (
-        <InputDialog
-          title={
-            dialog.parentId
-              ? `Nueva subcarpeta en «${folderPath(dialog.parentId, foldersById)}»`
-              : 'Nueva carpeta'
-          }
-          label="Nombre"
-          confirmLabel="Crear"
-          onConfirm={(name) => void handleNewFolder(name, dialog.parentId)}
-          onClose={() => setDialog({ kind: 'none' })}
         />
       )}
 

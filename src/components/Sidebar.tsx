@@ -45,6 +45,14 @@ export interface SidebarProps {
   rootSort: SortMode
   /** Manual moves applied locally while the write is in flight. */
   orderOverrides?: Record<string, string[]>
+  /** The folder that was just created: its row is an input until it is named. */
+  editingFolderId?: string | null
+  /** The folder the + buttons put new items in. */
+  targetFolderId?: string | null
+  /** Names typed locally while the rename is still in flight. */
+  nameOverrides?: Record<string, string>
+  onFolderNameCommit?: (folderId: string, name: string) => void
+  onFolderNameCancel?: (folderId: string) => void
   onFolderMenu: (folder: FolderType, pos: { x: number; y: number }) => void
   expanded: Set<string>
   onToggleFolder: (id: string) => void
@@ -88,6 +96,69 @@ function initialTagsOpen(): boolean {
   }
 }
 
+/**
+ * The name of a folder that was just created, typed where the folder lives.
+ *
+ * The row exists before the name does, so the input starts empty, takes the
+ * focus on its own first frame, and is brought into view first: a folder created
+ * at the bottom of a long tree has to be reachable without scrolling by hand.
+ */
+function FolderNameInput({
+  onCommit,
+  onCancel,
+  label,
+  placeholder,
+}: {
+  onCommit: (name: string) => void
+  onCancel: () => void
+  label: string
+  placeholder: string
+}) {
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Enter blurs, blur commits: one decision per row.
+  const settled = useRef(false)
+
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    // `block: 'center'` because "nearest" leaves the row glued to the edge of
+    // the panel, where the tree's own chrome crowds it.
+    input.scrollIntoView?.({ block: 'center' })
+    input.focus()
+  }, [])
+
+  const settle = (commit: boolean) => {
+    if (settled.current) return
+    settled.current = true
+    if (commit) onCommit(value.trim())
+    else onCancel()
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className="folder-name-input"
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={() => settle(true)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          settle(true)
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          settle(false)
+        }
+      }}
+      aria-label={label}
+      placeholder={placeholder}
+      maxLength={120}
+      spellCheck={false}
+    />
+  )
+}
+
 export function Sidebar({
   notes,
   folders,
@@ -99,6 +170,11 @@ export function Sidebar({
   onNoteMenu,
   rootSort,
   orderOverrides,
+  editingFolderId,
+  targetFolderId,
+  nameOverrides,
+  onFolderNameCommit,
+  onFolderNameCancel,
   onFolderMenu,
   expanded,
   onToggleFolder,
@@ -248,6 +324,17 @@ export function Sidebar({
     return ordered
   }
 
+  /**
+   * The folder being named goes first among its siblings, whatever the sort:
+   * it is the row the user is looking at, not one to hunt for in a long list.
+   */
+  const pinFirst = (nodes: FolderNode[]): FolderNode[] => {
+    if (!editingFolderId) return nodes
+    const index = nodes.findIndex((node) => node.folder.id === editingFolderId)
+    if (index <= 0) return nodes
+    return [nodes[index], ...nodes.slice(0, index), ...nodes.slice(index + 1)]
+  }
+
   /** Pointer position for a row menu, anchored under the button that opened it. */
   const menuPos = (target: HTMLElement) => {
     const rect = target.getBoundingClientRect()
@@ -381,11 +468,34 @@ export function Sidebar({
               const children = notesOf(folder.id)
               const isOpenFolder = expanded.has(folder.id)
               const shared = folder.memberIds.length > 1 || folder.access !== 'restricted'
+              const name = nameOverrides?.[folder.id] ?? folder.name
+              const isTarget = folder.id === targetFolderId
+
+              // The folder that was just created: no name yet, so the row is an
+              // input. No chevron target and no ⋯ until it has one.
+              if (folder.id === editingFolderId) {
+                return (
+                  <div key={folder.id}>
+                    <div className="folder-row folder-row--naming">
+                      <div className="folder-toggle" style={{ paddingLeft: rowIndent(node.depth) }}>
+                        <ChevronRight size={12} className={`chev${isOpenFolder ? ' open' : ''}`} />
+                        <Folder size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
+                        <FolderNameInput
+                          label={t('sidebar.newFolder')}
+                          placeholder={t('app.folderName')}
+                          onCommit={(next) => onFolderNameCommit?.(folder.id, next)}
+                          onCancel={() => onFolderNameCancel?.(folder.id)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
 
               return (
                 <div key={folder.id}>
                   <div
-                    className="folder-row"
+                    className={`folder-row${isTarget ? ' folder-row--target' : ''}`}
                     onContextMenu={(event) => {
                       event.preventDefault()
                       onFolderMenu(folder, { x: event.clientX, y: event.clientY })
@@ -395,13 +505,15 @@ export function Sidebar({
                       className="folder-toggle"
                       onClick={() => onToggleFolder(folder.id)}
                       aria-expanded={isOpenFolder}
-                      aria-label={`${node.path}: ${isOpenFolder ? 'ocultar' : 'mostrar'} contenido`}
+                      aria-label={`${node.path}: ${isOpenFolder ? 'ocultar' : 'mostrar'} contenido${
+                        isTarget ? '. Acá se crean los elementos nuevos' : ''
+                      }`}
                       style={{ paddingLeft: rowIndent(node.depth) }}
                     >
                       <ChevronRight size={12} className={`chev${isOpenFolder ? ' open' : ''}`} />
                       <Folder size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
                       <span className="folder-name" title={node.path}>
-                        {folder.name}
+                        {name}
                       </span>
                       {shared && <Link2 size={10} style={{ opacity: 0.55, flexShrink: 0 }} />}
                       {folder.tags.length > 0 && (
@@ -436,7 +548,7 @@ export function Sidebar({
                       {node.children.length === 0 && children.length === 0 && (
                         <p className="tree-empty">Vacía</p>
                       )}
-                      {sortTree(node.children).map((child) => renderNode(child))}
+                      {pinFirst(sortTree(node.children)).map((child) => renderNode(child))}
                       {children.map((note) => noteButton(note, rowIndent(node.depth + 1)))}
                     </div>
                   )}
@@ -444,7 +556,7 @@ export function Sidebar({
               )
             }
 
-            return sortTree(tree).map((node) => renderNode(node))
+            return pinFirst(sortTree(tree)).map((node) => renderNode(node))
           })()}
 
           {rootNotes.length > 0 && folders.length > 0 && (

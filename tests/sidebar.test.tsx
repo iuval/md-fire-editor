@@ -571,3 +571,112 @@ describe('row actions', () => {
     expect(opened).toEqual(['v3'])
   })
 })
+
+describe('inline folder creation', () => {
+  const fresh = folder('nf', 'Folder')
+
+  it('names the new folder in place, with the input focused and empty', () => {
+    const el = render({
+      folders: [...nested, fresh],
+      editingFolderId: 'nf',
+      onFolderNameCommit: () => {},
+      onFolderNameCancel: () => {},
+    })
+    const input = el.querySelector<HTMLInputElement>('.folder-name-input')
+    expect(input).not.toBeNull()
+    expect(input!.value).toBe('')
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('sits the new folder first, above the folders it was created beside', () => {
+    const el = render({
+      folders: [...nested, fresh],
+      editingFolderId: 'nf',
+      onFolderNameCommit: () => {},
+      onFolderNameCancel: () => {},
+    })
+    const names = [...el.querySelectorAll<HTMLElement>('.folder-row')].map(
+      (row) => row.querySelector('.folder-name')?.textContent ?? row.querySelector('input')?.className
+    )
+    // Root order: the row being named, then GUIONES.
+    expect(names[0]).toBe('folder-name-input')
+    expect(names[1]).toBe('GUIONES')
+  })
+
+  it('commits on Enter and cancels on Escape', () => {
+    const committed: Array<[string, string]> = []
+    const cancelled: string[] = []
+    const el = render({
+      folders: [...nested, fresh],
+      editingFolderId: 'nf',
+      onFolderNameCommit: (id, name) => committed.push([id, name]),
+      onFolderNameCancel: (id) => cancelled.push(id),
+    })
+    const input = el.querySelector<HTMLInputElement>('.folder-name-input')!
+
+    // React tracks `value` on the node, so the native setter is what a real
+    // keystroke looks like from its point of view.
+    act(() => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      setValue.call(input, 'Clientes')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(committed).toEqual([['nf', 'Clientes']])
+
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    // Enter already closed the row: Escape must not commit twice.
+    expect(committed).toHaveLength(1)
+    expect(cancelled).toHaveLength(0)
+  })
+
+  it('commits on blur too, and cancels once', () => {
+    const committed: Array<[string, string]> = []
+    const cancelled: string[] = []
+    const el = render({
+      folders: [...nested, fresh],
+      editingFolderId: 'nf',
+      onFolderNameCommit: (id, name) => committed.push([id, name]),
+      onFolderNameCancel: (id) => cancelled.push(id),
+    })
+    const input = el.querySelector<HTMLInputElement>('.folder-name-input')!
+    act(() => {
+      // React listens for `focusout`, not `blur`.
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    })
+    expect(committed).toEqual([['nf', '']])
+    expect(cancelled).toHaveLength(0)
+  })
+
+  it('shows the typed name while the write is still in flight', () => {
+    const el = render({
+      folders: [...nested, fresh],
+      nameOverrides: { nf: 'Clientes' },
+    })
+    const names = [...el.querySelectorAll<HTMLElement>('.folder-name')].map((n) => n.textContent)
+    expect(names).toContain('Clientes')
+    expect(el.querySelector('.folder-name-input')).toBeNull()
+  })
+})
+
+describe('where new items go', () => {
+  it('marks the folder the + buttons will create in', () => {
+    const el = render({ targetFolderId: 'lm' })
+    const marked = el.querySelectorAll<HTMLElement>('.folder-row--target')
+    expect(marked).toHaveLength(1)
+    expect(marked[0].textContent).toContain('Los Muchachos')
+    // Said out loud too, not only painted.
+    expect(marked[0].querySelector('.folder-toggle')!.getAttribute('aria-label')).toContain(
+      'se crean los elementos nuevos'
+    )
+  })
+
+  it('marks nothing when new items go to the root', () => {
+    const el = render()
+    expect(el.querySelector('.folder-row--target')).toBeNull()
+  })
+})

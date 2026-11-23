@@ -207,6 +207,37 @@ describe('<CollaborativeEditor />', () => {
     expect(text).not.toContain('contenido viejo')
   })
 
+  it('puts the caret in the body when the title asks for it', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    roots.push(root)
+
+    const props = {
+      note: { ...note, markdown: '# Hola' },
+      body: '# Hola',
+      uid: 'u1',
+      userName: 'Ana',
+      editable: true,
+      onMarkdownChange: () => undefined,
+      onPresence: () => undefined,
+      onStatus: () => undefined,
+    }
+
+    await act(async () => {
+      root.render(<CollaborativeEditor {...props} focusSignal={0} />)
+    })
+    const surface = container.querySelector('.md-editor-content')!
+    expect(surface.contains(document.activeElement)).toBe(false)
+
+    // Enter on the title: the caret goes to the top of the body.
+    await act(async () => {
+      root.render(<CollaborativeEditor {...props} focusSignal={1} />)
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(surface.contains(document.activeElement)).toBe(true)
+  })
+
   it('renders read-only when the user cannot edit', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
