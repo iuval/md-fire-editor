@@ -1,5 +1,5 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app'
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
 import {
   browserLocalPersistence,
   getAuth,
@@ -25,15 +25,30 @@ try {
   if (firebaseConfig.apiKey && firebaseConfig.projectId) {
     app = initializeApp(firebaseConfig)
 
-    // App Check is enabled automatically when a reCAPTCHA v3 site key is
-    // provided at build time. Once it is enforced in the Firebase console,
-    // requests without a valid token are rejected.
+    // App Check is enabled automatically when a reCAPTCHA Enterprise site key is
+    // provided at build time. The provider is the Enterprise one because its
+    // keys can be created and scoped per domain through the API, which is how
+    // the key for firemd.app was provisioned; a v3 key has to be clicked
+    // together in a console.
+    //
+    // Enforcement is deliberately still off in the console: the CLI and the
+    // desktop app call Identity Toolkit and Firestore over REST with no App
+    // Check token (`grep -r AppCheck agent desktop` finds nothing), so flipping
+    // it would cut `firemd login` and every `mdfire` command. In monitor mode
+    // the SDK only mints tokens, and the console shows how much traffic we
+    // would already be rejecting.
     const appCheckKey = import.meta.env.VITE_APPCHECK_SITE_KEY as string | undefined
     if (appCheckKey) {
-      initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider(appCheckKey),
-        isTokenAutoRefreshEnabled: true,
-      })
+      try {
+        initializeAppCheck(app, {
+          provider: new ReCaptchaEnterpriseProvider(appCheckKey),
+          isTokenAutoRefreshEnabled: true,
+        })
+      } catch (e) {
+        // A bad or revoked key must not take the app down: App Check is
+        // observability right now, not a gate.
+        console.warn('App Check init failed (ignored while unenforced):', e)
+      }
     }
 
     authInstance = getAuth(app)
