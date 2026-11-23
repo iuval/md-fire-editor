@@ -30,7 +30,7 @@ Todas las rutas salvo el health check y el webhook piden
 
 | Método | Ruta | Body | Respuesta |
 |---|---|---|---|
-| `GET` | `/healthz` | — | `{ ok: true }` |
+| `GET` | `/health` | — | `{ ok: true }` (`/healthz` lo intercepta el frontend de Cloud Run) |
 | `GET` | `/v1/account` | — | cuota del día, storage, saldo, estado |
 | `POST` | `/v1/notes/{noteId}/blocks` | `{ opId, block }` | recibo de la operación |
 | `POST` | `/v1/notes/{noteId}/body` | `{ opId, body }` | recibo de la operación |
@@ -127,9 +127,11 @@ La service account necesita `roles/datastore.user` y `roles/firebaseauth.viewer`
 VITE_PROXY_URL=https://firemd-proxy-xxx.run.app npm run build && firebase deploy --only hosting
 ```
 
-Opcional, mismo origen (sin CORS): agregar en `firebase.json` un rewrite
-`{"source": "/api/**", "run": {"serviceId": "firemd-proxy", "region": "southamerica-east1"}}`
-y usar `VITE_PROXY_URL=/api`.
+**Mismo origen (recomendado)**: `firebase.json` ya tiene la rewrite
+`{"source": "/api/**", "run": {"serviceId": "firemd-proxy", "region": "southamerica-east1"}}`,
+así que el build del cliente va con `VITE_PROXY_URL=/api`. Ventajas: sin CORS y sin tocar la
+CSP (`connect-src` no necesita el origen de `run.app`). El router descarta el prefijo
+`/api` para que las rutas sigan siendo `/v1/...`.
 
 Si el proxy queda en otro origen, la CSP de `firebase.json` tiene que incluir esa URL en
 `connect-src` (hoy solo permite Google/Firebase), o el navegador bloquea el `fetch`.

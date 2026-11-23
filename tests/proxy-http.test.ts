@@ -84,7 +84,7 @@ describe('proxy HTTP', () => {
   })
 
   it('responde el health check', async () => {
-    const response = await fetch(`${base}/healthz`)
+    const response = await fetch(`${base}/health`)
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ok: true })
   })
@@ -141,6 +141,12 @@ describe('proxy HTTP', () => {
     expect(receipt.allowance.opsUsed).toBe(3)
     expect(store.docs.get('notes/n1/body/main')).toMatchObject({ markdown: '# hola' })
     expect(store.docs.get('notes/n1')).toMatchObject({ title: 'Nueva' })
+  })
+
+  it('acepta el prefijo /api de la rewrite de Hosting', async () => {
+    const response = await post('/api/v1/notes/n1/blocks', { opId: 'op_dddddddddddd', block })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true, id: 'op_dddddddddddd' })
   })
 
   it('expone el estado de la cuenta', async () => {

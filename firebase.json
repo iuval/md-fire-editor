@@ -119,6 +119,13 @@
     ],
     "rewrites": [
       {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "firemd-proxy",
+          "region": "southamerica-east1"
+        }
+      },
+      {
         "source": "/planes",
         "destination": "/planes/index.html"
       }

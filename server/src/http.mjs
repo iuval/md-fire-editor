@@ -95,7 +95,10 @@ export function createProxyHandler({
 
     try {
       const url = new URL(req.url ?? '/', 'http://proxy.invalid')
-      const path = url.pathname.replace(/\/+$/, '') || '/'
+      const rawPath = url.pathname.replace(/\/+$/, '') || '/'
+      // Mismo origen vía Firebase Hosting: la rewrite `/api/**` conserva el
+      // prefijo, así que el router lo descarta (`/api/v1/account` → `/v1/account`).
+      const path = rawPath.startsWith('/api/') ? rawPath.slice(4) : rawPath
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204, CORS_HEADERS)
@@ -103,7 +106,10 @@ export function createProxyHandler({
         return
       }
 
-      if (path === '/healthz') {
+      // `/healthz` exacto lo intercepta el frontend de Cloud Run (devuelve el
+      // 404 HTML de Google y nunca llega al contenedor): la ruta viva es
+      // `/health`. Se mantiene el alias para el smoke test local.
+      if (path === '/health' || path === '/healthz') {
         json(res, 200, { ok: true }, cors)
         return
       }
