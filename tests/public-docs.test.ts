@@ -133,6 +133,7 @@ describe('public surfaces stay plain', () => {
       'public/privacy/index.html',
       'public/terms/index.html',
       'public/refund/index.html',
+      'landing/index.html',
       'public/llms.txt',
       'public/agent.md',
     ]

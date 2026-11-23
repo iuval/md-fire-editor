@@ -10,7 +10,7 @@
  * `/__/auth/*` there. Redirecting it would break sign-in.
  */
 
-const CANONICAL_ORIGIN = 'https://firemd.app'
+const CANONICAL_ORIGIN = 'https://firemd.app/app'
 
 const ALIAS_HOSTS = new Set(['md-sync-app.web.app', 'www.firemd.app'])
 
@@ -21,8 +21,11 @@ export interface LocationLike {
   hash: string
 }
 
-/** Absolute canonical URL for an alias host, or `null` when already canonical. */
+/** Absolute app URL for an alias host, or `null` when already on the app origin. */
 export function canonicalRedirect(location: LocationLike): string | null {
   if (!ALIAS_HOSTS.has(location.hostname.toLowerCase())) return null
-  return `${CANONICAL_ORIGIN}${location.pathname}${location.search}${location.hash}`
+  // The app lives at /app/; `/` is the landing page, so a deep link from an alias
+  // host has to keep pointing at the app itself.
+  const path = location.pathname === '/' ? '/' : location.pathname.replace(/^\/app/, '')
+  return `${CANONICAL_ORIGIN}${path}${location.search}${location.hash}`
 }

@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FireMD, Markdown notes with real-time collaboration</title>
+    <meta
+      name="description"
+      content="FireMD is a notes app for writing in Markdown, organising notes in folders, sharing them with real permissions, and letting an AI agent read and edit them through a CLI or MCP server."
+    />
+    <link rel="canonical" href="https://firemd.app/" />
+    <link rel="alternate" hreflang="en" href="https://firemd.app/" />
+    <link rel="alternate" hreflang="x-default" href="https://firemd.app/" />
+    <meta name="robots" content="index,follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://firemd.app/" />
+    <meta property="og:title" content="FireMD, Markdown notes with real-time collaboration" />
+    <meta property="og:site_name" content="FireMD" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:image" content="https://firemd.app/og-image.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+        src: url("/fonts/inter-latin-var.woff2") format("woff2");
+      }
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --page: #ffffff;
+        --text: #22222a;
+        --muted: #5c5c66;
+        --border: #e3e3e6;
+        --accent: #6f5ce0;
+        --accent-ink: #5646c4;
+        --tint: #f4f2ff;
+        --radius: 10px;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1e1e1e;
+          --page: #181818;
+          --text: #dadada;
+          --muted: #a8a8a8;
+          --border: #3a3a3a;
+          --accent: #8b7cf8;
+          --accent-ink: #c3b9ff;
+          --tint: #262232;
+        }
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--accent-ink); text-underline-offset: 3px; }
+      a:hover { text-decoration-thickness: 2px; }
+      .wrap { width: min(100% - 40px, 960px); margin: 0 auto; }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 20px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 650;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-size: 13px;
+        color: var(--text);
+        text-decoration: none;
+      }
+      .brand img { width: 22px; height: 22px; display: block; }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 38px;
+        padding: 8px 16px;
+        border-radius: var(--radius);
+        background: var(--accent);
+        color: #fff;
+        font-weight: 550;
+        text-decoration: none;
+        border: 1px solid transparent;
+      }
+      .button:hover { filter: brightness(1.06); }
+      .button.secondary {
+        background: transparent;
+        color: var(--text);
+        border-color: var(--border);
+      }
+      main { padding: 56px 0 72px; }
+      .eyebrow {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin: 0 0 14px;
+      }
+      h1 {
+        font-size: clamp(32px, 6vw, 52px);
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        margin: 0 0 18px;
+        text-wrap: balance;
+        max-width: 18ch;
+      }
+      .lede {
+        font-size: clamp(17px, 2.4vw, 20px);
+        color: var(--muted);
+        max-width: 62ch;
+        margin: 0 0 28px;
+      }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+      section { margin-top: 64px; }
+      h2 {
+        font-size: clamp(22px, 3.4vw, 30px);
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        margin: 0 0 10px;
+      }
+      .section-lede { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
+      .pillars {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        background: var(--page);
+      }
+      .card h3 { margin: 0 0 8px; font-size: 16px; letter-spacing: -0.01em; }
+      .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+      .plans {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .plan {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 22px;
+        background: var(--page);
+      }
+      .plan.featured { border-color: var(--accent); background: var(--tint); }
+      .plan .label {
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      .plan .price { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 4px; }
+      .plan .price small { font-size: 14px; font-weight: 500; color: var(--muted); }
+      .plan ul { margin: 14px 0 0; padding-left: 18px; color: var(--muted); font-size: 14.5px; }
+      .plan li { margin: 6px 0; }
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .faq { margin-top: 22px; border-top: 1px solid var(--border); }
+      .faq details { border-bottom: 1px solid var(--border); padding: 16px 0; }
+      .faq summary { cursor: pointer; font-weight: 600; }
+      .faq p { color: var(--muted); margin: 10px 0 0; }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 28px 0 40px;
+        color: var(--muted);
+        font-size: 13.5px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 22px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      footer nav { display: flex; flex-wrap: wrap; gap: 12px 18px; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92em;
+        background: var(--tint);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      @media (max-width: 560px) {
+        main { padding: 40px 0 56px; }
+        section { margin-top: 48px; }
+        .actions .button { flex: 1 1 auto; justify-content: center; }
+      }
+    
+      /* ---------- tariff table ---------- */
+      .tariff {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 14px 0 10px;
+        font-size: 14.5px;
+      }
+      .tariff caption {
+        text-align: left;
+        color: var(--muted);
+        font-size: 13px;
+        padding-bottom: 8px;
+      }
+      .tariff th,
+      .tariff td {
+        text-align: left;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .tariff th {
+        font-weight: 600;
+      }
+      .tariff td:last-child,
+      .tariff th:last-child {
+        text-align: right;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .tariff tr:last-child td {
+        border-bottom: none;
+      }
+      .tariff-scroll {
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/">
+          <img src="/favicon.svg" alt="" width="22" height="22" />
+          FireMD
+        </a>
+        <a class="button" href="/app/">Open the editor</a>
+      </header>
+
+      <main>
+        <p class="eyebrow">Markdown notes</p>
+        <h1>FireMD is a notes app for Markdown, with real-time collaboration.</h1>
+        <p class="lede">
+          You write in plain Markdown and FireMD keeps it that way. Notes live in folders, sync
+          between your devices as you type, and can be shared with other people, each with their own
+          permission. The same notes can be read and edited by an AI agent you authorise, through a
+          command line interface or an MCP server.
+        </p>
+        <div class="actions">
+          <a class="button" href="/app/">Open the editor</a>
+          <a class="button secondary" href="/pricing/">See pricing</a>
+        </div>
+        <p class="note">
+          You can try it without an account: open the editor and start typing. Signing in with Google
+          keeps the notes on your account and makes them reachable from other devices.
+        </p>
+
+        <section id="what">
+          <h2>What FireMD is for</h2>
+          <p class="section-lede">
+            It is for people who keep notes in Markdown and want them to behave like files, not like
+            a proprietary document. Four things it does:
+          </p>
+          <div class="pillars">
+            <div class="card">
+              <h3>Writing that stays Markdown</h3>
+              <p>
+                Headings, lists, tables, code blocks, properties. The note you export is the note you
+                wrote, and the vault can be opened in Obsidian or any other editor.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Real-time collaboration</h3>
+              <p>
+                Two people can type in the same paragraph without overwriting each other. Cursors and
+                selections are visible, and edits merge as soon as the connection allows.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Permissions that hold</h3>
+              <p>
+                Owner, can edit, read only, per note and per folder. Revoking access takes effect
+                immediately, because the rules that decide it run on the server.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Agents, on your terms</h3>
+              <p>
+                A CLI and an MCP server let an AI agent read and edit notes with exactly the
+                permissions you grant, in plain text, with an etag guard against overwriting.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="who">
+          <h2>Who it is for</h2>
+          <p>
+            People who already write in Markdown, small teams sharing a notes folder, and anyone who
+            wants an AI agent to work on their notes without handing over an account. It is a web
+            app, installable as an app, and it keeps working offline with the notes you already
+            opened.
+          </p>
+        </section>
+
+        <section id="price">
+          <h2>What it costs</h2>
+          <p>
+            There is a free daily quota: 100 MB of storage and 700 operations per day, no card
+            required. Beyond that, usage is paid from a prepaid balance bought in packs of 1, 5 or 20
+            US dollars, charged per unit at published prices. No subscription.
+          </p>
+          <p>
+            The details, including the per-unit tariff, are on the
+            <a href="/pricing/">pricing page</a>.
+          </p>
+        </section>
+
+        <section id="more">
+          <h2>Read more</h2>
+          <ul class="planul">
+            <li><a href="/pricing/">Pricing and free tier</a></li>
+            <li><a href="/agent.md">Agent guide: CLI and MCP server</a></li>
+            <li><a href="/terms/">Terms of service</a></li>
+            <li><a href="/privacy/">Privacy policy</a></li>
+            <li><a href="/refund/">Refund policy</a></li>
+            <li><a href="/llms.txt">llms.txt</a>, for AI agents</li>
+          </ul>
+        </section>
+
+        <footer>
+          <p>FireMD, collaborative Markdown notes. Contact: iuvalgoldansky@gmail.com</p>
+          <p>
+            <a href="/app/">Editor</a> · <a href="/pricing/">Pricing</a> ·
+            <a href="/terms/">Terms</a> · <a href="/privacy/">Privacy</a> ·
+            <a href="/refund/">Refunds</a> · <a href="/agent.md">Agents (CLI/MCP)</a>
+          </p>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

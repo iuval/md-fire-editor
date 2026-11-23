@@ -10,22 +10,22 @@ describe('canonical redirect to firemd.app', () => {
         search: '?desktop=47615&state=abc',
         hash: '#bloque',
       })
-    ).toBe('https://firemd.app/nota/3f9a1c2b?desktop=47615&state=abc#bloque')
+    ).toBe('https://firemd.app/app/nota/3f9a1c2b?desktop=47615&state=abc#bloque')
   })
 
   it('sends www to the apex', () => {
     expect(
       canonicalRedirect({ hostname: 'www.firemd.app', pathname: '/', search: '', hash: '' })
-    ).toBe('https://firemd.app/')
+    ).toBe('https://firemd.app/app/')
   })
 
   it('ignores host case', () => {
     expect(
       canonicalRedirect({ hostname: 'WWW.FireMD.app', pathname: '/x', search: '', hash: '' })
-    ).toBe('https://firemd.app/x')
+    ).toBe('https://firemd.app/app/x')
     expect(
       canonicalRedirect({ hostname: 'MD-SYNC-APP.WEB.APP', pathname: '/', search: '', hash: '' })
-    ).toBe('https://firemd.app/')
+    ).toBe('https://firemd.app/app/')
   })
 
   it('leaves the apex alone', () => {

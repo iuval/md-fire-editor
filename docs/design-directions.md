@@ -26,15 +26,27 @@ es exactamente el default de Obsidian.
 Cada dirección define también: forma del sidebar, tratamiento de etiquetas, barra de presencia,
 medidor de uso, y tipografía de títulos.
 
+## Estrategia fijada
+
+**El público son migrantes de Obsidian.** Por lo tanto el esqueleto se queda (árbol de carpetas,
+tabs, atajos, markdown puro) y lo que cambia es el **material** y una capa de **pequeñas
+sorpresas**: la información que Obsidian no puede mostrar porque es local y de un solo usuario
+—presencia, autoría por línea, uso medido, versión del documento—. Las sorpresas no son
+decoración: son la diferencia del producto hecha visible en el material elegido.
+
+Corolario: la dirección **Signal** (03) queda descartada como base — rompe la familiaridad al
+poner la presencia como navegación principal. Sus ideas sobreviven como capa de sorpresa.
+
 ## Decision log
 
 | # | Decisión | Estado |
 |---|----------|--------|
-| D1 | Dirección base (01 / 02 / 03 / 04 / híbrido) | pendiente |
-| D2 | Relación entre editor y lista de notas (panel vs página vs índice) | pendiente |
-| D3 | Cómo se representa la presencia multi-usuario | pendiente |
+| D1 | Dirección base: **A** Ink & Paper · **B** Instrument · **D** Ruled Ledger · híbrido | pendiente |
+| D2 | Público y estrategia: migrantes de Obsidian, esqueleto familiar + capa de sorpresas | **fijada** |
+| D3 | Cómo se representa la presencia multi-usuario (margen / session log / autor por línea) | pendiente |
 | D4 | Dónde vive el medidor de uso prepago | pendiente |
 | D5 | Tipografía de títulos y de chrome | pendiente |
 | D6 | Acento de marca definitivo | pendiente |
 | D7 | Modo claro vs oscuro como default | pendiente |
 | D8 | Qué se reescribe del CSS actual (`src/index.css`, 4.012 líneas) y qué se tira | pendiente |
+| D9 | Primera sorpresa que se implementa | pendiente |

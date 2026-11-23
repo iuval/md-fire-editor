@@ -50,15 +50,17 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'FireMD — notas en Markdown',
+        name: 'FireMD: Markdown notes',
         short_name: 'FireMD',
-        description: 'Notas en Markdown con carpetas, etiquetas y edición colaborativa en tiempo real.',
+        description: 'Markdown notes with folders, tags and real-time collaborative editing.',
         // Matches the actual canvas (#ffffff / #1e1e1e); the old #faf9f6 was
         // never a color in the palette, so the installed app flashed off-brand.
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
-        start_url: '/',
+        start_url: '/app/',
+        scope: '/app/',
+        id: '/app/',
         // `any` keeps the rounded-square artwork; `maskable` is full bleed with
         // the mark inside the 80% safe circle, so Android's round/squircle
         // masks never clip the flame. Both come from scripts/icons/build.mjs.

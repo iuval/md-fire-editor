@@ -118,12 +118,32 @@
       }
     ],
     "redirects": [
-      { "source": "/planes", "destination": "/pricing/", "type": 301 },
-      { "source": "/planes/:rest*", "destination": "/pricing/", "type": 301 },
-      { "source": "/plans", "destination": "/pricing/", "type": 301 },
-      { "source": "/plans/:rest*", "destination": "/pricing/", "type": 301 }
+      {
+        "source": "/planes",
+        "destination": "/pricing/",
+        "type": 301
+      },
+      {
+        "source": "/planes/:rest*",
+        "destination": "/pricing/",
+        "type": 301
+      },
+      {
+        "source": "/plans",
+        "destination": "/pricing/",
+        "type": 301
+      },
+      {
+        "source": "/plans/:rest*",
+        "destination": "/pricing/",
+        "type": 301
+      }
     ],
     "rewrites": [
+      {
+        "source": "/app/**",
+        "destination": "/app/index.html"
+      },
       {
         "source": "/api/**",
         "run": {
