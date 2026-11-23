@@ -35,6 +35,16 @@ service cloud.firestore {
       return request.auth.uid;
     }
 
+    // The agent CLI signs up anonymously (that is how a CLI gets an identity
+    // without owning an email inbox). Anonymous sessions are scriptable by
+    // anyone holding the public web API key, so they may write into what they
+    // were granted — a shared folder, a note with a link — but they may not
+    // mint new documents. Everything they create would be billed to us and
+    // nobody would ever own it.
+    function notAnonymous() {
+      return request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
     function isString(v) {
       return v is string;
     }
@@ -168,6 +178,7 @@ service cloud.firestore {
       allow list: if signedIn() && uid() in resource.data.memberIds;
 
       allow create: if signedIn()
+        && notAnonymous()
         && validFolder(request.resource.data, folderId)
         && request.resource.data.ownerId == uid()
         && selfOwnedAcl(request.resource.data)
@@ -255,6 +266,7 @@ service cloud.firestore {
       allow list: if signedIn() && uid() in resource.data.memberIds;
 
       allow create: if signedIn()
+        && notAnonymous()
         && validNote(request.resource.data)
         && request.resource.data.ownerId == uid()
         && request.resource.data.createdAt == request.resource.data.updatedAt
@@ -500,7 +512,9 @@ service cloud.firestore {
 
     // ---------- admins ----------
     match /admins/{adminId} {
-      allow get: if signedIn();
+      // Only your own admin document: `list` is already closed, and knowing who
+      // the admins are is not a client concern.
+      allow get: if signedIn() && adminId == uid();
       allow list: if false;
       // El bootstrap por email crea su propio documento; nadie más escribe.
       allow create: if signedIn()
@@ -645,6 +659,7 @@ service cloud.firestore {
       allow read: if signedIn() && uid() == userId;
 
       allow create: if signedIn()
+        && notAnonymous()
         && uid() == userId
         && request.resource.data.keys().hasOnly(['name', 'props', 'at'])
         && request.resource.data.name in [

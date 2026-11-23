@@ -66,6 +66,13 @@ function db(uid?: string) {
   return uid ? env.authenticatedContext(uid).firestore() : env.unauthenticatedContext().firestore()
 }
 
+/** The agent CLI: signed in, but via the anonymous provider. */
+function anonDb(uid: string) {
+  return env
+    .authenticatedContext(uid, { firebase: { sign_in_provider: 'anonymous' } })
+    .firestore()
+}
+
 async function seedNote(id: string, overrides: Record<string, unknown> = {}) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'notes', id), noteDoc(overrides))
@@ -109,6 +116,29 @@ describe('notes: create', () => {
 
   it('rejects anonymous create', async () => {
     await assertFails(setDoc(doc(db(), 'notes', 'n1'), noteDoc()))
+  })
+
+  it('rejects create from an anonymous session, which anyone can mint with the public key', async () => {
+    await assertFails(setDoc(doc(anonDb('agent-uid'), 'notes', 'n1'), noteDoc({ ownerId: 'agent-uid' })))
+  })
+
+  it('lets an anonymous agent write content into a note it was granted', async () => {
+    // The agent path that has to keep working: an editor of a shared note, not
+    // an owner of a new one.
+    await seedNote('shared', {
+      ownerId: OWNER,
+      memberIds: [OWNER, 'agent-uid'],
+      roles: { [OWNER]: 'owner', 'agent-uid': 'editor' },
+    })
+    // What `firemd patch` does: a content-only update, not a new document.
+    await assertSucceeds(
+      updateDoc(doc(anonDb('agent-uid'), 'notes', 'shared'), {
+        title: 'Editada por el agente',
+        markdownBytes: 12,
+        updatedAt: ts(),
+        version: 2,
+      })
+    )
   })
 
   it('rejects create with a foreign ownerId', async () => {
@@ -966,6 +996,14 @@ describe('admins', () => {
   it('nobody else can create an admins document', async () => {
     await assertFails(setDoc(doc(db(VIEWER), 'admins', VIEWER), { createdAt: ts() }))
     await assertFails(setDoc(doc(db(VIEWER), 'admins', OWNER), { createdAt: ts() }))
+  })
+
+  it('an admin document is only readable by its owner', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'admins', OWNER), { createdAt: ts() })
+    })
+    await assertSucceeds(getDoc(doc(db(OWNER), 'admins', OWNER)))
+    await assertFails(getDoc(doc(db(VIEWER), 'admins', OWNER)))
   })
 
   it('the bootstrap email is admin without a document', async () => {
