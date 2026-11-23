@@ -14,6 +14,9 @@ import { CREDIT_EXPIRY_MONTHS, MIN_AUTO_TOP_UP_USD, MIN_TOP_UP_USD, type Credits
  */
 export const CREDIT_PACKS = [1, 5, 20] as const
 
+/** Unused credit is refundable inside this window; the pricing page states it. */
+export const REFUND_WINDOW_DAYS = 14
+
 /** Precio de las operaciones de agente por volumen. */
 export const AGENT_OPS_PRICE_PER_100K = 0.5
 /** Precio del GB/mes extra sobre los 100 MB gratis. */

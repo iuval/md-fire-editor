@@ -1,25 +1,28 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FireMD — planes y cuota gratuita</title>
+    <title>FireMD — plans, free tier and prepaid usage</title>
     <meta
       name="description"
-      content="Editor Markdown colaborativo con cuota gratuita mensual y saldo prepago. Sin suscripción obligatoria. Carpetas, permisos y acceso para agentes de IA."
+      content="FireMD pricing: a free daily quota with no card required, then a prepaid balance charged per unit of usage. Cost-plus prices, no subscription, unused credit refundable within 14 days."
     />
-    <link rel="canonical" href="https://firemd.app/planes" />
+    <link rel="canonical" href="https://firemd.app/planes/" />
+    <link rel="alternate" hreflang="en" href="https://firemd.app/planes/" />
+    <link rel="alternate" hreflang="x-default" href="https://firemd.app/planes/" />
     <meta name="robots" content="index,follow" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://firemd.app/planes" />
-    <meta property="og:title" content="FireMD — planes y cuota gratuita" />
+    <meta property="og:url" content="https://firemd.app/planes/" />
+    <meta property="og:title" content="FireMD — plans, free tier and prepaid usage" />
     <meta
       property="og:description"
-      content="Cuota gratuita mensual y saldo prepago. Editor Markdown colaborativo con permisos reales y acceso para agentes de IA."
+      content="Free daily quota with no card required. Beyond it, a prepaid balance charged per unit of usage at published cost-plus prices."
     />
     <meta property="og:image" content="https://firemd.app/og-image.png" />
-    <meta property="og:image:alt" content="FireMD — notas en Markdown" />
+    <meta property="og:image:alt" content="FireMD — Markdown notes" />
     <meta property="og:site_name" content="FireMD" />
+    <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://firemd.app/og-image.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -215,6 +218,42 @@
         section { margin-top: 48px; }
         .actions .button { flex: 1 1 auto; justify-content: center; }
       }
+    
+      /* ---------- tariff table ---------- */
+      .tariff {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 14px 0 10px;
+        font-size: 14.5px;
+      }
+      .tariff caption {
+        text-align: left;
+        color: var(--muted);
+        font-size: 13px;
+        padding-bottom: 8px;
+      }
+      .tariff th,
+      .tariff td {
+        text-align: left;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .tariff th {
+        font-weight: 600;
+      }
+      .tariff td:last-child,
+      .tariff th:last-child {
+        text-align: right;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .tariff tr:last-child td {
+        border-bottom: none;
+      }
+      .tariff-scroll {
+        overflow-x: auto;
+      }
     </style>
   </head>
   <body>
@@ -224,150 +263,247 @@
           <img src="/favicon.svg" alt="" width="22" height="22" />
           FireMD
         </a>
-        <a class="button" href="/">Abrir el editor</a>
+        <a class="button" href="/">Open the editor</a>
       </header>
 
       <main>
-        <p class="eyebrow">Planes y uso</p>
-        <h1>Escribí en Markdown. Compartí sin fricción.</h1>
+        <p class="eyebrow">Plans and usage</p>
+        <h1>Write in Markdown. Share without friction.</h1>
         <p class="lede">
-          Editor Markdown colaborativo con carpetas, permisos por carpeta y acceso directo para
-          agentes de IA vía CLI/MCP. Sin suscripción obligatoria: una cuota gratuita que se renueva
-          cada mes y saldo prepago cuando la necesites más.
+          A collaborative Markdown editor with folders, per-folder permissions and direct access for
+          AI agents through a CLI and an MCP server. No subscription: a free daily quota, and a
+          prepaid balance only when you need more.
         </p>
         <div class="actions">
-          <a class="button" href="/">Empezar a escribir</a>
-          <a class="button secondary" href="#planes">Ver planes</a>
+          <a class="button" href="/">Start writing</a>
+          <a class="button secondary" href="#pricing">See pricing</a>
         </div>
 
-        <section id="que-es">
-          <h2>Qué es FireMD</h2>
+        <section id="what">
+          <h2>What FireMD is</h2>
           <p class="section-lede">
-            Un editor de notas que trata el Markdown como el formato real, no como una vista previa.
-            Cuatro cosas que hace bien:
+            A notes editor that treats Markdown as the real format, not as a preview. Four things it
+            does well:
           </p>
           <div class="pillars">
             <div class="card">
-              <h3>Edición simultánea</h3>
+              <h3>Simultaneous editing</h3>
               <p>
-                CRDT sobre Firestore con compactación y cursores remotos. Dos personas en el mismo
-                párrafo no se pisan.
+                A CRDT over Firestore with compaction and remote cursors. Two people in the same
+                paragraph do not overwrite each other.
               </p>
             </div>
             <div class="card">
-              <h3>Permisos reales</h3>
+              <h3>Real permissions</h3>
               <p>
-                Dueño, Escritura y Lectura por nota y por carpeta. La revocación corta el acceso de
-                inmediato.
+                Owner, Can edit and Read only, per note and per folder. Revoking access cuts it
+                immediately.
               </p>
             </div>
             <div class="card">
-              <h3>Hecho para agentes</h3>
+              <h3>Built for agents</h3>
               <p>
-                Salida en texto plano, edición atómica con <code>etag</code> y preconditions, e
-                identidad propia con permisos mínimos.
+                Plain-text output, atomic edits guarded by an
+                <code>etag</code>, and its own identity with the minimum permissions you grant.
               </p>
             </div>
             <div class="card">
-              <h3>Offline / PWA</h3>
+              <h3>Offline and installable</h3>
               <p>
-                Instalable como app. El caché persistente de Firestore mantiene lo leído y encola
-                escrituras cuando vuelve la conexión.
+                Works as an app. The persistent Firestore cache keeps what you have read and queues
+                writes until the connection returns.
               </p>
             </div>
           </div>
         </section>
 
-        <section id="planes">
-          <h2>Cuota gratuita diaria y saldo prepago</h2>
+        <section id="pricing">
+          <h2>Free every day, prepaid when you need more</h2>
           <p class="section-lede">
-            No hay prueba que expire ni tarjeta obligatoria. La cuota se renueva cada día a las
-            00:00 UTC; el saldo prepago se usa solo cuando la superás.
+            Nothing expires as a trial and no card is required to start. The free quota renews every
+            day at 00:00 UTC; the prepaid balance is only used for the usage above it.
           </p>
           <div class="plans">
             <div class="plan featured">
-              <p class="label">Cuota gratuita</p>
-              <p class="price">$0 <small>cada día</small></p>
-              <ul>
-                <li>100 MB de almacenamiento</li>
-                <li>700 operaciones por día (humanos y agentes)</li>
-                <li>Colaboración sin límite de personas en modo liviano</li>
-                <li>Tiempo real con presencia y cursores: con saldo</li>
-                <li>Carpetas y permisos por nota y por carpeta</li>
-                <li>CLI y servidor MCP</li>
-                <li>Exportación de tu vault cuando quieras</li>
+              <p class="label">Free</p>
+              <p class="price">$0<span class="pricesmall"> / day</span></p>
+              <ul class="planul">
+                <li>100 MB of storage</li>
+                <li>700 operations per day, humans and agents</li>
+                <li>Unlimited collaborators</li>
+                <li>Real-time presence and cursors</li>
+                <li>Folders and per-note, per-folder permissions</li>
+                <li>CLI and MCP server</li>
+                <li>Export your vault whenever you want</li>
               </ul>
             </div>
             <div class="plan">
-              <p class="label">Saldo prepago</p>
-              <p class="price">Packs de $5, $15 y $50</p>
-              <ul>
-                <li>El consumo se mide por uso: almacenamiento, operaciones y transferencia</li>
-                <li>Cargo diario: solo el uso que pasa la cuota, con el margen incluido (los admin no pagan)</li>
-                <li>Vence a los 24 meses</li>
-                <li>Recarga automática opcional cuando el saldo baja</li>
-                                <li>Podés ver el consumo y el costo estimado en la app</li>
+              <p class="label">Prepaid balance</p>
+              <p class="price">$1–$20<span class="pricesmall"> per top-up</span></p>
+              <ul class="planul">
+                <li>Packs of $1, $5 and $20, up to $100 per purchase</li>
+                <li>Charged per unit at the published prices below</li>
+                <li>Only the usage above the free quota is charged</li>
+                <li>Optional automatic top-up from $5</li>
+                <li>Balance and estimated cost visible in the app</li>
+                <li>Unused credit expires 24 months after purchase</li>
+                <li>Non-transferable, no cash value</li>
               </ul>
             </div>
           </div>
           <p class="note">
-            El cobro con tarjeta todavía no está habilitado. La app registra el consumo y permite
-            solicitar una recarga; el saldo se acredita cuando se confirma el pago. No se promete
-            facturación automática antes de que exista el checkout.
+            There is no monthly fee and no plan to cancel. A day with no usage above the free quota
+            costs $0.
           </p>
         </section>
 
-        <section id="faq">
-          <h2>Preguntas frecuentes</h2>
-          <div class="faq">
-            <details>
-              <summary>¿Qué pasa con lo que escribo antes de entrar?</summary>
-              <p>
-                Queda en tu navegador. Al entrar con Google te ofrecemos guardarlo en tu cuenta;
-                si no lo guardás, el borrador sigue en este navegador hasta que lo descartes.
-              </p>
-            </details>
-            <details>
-              <summary>¿Cómo revoco un acceso?</summary>
-              <p>
-                Desde el panel de compartir de la nota o de la carpeta. El corte es inmediato: la
-                regla de seguridad deja de aceptar escrituras de esa persona.
-              </p>
-            </details>
-            <details>
-              <summary>¿Cómo funciona el CLI/MCP?</summary>
-              <p>
-                La CLI devuelve texto plano y usa <code>etag</code> para editar sin pisar cambios.
-                La guía completa está en <a href="/agent.md">agent.md</a>.
-              </p>
-            </details>
-            <details>
-              <summary>¿Cómo controlo mi gasto?</summary>
-              <p>
-                La cuota gratuita se renueva cada mes. El saldo prepago se descuenta por uso y
-                podés recargarlo en packs; la recarga automática es opcional y se puede apagar.
-              </p>
-            </details>
-            <details>
-              <summary>¿Puedo exportar mi vault?</summary>
-              <p>
-                Sí. La app exporta tus notas en Markdown con su estructura de carpetas. El formato
-                sigue siendo Markdown, no un formato propietario.
-              </p>
-            </details>
+        <section id="tariff">
+          <h2>Published prices</h2>
+          <p class="section-lede">
+            Every unit below is measured by our own backend from the cloud operations the app
+            performs. Prices are cost-plus and public; the free daily quota is applied first and the
+            prepaid balance covers only what is left.
+          </p>
+          <div class="tariff-scroll">
+            <table class="tariff">
+              <caption>Prices in US dollars, per unit consumed.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Unit</th>
+                  <th scope="col">What it covers</th>
+                  <th scope="col">Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Writes</td>
+                  <td>Each sync block, each note save, each presence heartbeat</td>
+                  <td>$0.50 / 100,000</td>
+                </tr>
+                <tr>
+                  <td>Reads</td>
+                  <td>Opening a note, and each update delivered by the listener</td>
+                  <td>$0.30 / 100,000</td>
+                </tr>
+                <tr>
+                  <td>Deletes</td>
+                  <td>Sync-log compaction and note deletion</td>
+                  <td>$0.10 / 100,000</td>
+                </tr>
+                <tr>
+                  <td>Storage</td>
+                  <td>Notes and canvases, including point-in-time recovery and backups</td>
+                  <td>$0.60 / GB-month</td>
+                </tr>
+                <tr>
+                  <td>Transfer</td>
+                  <td>Data sent to your browser</td>
+                  <td>$0.20 / GB</td>
+                </tr>
+                <tr>
+                  <td>Agent operations</td>
+                  <td>Charged per operation performed, not per command</td>
+                  <td>$0.50 / 100,000</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+          <p class="note">
+            Example: 100,000 extra writes cost $0.50. A note of 20 KB kept for a month costs about
+            $0.01 of storage.
+          </p>
         </section>
-      </main>
 
-      <footer>
-        <span>FireMD — notas en Markdown, colaborativas.</span>
-        <nav>
-          <a href="/">Editor</a>
-          <a href="/agent.md">Agentes (CLI/MCP)</a>
-          <a href="/llms.txt">llms.txt</a>
-          <a href="https://github.com/iuval/md-fire-editor">GitHub</a>
-        </nav>
-      </footer>
+        <section id="billing">
+          <h2>How paying works</h2>
+          <ul class="planul">
+            <li>
+              <strong>Card payments are handled by Polar</strong>, the merchant of record for every
+              purchase. Polar processes the payment, issues the receipt and handles sales tax and
+              VAT at checkout.
+            </li>
+            <li>
+              <strong>Prepaid only.</strong> You add credit, and usage is deducted from it. There is
+              no recurring subscription; automatic top-up is optional and can be turned off at any
+              time.
+            </li>
+            <li>
+              <strong>Unused credit is refundable</strong> within 14 days of purchase. After that it
+              stays on the balance until it expires, 24 months after purchase.
+            </li>
+            <li>
+              <strong>The balance cannot leave the product.</strong> It pays for usage inside FireMD
+              only: it cannot be withdrawn, transferred to another account, gifted or resold.
+            </li>
+            <li>
+              <strong>No discount codes</strong> are accepted at checkout, so the amount charged is
+              always the pack you chose.
+            </li>
+          </ul>
+        </section>
+
+        <section id="faq" class="faq">
+          <h2>Questions</h2>
+
+          <details class="faqdetails">
+            <summary class="faqsummary">What happens to what I write before signing in?</summary>
+            <p class="faqp">
+              It stays in your browser. When you sign in with Google we offer to save it to your
+              account; if you do not, the draft stays in this browser until you discard it.
+            </p>
+          </details>
+
+          <details class="faqdetails">
+            <summary class="faqsummary">How is a credit used?</summary>
+            <p class="faqp">
+              One balance, one price list. Usage above the free daily quota is deducted at the
+              published unit prices; a day under the quota costs nothing. The app shows the balance
+              and the estimated cost as you go.
+            </p>
+          </details>
+
+          <details class="faqdetails">
+            <summary class="faqsummary">How do I revoke someone's access?</summary>
+            <p class="faqp">
+              From the share panel of the note or the folder. The cut is immediate: the security
+              rules stop accepting writes from that person.
+            </p>
+          </details>
+
+          <details class="faqdetails">
+            <summary class="faqsummary">How does the CLI and MCP server work?</summary>
+            <p class="faqp">
+              The CLI returns plain text and edits with an <code>etag</code> so it never overwrites
+              someone else's change. The full guide is in <a href="/agent.md">agent.md</a>.
+            </p>
+          </details>
+
+          <details class="faqdetails">
+            <summary class="faqsummary">How do I control my spending?</summary>
+            <p class="faqp">
+              The free quota renews every day. You choose each pack manually; automatic top-up is
+              optional and off by default. Nothing is charged without a purchase you made.
+            </p>
+          </details>
+
+          <details class="faqdetails">
+            <summary class="faqsummary">Can I export my vault?</summary>
+            <p class="faqp">
+              Yes. The app exports your notes as Markdown with their folder structure. The format
+              stays Markdown, never a proprietary one.
+            </p>
+          </details>
+        </section>
+
+        <footer>
+          <p>FireMD — collaborative Markdown notes.</p>
+          <p>
+            <a href="/">Editor</a> · <a href="/agent.md">Agents (CLI/MCP)</a> ·
+            <a href="/llms.txt">llms.txt</a> ·
+            <a href="https://github.com/iuval/md-fire-editor" rel="noreferrer">GitHub</a>
+          </p>
+        </footer>
+      </main>
     </div>
   </body>
 </html>
