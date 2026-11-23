@@ -226,3 +226,49 @@ describe('compactación por HTTP', () => {
     expect(store.docs.get('notes/n1/collab/manifest')).toMatchObject({ snapshot: 'AAAA' })
   })
 })
+
+describe('portal de tarjetas y recarga automática', () => {
+  it('devuelve la URL del portal para guardar la tarjeta', async () => {
+    const ensureCustomer = vi.fn(async () => 'cus_1')
+    const createPortalSession = vi.fn(async () => ({ url: 'https://polar.sh/portal/abc', id: 'cs_1' }))
+    await start({}, { checkout: { ...checkout, ensureCustomer, createPortalSession } })
+
+    const response = await post('/v1/billing/portal', { returnUrl: 'https://app.test/ok' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ url: 'https://polar.sh/portal/abc' })
+    expect(ensureCustomer).toHaveBeenCalledWith(expect.objectContaining({ uid: 'owner' }))
+    expect(createPortalSession).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'owner', returnUrl: 'https://app.test/ok' })
+    )
+  })
+
+  it('adjunta el resultado del cobro off-session a la operación que lo disparó', async () => {
+    const autoTopUp = vi.fn(async () => ({ status: 'paid', orderId: 'order_1', amountUsd: 5 }))
+    await start(
+      {
+        [`allowance/owner/days/${DAY}`]: { day: DAY, opsUsed: 700 },
+        'credits/owner': {
+          balanceUsd: 1,
+          thresholdUsd: 5,
+          topUpUsd: 5,
+          autoTopUp: true,
+          polarCustomerId: 'cus_1',
+        },
+      },
+      { autoTopUp }
+    )
+
+    const response = await post('/v1/notes/n1/blocks', { opId: 'op_eeeeeeeeeeee', block })
+    const receipt = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(receipt.autoTopUp).toMatchObject({
+      amountUsd: 5,
+      customerId: 'cus_1',
+      charge: { status: 'paid', orderId: 'order_1' },
+    })
+    expect(autoTopUp).toHaveBeenCalledWith({
+      request: expect.objectContaining({ uid: 'owner', customerId: 'cus_1', amountUsd: 5 }),
+    })
+  })
+})

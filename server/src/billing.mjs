@@ -20,7 +20,7 @@ export function expiryFrom(now = new Date()) {
  */
 export async function creditTopUp(
   store,
-  { uid, amountUsd, eventId, provider = 'unknown', now = new Date() }
+  { uid, amountUsd, eventId, provider = 'unknown', customerId = null, now = new Date() }
 ) {
   if (typeof uid !== 'string' || !uid) throw new Error('missing-uid')
   if (typeof eventId !== 'string' || !eventId) throw new Error('missing-event-id')
@@ -41,6 +41,8 @@ export async function creditTopUp(
       {
         balanceUsd,
         totalToppedUpUsd: roundUsd((credits.totalToppedUpUsd ?? 0) + amount),
+        // Guardado para poder cobrar la próxima recarga sin el usuario.
+        ...(customerId ? { polarCustomerId: customerId } : {}),
         expiresAt,
         updatedAt: now,
       },

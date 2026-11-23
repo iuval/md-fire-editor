@@ -151,6 +151,14 @@ export function fetchAccount(): Promise<Account> {
 }
 
 /** Sesión de checkout del MoR para cargar saldo (E6). */
+/** Portal de Polar: ahí el usuario guarda la tarjeta que usa la recarga automática. */
+export function startPortal(): Promise<{ url: string; id: string }> {
+  return call<{ url: string; id: string }>('/v1/billing/portal', {
+    method: 'POST',
+    body: JSON.stringify({ returnUrl: `${location.origin}/?portal=ok` }),
+  })
+}
+
 export function startCheckout(packUsd: number): Promise<{ url: string; packUsd: number }> {
   return call<{ url: string; packUsd: number }>('/v1/billing/checkout', {
     method: 'POST',

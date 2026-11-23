@@ -471,7 +471,13 @@ export async function executeNoteOperation(store, input) {
         auto: true,
         requestedAt: now,
       })
-      autoTopUp = { id, amountUsd }
+      autoTopUp = {
+        id,
+        uid: payerUid,
+        amountUsd,
+        // Sin cliente en Polar todavía: la UI ofrece guardar la tarjeta.
+        customerId: typeof credits.polarCustomerId === 'string' ? credits.polarCustomerId : null,
+      }
     }
 
     // El bloque ya es su propio registro de idempotencia; solo los kinds que

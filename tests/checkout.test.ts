@@ -36,6 +36,7 @@ const orderEvent = JSON.stringify({
     status: 'paid',
     net_amount: 500,
     total_amount: 610,
+    customer_id: 'cus_1',
     metadata: { uid: 'owner' },
   },
 })
@@ -160,6 +161,8 @@ describe('webhook', () => {
       eventId: 'order_1',
       amountUsd: 5,
       provider: 'polar',
+      // Guardado para poder cobrar la recarga automática más adelante.
+      customerId: 'cus_1',
     })
   })
 

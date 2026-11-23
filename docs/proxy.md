@@ -36,6 +36,7 @@ Todas las rutas salvo el health check y el webhook piden
 | `POST` | `/v1/notes/{noteId}/body` | `{ opId, body }` | recibo de la operación |
 | `POST` | `/v1/notes/{noteId}/compact` | `{ opId, compact: { blockIds, manifest } }` | recibo (hasta 400 borrados por mensaje) |
 | `POST` | `/v1/billing/checkout` | `{ packUsd, successUrl? }` | `{ url, id, packUsd }` |
+| `POST` | `/v1/billing/portal` | `{ returnUrl? }` | `{ url, id }` (portal de Polar para guardar la tarjeta) |
 | `POST` | `/v1/billing/webhook` | evento del MoR (crudo) | `{ ok, idempotent }` |
 
 Recibo:
@@ -84,6 +85,36 @@ recibo de idempotencia), `compact` = 1 (manifest) + 1 por bloque podado. El carg
 se calcula con el precio publicado (`$0,50/100k` escrituras, `$0,10/100k`
 borrados) sobre lo que cruza la cuota.
 
+### 3.1 Recarga automática (cobro off-session)
+
+Cuando un débito deja `balanceUsd` bajo `thresholdUsd` y `autoTopUp` está prendido,
+el recibo de la operación trae `autoTopUp` y el proxy intenta el cobro **después**
+de la transacción (un fallo de cobro no rompe la operación ya cobrada):
+
+```text
+POST /v1/orders/   { customer_id, product_id, amount: centavos, currency: usd, metadata: { uid } }
+POST /v1/orders/{id}/finalize   → 200 paid | 402 tarjeta/3DS | 403 flag apagado
+```
+
+El webhook `order.paid` acredita el saldo con el mismo `creditTopUp` idempotente
+por `order.id`, así que no hay camino donde se cobre dos veces. El `customer_id`
+de Polar se guarda en `credits/{uid}.polarCustomerId` la primera vez que el
+usuario paga.
+
+Estados que devuelve el recibo en `autoTopUp.charge.status`:
+
+| `status` | Qué pasó | Qué hace la app |
+|---|---|---|
+| `paid` | cobró; el saldo se acredita por webhook | nada |
+| `needs-card` | no hay cliente/tarjeta en Polar todavía | ofrece "Guardar tarjeta" (`/v1/billing/portal`) |
+| `unavailable` | falta el flag `off_session_charges_enabled` en la organización | deja el pedido `pending` |
+| `failed` | rechazo de la tarjeta o 3DS que no se puede completar | deja el pedido `pending` |
+| `order-4xx` | Polar rechazó la creación de la orden | deja el pedido `pending` |
+
+**Requisitos** para que cobre solo: el OAT necesita `orders:write` (además de
+`checkouts:write`) y Polar tiene que habilitar el flag en la organización. Sin
+el flag, todo lo demás sigue funcionando: la recarga manual y el recordatorio.
+
 ## 4. Datos que escribe
 
 | Documento | Contenido |
@@ -92,7 +123,7 @@ borrados) sobre lo que cruza la cuota.
 | `notes/{id}/updates/{opId}` | bloque del log Yjs (el `opId` es el id) |
 | `allowance/{uid}` | `storageBytes` (stock, se mueve con cada `body`) |
 | `allowance/{uid}/days/{YYYY-MM-DD}` | `opsUsed`, `writes`, `deletes`, `quota`, `renewsAt` |
-| `credits/{uid}` | `balanceUsd`, `totalToppedUpUsd`, `expiresAt` (24 meses) |
+| `credits/{uid}` | `balanceUsd`, `totalToppedUpUsd`, `expiresAt` (24 meses), `polarCustomerId` |
 | `credits/{uid}/ledger/{id}` | asiento inmutable: `usage` (−) o `topup` (+) |
 | `proxyOps/{uid}_{opId}` | recibo de idempotencia de `body` |
 | `payments/{provider}_{eventId}` | idempotencia del webhook |
@@ -143,8 +174,8 @@ done
 polar webhooks create_webhook_endpoint \
   --url https://firemd-proxy-XXX.southamerica-east1.run.app/v1/billing/webhook \
   --name "FireMD proxy" --format raw --events order.paid --json   # imprime el whsec_
-# Token de la organización para el proxy
-polar auth token --scope checkouts:write
+# Token de la organización para el proxy (orders:write = recarga automática)
+polar auth token --scope checkouts:write --scope orders:write
 ```
 
 Los dos secretos van a Secret Manager, no a variables de entorno:

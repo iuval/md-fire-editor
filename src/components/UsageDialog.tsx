@@ -14,6 +14,7 @@ import {
   type UsageTotals,
 } from '../lib/usage'
 import { FREE_TIER, dailyCharge, freeTierStatus, quotaWarning } from '../lib/quota'
+import { proxyEnabled, startPortal } from '../lib/proxy'
 import type { ServerAllowance } from '../lib/allowance'
 import {
   CREDIT_PACKS,
@@ -120,6 +121,15 @@ export function UsageDialog({
     try {
       await onUpdateCredits(settings)
       setFeedback({ tone: 'ok', text: 'Recarga automática guardada.' })
+    } catch (error) {
+      setFeedback({ tone: 'error', text: String((error as Error)?.message ?? error) })
+    }
+  }
+
+  const openPortal = async () => {
+    try {
+      const session = await startPortal()
+      location.assign(session.url)
     } catch (error) {
       setFeedback({ tone: 'error', text: String((error as Error)?.message ?? error) })
     }
@@ -315,11 +325,16 @@ export function UsageDialog({
         <button className="btn" disabled={Boolean(settingsError)} onClick={() => void saveSettings()}>
           Guardar
         </button>
+        {proxyEnabled && (
+          <button className="btn ghost" onClick={() => void openPortal()}>
+            Guardar tarjeta
+          </button>
+        )}
       </div>
       <p className="hint">
         Mínimo {formatUsd(MIN_AUTO_TOP_UP_USD)} para la recarga automática (los packs sueltos
-        arrancan en {formatUsd(CREDIT_PACKS[0])}). El saldo y el libro mayor los escribe el
-        servidor: acá solo se guarda la configuración.
+        arrancan en {formatUsd(CREDIT_PACKS[0])}). La recarga se cobra sola con la tarjeta que
+        guardes en el portal de pagos; el saldo y el libro mayor los escribe el servidor.
       </p>
       {settingsError && (
         <p className="hint tone-danger" role="status">

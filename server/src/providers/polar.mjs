@@ -129,6 +129,136 @@ export function createPolar({
       return { url, id: String(payload?.id ?? '') }
     },
 
+    /** Crea el cliente en Polar si todavía no existe; devuelve su id. */
+    async ensureCustomer({ uid, email }) {
+      const existing = await fetchImpl(`${apiBase}/customers/external/${encodeURIComponent(uid)}`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+      })
+      if (existing.ok) {
+        const customer = await existing.json()
+        return String(customer.id)
+      }
+      if (existing.status !== 404) {
+        throw new Error(`polar customer ${existing.status}`)
+      }
+      const created = await fetchImpl(`${apiBase}/customers/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ external_id: uid, ...(email ? { email } : {}) }),
+      })
+      if (!created.ok) {
+        const detail = await created.text().catch(() => '')
+        throw new Error(`polar customer create ${created.status}: ${detail.slice(0, 160)}`)
+      }
+      const customer = await created.json()
+      return String(customer.id)
+    },
+
+    /** ¿Hay al menos una tarjeta guardada? Sin eso no hay cobro off-session. */
+    async hasPaymentMethod({ uid }) {
+      const response = await fetchImpl(
+        `${apiBase}/customers/external/${encodeURIComponent(uid)}/payment-methods`,
+        { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } }
+      )
+      if (!response.ok) return false
+      const payload = await response.json()
+      return Array.isArray(payload?.items) && payload.items.length > 0
+    },
+
+    /** Portal del cliente (Polar): ahí guarda la tarjeta para la recarga automática. */
+    async createPortalSession({ uid, returnUrl }) {
+      const response = await fetchImpl(`${apiBase}/customer-sessions/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          external_customer_id: uid,
+          ...(returnUrl ? { return_url: returnUrl } : {}),
+        }),
+      })
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '')
+        throw new Error(`polar portal ${response.status}: ${detail.slice(0, 160)}`)
+      }
+      const payload = await response.json()
+      const url = payload?.customer_portal_url
+      if (typeof url !== 'string' || !/^https:\/\//.test(url)) {
+        throw new Error('polar: el portal no trajo una URL https')
+      }
+      return { url, id: String(payload?.id ?? '') }
+    },
+
+    /**
+     * Cobro desatendido contra la tarjeta guardada: orden en borrador + finalize.
+     * `amount` sobrescribe el precio del producto, así un mismo producto sirve
+     * para cualquier monto. Requiere `orders:write` y el flag
+     * `off_session_charges_enabled` en la organización.
+     */
+    async chargeOffSession({ uid, customerId, productId, amountUsd, description }) {
+      const cents = Math.round(Number(amountUsd) * 100)
+      if (!customerId) return { status: 'needs-card', reason: 'no-customer' }
+      if (!Number.isInteger(cents) || cents <= 0) throw new Error('polar: monto inválido')
+
+      const created = await fetchImpl(`${apiBase}/orders/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          product_id: productId,
+          amount: cents,
+          currency: 'usd',
+          metadata: { uid },
+          ...(description ? { description } : {}),
+        }),
+      })
+      if (!created.ok) {
+        const detail = await created.text().catch(() => '')
+        // Polar rechaza el cobro desatendido al crear la orden cuando la
+        // organización no tiene el flag: eso no es un rechazo de la tarjeta.
+        if (created.status === 403) {
+          return {
+            status: 'unavailable',
+            reason: 'off-session-disabled',
+            detail: detail.slice(0, 200),
+          }
+        }
+        return { status: 'failed', reason: `order-${created.status}`, detail: detail.slice(0, 160) }
+      }
+      const draft = await created.json()
+      const orderId = String(draft.id)
+
+      const finalized = await fetchImpl(`${apiBase}/orders/${orderId}/finalize`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+      })
+      if (finalized.ok) {
+        const order = await finalized.json()
+        return { status: 'paid', orderId, amountUsd: Number(order?.net_amount ?? cents) / 100 }
+      }
+      const body = await finalized.json().catch(() => ({}))
+      if (finalized.status === 403) {
+        // El flag no está prendido en la organización: no es un cobro fallido.
+        return { status: 'unavailable', reason: 'off-session-disabled', orderId, detail: body?.detail }
+      }
+      return {
+        status: 'failed',
+        reason: finalized.status === 402 ? 'charge-failed' : `finalize-${finalized.status}`,
+        orderId,
+        detail: body?.detail,
+      }
+    },
+
     /**
      * Webhook: `order.paid` con el uid en `data.metadata.uid`. Se acredita el
      * neto (sin impuestos ni descuentos) para que el saldo sea el valor del pack.
@@ -161,6 +291,8 @@ export function createPolar({
         eventId: String(eventId),
         amountUsd: net / 100,
         provider: 'polar',
+        // Con esto el proxy puede cobrar off-session más adelante (auto top-up).
+        customerId: typeof order?.customer_id === 'string' ? order.customer_id : null,
       }
     },
   }

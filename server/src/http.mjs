@@ -70,6 +70,8 @@ export function createProxyHandler({
   store,
   verifyIdToken,
   checkout = null,
+  /** Recarga automática (cobro off-session). Sin proveedor, no se intenta. */
+  autoTopUp = null,
   now = () => new Date(),
   allowedOrigins = [],
   logger = console,
@@ -157,7 +159,31 @@ export function createProxyHandler({
           now: now(),
           quota,
         })
+
+        // La recarga automática corre después del débito: si el cobro falla,
+        // la operación ya está cobrada y la respuesta no se rompe.
+        if (result.ok && result.autoTopUp && autoTopUp) {
+          result.autoTopUp = {
+            ...result.autoTopUp,
+            charge: await autoTopUp({ request: result.autoTopUp }),
+          }
+        }
         sendOperation(res, result, cors)
+        return
+      }
+
+      if (path === '/v1/billing/portal') {
+        if (req.method !== 'POST') throw new HttpError(405, 'method-not-allowed')
+        if (!checkout) throw new HttpError(503, 'checkout-not-configured')
+        const raw = await readBody(req)
+        const payload = parseJson(raw)
+        // El portal es donde se guarda la tarjeta que usa la recarga automática.
+        await checkout.ensureCustomer({ uid: identity.uid, email: identity.email })
+        const session = await checkout.createPortalSession({
+          uid: identity.uid,
+          returnUrl: payload.returnUrl,
+        })
+        json(res, 200, session, cors)
         return
       }
 

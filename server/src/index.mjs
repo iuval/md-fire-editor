@@ -3,6 +3,7 @@
 import http from 'node:http'
 import { verifyFirebaseIdToken } from './auth.mjs'
 import { createFirestoreStore } from './firestore.mjs'
+import { runAutoTopUp } from './autotopup.mjs'
 import { createProxyHandler } from './http.mjs'
 import { createPolar } from './providers/polar.mjs'
 
@@ -16,15 +17,14 @@ function buildCheckout() {
   const { POLAR_ACCESS_TOKEN, POLAR_PRODUCT_ID, POLAR_WEBHOOK_SECRET, POLAR_SERVER } = process.env
   if (!POLAR_ACCESS_TOKEN) return null
   // Un producto por pack: así el dashboard de Polar muestra los tres.
-  const products = Object.fromEntries(
-    [1, 5, 20]
-      .map((pack) => [pack, process.env[`POLAR_PRODUCT_${pack}`]])
-      .filter(([, id]) => Boolean(id))
-  )
   return createPolar({
     accessToken: POLAR_ACCESS_TOKEN,
     productId: POLAR_PRODUCT_ID,
-    products,
+    products: Object.fromEntries(
+      [1, 5, 20]
+        .map((pack) => [pack, process.env[`POLAR_PRODUCT_${pack}`]])
+        .filter(([, id]) => Boolean(id))
+    ),
     webhookSecret: POLAR_WEBHOOK_SECRET,
     server: POLAR_SERVER === 'sandbox' ? 'sandbox' : 'production',
   })
@@ -37,11 +37,18 @@ try {
   console.warn(`checkout deshabilitado: ${error.message}`)
 }
 
+const products = Object.fromEntries(
+  [1, 5, 20]
+    .map((pack) => [pack, process.env[`POLAR_PRODUCT_${pack}`]])
+    .filter(([, id]) => Boolean(id))
+)
+
 const store = await createFirestoreStore()
 const handler = createProxyHandler({
   store,
   verifyIdToken: verifyFirebaseIdToken,
   checkout,
+  autoTopUp: (args) => runAutoTopUp({ polar: checkout, products, ...args }),
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '')
     .split(',')
     .map((origin) => origin.trim())
