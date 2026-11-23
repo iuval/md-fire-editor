@@ -1,7 +1,7 @@
 import { t } from '../i18n/index.ts'
 import { addDoc, collection, doc, serverTimestamp, setDoc, type Firestore } from 'firebase/firestore'
 import { db } from '../firebase'
-import { CREDIT_EXPIRY_MONTHS, MIN_TOP_UP_USD, type Credits } from './usage'
+import { CREDIT_EXPIRY_MONTHS, MIN_AUTO_TOP_UP_USD, MIN_TOP_UP_USD, type Credits } from './usage'
 
 /**
  * Saldo prepago: packs que vencen a los 24 meses y recarga automática opcional.
@@ -12,7 +12,7 @@ import { CREDIT_EXPIRY_MONTHS, MIN_TOP_UP_USD, type Credits } from './usage'
  * recarga, que queda como solicitud pendiente para que el proveedor de pagos la
  * cobre y acredite. Ver docs/prepaid-usage-model.md §2.
  */
-export const CREDIT_PACKS = [5, 15, 50] as const
+export const CREDIT_PACKS = [1, 5, 20] as const
 
 /** Precio de las operaciones de agente por volumen. */
 export const AGENT_OPS_PRICE_PER_100K = 0.5
@@ -43,8 +43,9 @@ export function validateCreditSettings(settings: CreditSettings): string | null 
   if (!Number.isFinite(settings.thresholdUsd) || settings.thresholdUsd < 0) {
     return t('error.negativeThreshold')
   }
-  if (!Number.isFinite(settings.topUpUsd) || settings.topUpUsd < MIN_TOP_UP_USD) {
-    return t('error.topUpMinimum', { amount: MIN_TOP_UP_USD })
+  // El monto guardado acá alimenta la recarga automática, que tiene su propio piso.
+  if (!Number.isFinite(settings.topUpUsd) || settings.topUpUsd < MIN_AUTO_TOP_UP_USD) {
+    return t('error.topUpMinimum', { amount: MIN_AUTO_TOP_UP_USD })
   }
   if (settings.autoTopUp && settings.topUpUsd <= settings.thresholdUsd) {
     return t('error.topUpBelowThreshold')

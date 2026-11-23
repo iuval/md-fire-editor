@@ -6,6 +6,7 @@ import {
   estimateCost,
   formatBytes,
   formatUsd,
+  MIN_AUTO_TOP_UP_USD,
   MIN_TOP_UP_USD,
   nextDayStart,
   RATE_DELETES_PER_100K,
@@ -62,7 +63,10 @@ describe('usage accounting', () => {
   })
 
   it('keeps the prepaid top-up floor', () => {
-    expect(MIN_TOP_UP_USD).toBe(5)
+    // Compra mínima: el pack de entrada de $1.
+    expect(MIN_TOP_UP_USD).toBe(1)
+    // La recarga automática se dispara sola: su piso es más alto.
+    expect(MIN_AUTO_TOP_UP_USD).toBe(5)
   })
 
   it('formats bytes and dollars without losing small amounts', () => {

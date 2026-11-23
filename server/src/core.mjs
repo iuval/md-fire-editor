@@ -19,8 +19,9 @@ export const FREE_QUOTA_OPS = 700
 export const QUOTA_PERIOD = 'UTC-day'
 /** 100 MB: es un stock, no un flujo. */
 export const STORAGE_LIMIT_BYTES = 100 * 1024 * 1024
-export const MIN_TOP_UP_USD = 5
-export const CREDIT_PACKS = [5, 15, 50]
+export const MIN_TOP_UP_USD = 1
+export const MIN_AUTO_TOP_UP_USD = 5
+export const CREDIT_PACKS = [1, 5, 20]
 export const CREDIT_EXPIRY_MONTHS = 24
 
 /** Precio publicado (docs/prepaid-usage-model.md §2.1), en USD por unidad. */
@@ -458,7 +459,11 @@ export async function executeNoteOperation(store, input) {
     // 6. Auto top-up: el proxy deja la orden; el cobro real lo hace el MoR (E6).
     let autoTopUp = null
     if (!admin && credits.autoTopUp && balanceUsd < Math.max(0, Number(credits.thresholdUsd ?? 0))) {
-      const amountUsd = Math.max(MIN_TOP_UP_USD, Number(credits.topUpUsd ?? MIN_TOP_UP_USD))
+      // Recarga desatendida: piso propio, más alto que el pack más barato.
+      const amountUsd = Math.max(
+        MIN_AUTO_TOP_UP_USD,
+        Number(credits.topUpUsd ?? MIN_AUTO_TOP_UP_USD)
+      )
       const id = tx.newId()
       tx.set(docPath.topup(payerUid, id), {
         amountUsd,

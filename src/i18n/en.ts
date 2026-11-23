@@ -153,7 +153,7 @@ export const en = {
     signInFailed: 'Could not sign in with Google.',
     noPermissionEdit: 'You do not have permission to edit this note',
     quotaExhausted:
-      'You reached today\'s free limit. It renews at 00:00 UTC, or you can add $5 of credit. Your text stays saved on this device.',
+      'You reached today\'s free limit. It renews at 00:00 UTC, or you can add $1 of credit. Your text stays saved on this device.',
     balanceExhausted:
       'No balance left. Add credit to keep syncing this note; your text stays saved on this device.',
     storageOver:

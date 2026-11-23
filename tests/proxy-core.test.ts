@@ -86,7 +86,7 @@ describe('precio y cuota', () => {
   })
 
   it('los packs y el mínimo son los del documento', () => {
-    expect([...CREDIT_PACKS]).toEqual([5, 15, 50])
+    expect([...CREDIT_PACKS]).toEqual([1, 5, 20])
     expect(FREE_QUOTA_OPS).toBe(700)
     expect(STORAGE_LIMIT_BYTES).toBe(100 * 1024 * 1024)
   })
@@ -359,9 +359,13 @@ describe('recargas (E6)', () => {
 
   it('rechaza un monto bajo el mínimo o sin uid', async () => {
     const store = seed()
-    await expect(creditTopUp(store, { uid: 'owner', amountUsd: 1, eventId: 'e', now })).rejects.toThrow(
+    // El pack más barato es $1: por debajo de eso no hay compra.
+    await expect(creditTopUp(store, { uid: 'owner', amountUsd: 0.5, eventId: 'e', now })).rejects.toThrow(
       'amount-below-minimum'
     )
+    await expect(creditTopUp(store, { uid: 'owner', amountUsd: 1, eventId: 'e1', now })).resolves.toMatchObject({
+      balanceUsd: 1,
+    })
     await expect(creditTopUp(store, { uid: '', amountUsd: 5, eventId: 'e', now })).rejects.toThrow(
       'missing-uid'
     )

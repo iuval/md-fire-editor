@@ -11,7 +11,8 @@ import { CREDIT_EXPIRY_MONTHS } from '../src/lib/usage'
 
 describe('prepaid credits', () => {
   it('offers packs that expire after 24 months', () => {
-    expect([...CREDIT_PACKS]).toEqual([5, 15, 50])
+    // Packs de entrada: $1 para probar sin asustar, $5 y $20 para uso real.
+    expect([...CREDIT_PACKS]).toEqual([1, 5, 20])
     expect(CREDIT_EXPIRY_MONTHS).toBe(24)
     expect(creditExpiryDate(new Date('2026-11-22T00:00:00Z')).toISOString()).toBe(
       '2028-11-01T00:00:00.000Z'

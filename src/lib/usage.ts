@@ -59,7 +59,17 @@ export const PRICE_DELETES_PER_100K = 0.1
 export const PRICE_STORAGE_GIB_MONTH = 0.6
 export const PRICE_EGRESS_GIB = 0.2
 
-export const MIN_TOP_UP_USD = 5
+/**
+ * Compra mínima: $1. Es el precio de entrada, el que no asusta a una cuenta
+ * nueva que quiere probar el modo de saldo.
+ */
+export const MIN_TOP_UP_USD = 1
+/**
+ * Piso de la recarga AUTOMÁTICA. Se dispara sola y repite el fee fijo del MoR
+ * (~$0,30-0,40 + %), así que con $1 el procesamiento se come el margen: para
+ * que se recargue sin que alguien lo mire, el mínimo es más alto.
+ */
+export const MIN_AUTO_TOP_UP_USD = 5
 
 /** El saldo prepago vence a los 24 meses (D3). */
 export const CREDIT_EXPIRY_MONTHS = 24

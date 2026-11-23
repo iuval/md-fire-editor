@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { Modal } from './Modal'
 import {
-  MIN_TOP_UP_USD,
+  MIN_AUTO_TOP_UP_USD,
   RATE_DELETES_PER_100K,
   RATE_READS_PER_100K,
   RATE_WRITES_PER_100K,
@@ -305,7 +305,7 @@ export function UsageDialog({
           <input
             className="field"
             type="number"
-            min={MIN_TOP_UP_USD}
+            min={MIN_AUTO_TOP_UP_USD}
             step={0.5}
             value={settings.topUpUsd}
             onChange={(event) => setSettings({ ...settings, topUpUsd: Number(event.target.value) })}
@@ -317,7 +317,8 @@ export function UsageDialog({
         </button>
       </div>
       <p className="hint">
-        Mínimo {formatUsd(MIN_TOP_UP_USD)} por recarga. El saldo y el libro mayor los escribe el
+        Mínimo {formatUsd(MIN_AUTO_TOP_UP_USD)} para la recarga automática (los packs sueltos
+        arrancan en {formatUsd(CREDIT_PACKS[0])}). El saldo y el libro mayor los escribe el
         servidor: acá solo se guarda la configuración.
       </p>
       {settingsError && (

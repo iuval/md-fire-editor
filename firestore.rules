@@ -616,6 +616,8 @@ service cloud.firestore {
           && request.resource.data.balanceUsd is number && request.resource.data.balanceUsd >= 0
           && request.resource.data.thresholdUsd is number && request.resource.data.thresholdUsd >= 0
           && request.resource.data.topUpUsd is number
+          // La recarga automática tiene piso propio ($5): se dispara sola y
+          // repite el fee fijo del MoR en cada disparo.
           && request.resource.data.topUpUsd >= 5
           && request.resource.data.autoTopUp is bool
           && isTimestamp(request.resource.data.updatedAt);
@@ -645,7 +647,8 @@ service cloud.firestore {
           && uid() == userId
           && request.resource.data.keys().hasOnly(['amountUsd', 'status', 'requestedAt'])
           && request.resource.data.amountUsd is number
-          && request.resource.data.amountUsd >= 5
+          // Packs desde $1: el precio de entrada es barato a propósito.
+          && request.resource.data.amountUsd >= 1
           && request.resource.data.status == 'pending'
           && isTimestamp(request.resource.data.requestedAt);
 

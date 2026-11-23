@@ -102,8 +102,8 @@ describe('diálogo de uso', () => {
 
   it('pide un pack de recarga', () => {
     const { host, onRequestTopUp } = mount()
-    clickText(host, 'Recargar $5')
-    expect(onRequestTopUp).toHaveBeenCalledWith(5)
+    clickText(host, 'Recargar $1')
+    expect(onRequestTopUp).toHaveBeenCalledWith(1)
   })
 
   it('guarda la configuración de auto top-up', () => {

@@ -251,7 +251,8 @@ de pagos.
 §3 (es el que debita y acredita), proveedor de pagos elegido y punto 4 (medición real).
 Ya **no** depende de `entitlements`: ese eje se retira (D8 de ese documento).
 
-**Hecho**: `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (regla: **≥ $5**),
+**Hecho**: `credits/{uid}` con `balanceUsd`, `thresholdUsd`, `topUpUsd` (regla: **≥ $5** para la
+recarga automática; los packs sueltos arrancan en $1),
 `autoTopUp` y libro mayor `ledger/` **inmutable**; el usuario solo lee, un admin escribe (un
 cliente no puede acreditarse saldo). La UI muestra saldo, umbral y recarga mínima dentro del
 diálogo de uso. **Falta**: cobro off-session, webhook idempotente, SCA/3DS, reintentos,

@@ -18,7 +18,7 @@ Código: `server/` (JS ESM, sin framework). Tests: `tests/proxy-core.test.ts`,
 | **E1** proxy del canal caliente | **parcial** | `block` (1 escritura), `body` (3) y `compact` (1 + N borrados) por HTTP. Presencia sigue del cliente: cobrarla antes de separar modo liviano rompería la cuota gratuita (§7). |
 | **E2** cerrar escrituras directas | **hecho, apagado** | Interruptor `config/proxy.enforced` en las rules: bloques y `body` update. Se prende después del despliegue. |
 | **E3** cuota + débito + libro | **hecho** | `allowance/{uid}/days/{d}`, débito del saldo, libro inmutable, idempotencia por `opId`, reserva por operación (nunca negativo), auto top-up. |
-| **E6** checkout MoR | **hecho** | Sesión de Lemon Squeezy + webhook firmado que acredita saldo, packs $5/$15/$50 y vencimiento a 24 meses. Falta cargar las claves del MoR. |
+| **E6** checkout MoR | **código listo, proveedor a cambiar** | Checkout + webhook firmado que acredita saldo, packs $1/$5/$20 (recarga automática desde $5) y vencimiento a 24 meses. Lemon Squeezy cerró las altas nuevas: falta implementar el adaptador de Polar y sus claves. |
 | E4 agents/MCP por el proxy | pendiente | Hoy los agentes escriben por REST con su propio token. |
 | **E5** storage exacto + compactación server-side | **parcial** | El stock se mueve en cada `body` y la compactación (manifest + borrados) ya la escribe el proxy, cobrando los borrados. Falta el cargo mensual por MB extra. |
 | E7 retirar `usage`/copy | pendiente | `usage` sigue siendo el contador de transparencia del cliente. |

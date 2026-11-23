@@ -97,11 +97,16 @@ a la tarifa publicada (§2.1), que ya incluye el margen de la app. Día sin uso 
 cargo $0. Día con uso sobre la cuota → cargo = uso extra + margen. Es un prepago puro: no hay
 suscripción, no hay tiers, no hay "incluye".
 
-- **Mínimo de recarga: $5** (con un MoR al ~5 %, $2 deja $1,40 y el procesamiento se come el
-  margen). Packs $5 / $15 / $50.
+- **Packs: $1 / $5 / $20.** El de $1 es el precio de entrada: una cuenta nueva prueba el
+  modo de saldo sin decidir un gasto. El de $20 es el que sostiene el margen.
+  El piso de compra es **$1**, y es a propósito.
+- **La recarga automática tiene su propio piso: $5.** Se dispara sola y repite el fee fijo del
+  MoR (~$0,30-0,40 + %), así que un $1 automático paga 40 % de comisión cada vez. Manual barato,
+  automático con volumen.
+- **El procesamiento del MoR se cubre con el pack de $5 en adelante.** Con $1 el fee fijo se
+  come el margen (queda ~$0,55 netos): se acepta como costo de adquisición, no como hábito.
 - **El saldo vence a los 24 meses.** "No vence" es un pasivo contable infinito y una promesa
   que no conviene hacer.
-- El procesamiento del MoR queda cubierto por el margen unitario con packs de $5.
 
 ### 2.3 La cuota gratuita (D6)
 
@@ -248,7 +253,7 @@ vuelo y se corta en la siguiente.
 | Estado | Disparador | Qué puede hacer el usuario | UI |
 |---|---|---|---|
 | `free` | dentro de la cuota | todo, en modo liviano | barra discreta en el diálogo de uso |
-| `free-exhausted` | ops al tope, día en curso | lectura cloud + escritura local | «Llegaste al tope de hoy. Se renueva a las 00:00 UTC **o** cargá $5.» |
+| `free-exhausted` | ops al tope, día en curso | lectura cloud + escritura local | «Llegaste al tope de hoy. Se renueva a las 00:00 UTC **o** cargá $1.» |
 | `low` | saldo < forecast diario | todo | aviso + auto top-up |
 | `pay-exhausted` | saldo 0 | lectura cloud + escritura local | «Sin saldo» + export + cargar |
 | `storage-over` | storage > 100 MB | lectura + export; se rechaza la escritura que cruza | nombra la nota más pesada, no borra |
@@ -335,7 +340,7 @@ nota, con su `id` y su `etag`, no un borrador suelto) ni la cola CRDT.
 | **E3** | `allowance` + débito + ledger + reserva por mensaje + auto top-up | E2 | M |
 | **E4** | Agentes CLI/MCP por el proxy; rate limit server-side | E3 | S/M |
 | **E5** | Storage exacto y compactación server-side | E2 | M |
-| **E6** | Checkout MoR (packs $5/$15/$50, cargo diario, vigencia 24 meses, factura) | E3 | L |
+| **E6** | Checkout MoR (packs $1/$5/$20, cargo diario, vigencia 24 meses, factura) | E3 | L |
 | **E7** | Retirar `entitlements`/`hasPaidPlan`/`UpgradeDialog`; reescribir el copy de "gratis para siempre" | E3, E6 | S |
 
 **Estado observado en el árbol de trabajo (23-nov-2026).** E7 está hecha: `entitlements` y
@@ -355,7 +360,7 @@ escribe por el proxy cuando `VITE_PROXY_URL` está configurado (ver [`proxy.md`]
 - **E3**: `allowance/{uid}/days/{d}` + débito del saldo + libro inmutable + reserva por
   operación + auto top-up. El cliente lee la cuota del servidor y muestra el cargo con esos
   números.
-- **E6**: checkout de Lemon Squeezy y webhook firmado que acredita saldo (packs $5/$15/$50,
+- **E6**: checkout de Lemon Squeezy y webhook firmado que acredita saldo (packs $1/$5/$20,
   vencimiento 24 meses). Falta cargar las claves del MoR.
 
 Lo que sigue afuera del medidor: presencia, compactación, agentes CLI/MCP (E4) y el sync de

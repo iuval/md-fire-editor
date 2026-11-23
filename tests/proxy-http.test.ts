@@ -158,13 +158,16 @@ describe('proxy HTTP', () => {
   })
 
   it('crea la sesión de checkout solo con un pack válido', async () => {
-    const ok = await post('/v1/billing/checkout', { packUsd: 15 })
+    const ok = await post('/v1/billing/checkout', { packUsd: 20 })
     expect(ok.status).toBe(200)
-    expect(await ok.json()).toMatchObject({ url: 'https://checkout.test/15?uid=owner', packUsd: 15 })
+    expect(await ok.json()).toMatchObject({ url: 'https://checkout.test/20?uid=owner', packUsd: 20 })
     expect(checkout.createSession).toHaveBeenCalledWith(
-      expect.objectContaining({ uid: 'owner', packUsd: 15 })
+      expect.objectContaining({ uid: 'owner', packUsd: 20 })
     )
 
+    // El pack de entrada de $1 es válido; $15 (pack viejo) y $7 no existen.
+    expect((await post('/v1/billing/checkout', { packUsd: 1 })).status).toBe(200)
+    expect((await post('/v1/billing/checkout', { packUsd: 15 })).status).toBe(400)
     expect((await post('/v1/billing/checkout', { packUsd: 7 })).status).toBe(400)
   })
 

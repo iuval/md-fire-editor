@@ -1224,9 +1224,17 @@ describe('usage and credits', () => {
   })
 
   it('a user can request a top-up but not mark it paid', async () => {
+    // Pack de entrada de $1: el piso bajó, el techo de quien escribe no cambió.
     await assertSucceeds(
       addDoc(collection(db(OWNER), 'credits', OWNER, 'topups'), {
-        amountUsd: 5,
+        amountUsd: 1,
+        status: 'pending',
+        requestedAt: ts(),
+      })
+    )
+    await assertFails(
+      addDoc(collection(db(OWNER), 'credits', OWNER, 'topups'), {
+        amountUsd: 0.5,
         status: 'pending',
         requestedAt: ts(),
       })
