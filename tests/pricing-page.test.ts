@@ -31,8 +31,9 @@ import {
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const page = readFileSync(resolve(ROOT, 'public/planes/index.html'), 'utf8')
+const page = readFileSync(resolve(ROOT, 'public/pricing/index.html'), 'utf8')
 const sitemap = readFileSync(resolve(ROOT, 'public/sitemap.xml'), 'utf8')
+const hosting = JSON.parse(readFileSync(resolve(ROOT, 'firebase.json'), 'utf8')).hosting
 
 const money = (value: number) => `$${value.toFixed(2)}`
 const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`
@@ -44,12 +45,33 @@ describe('pricing page: language and canonical', () => {
   })
 
   it('declares the canonical URL it is served from, plus hreflang for the next locale', () => {
-    expect(page).toContain('<link rel="canonical" href="https://firemd.app/planes/" />')
-    expect(page).toContain('<link rel="alternate" hreflang="en" href="https://firemd.app/planes/" />')
+    expect(page).toContain('<link rel="canonical" href="https://firemd.app/pricing/" />')
+    expect(page).toContain('<link rel="alternate" hreflang="en" href="https://firemd.app/pricing/" />')
     expect(page).toContain('<link rel="alternate" hreflang="x-default"')
     // The sitemap must submit the URL the server actually answers without a redirect.
-    expect(sitemap).toContain('<loc>https://firemd.app/planes/</loc>')
-    expect(sitemap).not.toContain('<loc>https://firemd.app/planes</loc>')
+    expect(sitemap).toContain('<loc>https://firemd.app/pricing/</loc>')
+    expect(sitemap).not.toContain('<loc>https://firemd.app/pricing</loc>')
+  })
+
+  it('keeps the retired Spanish slug working with a 301', () => {
+    // The page shipped at /planes first; links and the merchant-of-record review
+    // already point at it, so the old route must never 404.
+    const redirects = hosting.redirects ?? []
+    for (const source of ['/planes', '/planes/:rest*', '/plans', '/plans/:rest*']) {
+      const rule = redirects.find((r: { source: string }) => r.source === source)
+      expect(rule, `missing redirect for ${source}`).toBeTruthy()
+      expect(rule.destination).toBe('/pricing')
+      expect(rule.type).toBe(301)
+    }
+    // ...and no rewrite may keep serving the removed directory.
+    const rewrites = hosting.rewrites ?? []
+    expect(rewrites.some((r: { source?: string }) => r.source === '/planes')).toBe(false)
+  })
+
+  it('does not link to the repository, which is not public yet', () => {
+    // A marketing page that points at a private repo is a dead end; the link
+    // goes back in the day the repository is published with a licence.
+    expect(page).not.toContain('github.com')
   })
 
   it('carries no leftover Spanish', () => {

@@ -28,7 +28,7 @@ Tres cosas del brief no se sostienen contra el código actual:
    Firestore, pero no hay edición offline de un visitante sin sesión (no hay dónde guardar).
 
 Orden correcto: **(1)** decisión de modelo comercial → **(2)** modo visitante con borrador
-local → **(3)** capa de descubrimiento → **(4)** `/planes` + SEO.
+local → **(3)** capa de descubrimiento → **(4)** `/pricing` + SEO.
 
 **Corrección del 22-nov-2026 (usuario).** El visitante **no** ve una página distinta: ve el
 **mismo editor** de la app. La cuota gratuita se renueva cada mes, así que la app se puede
@@ -49,7 +49,7 @@ La primera implementación usó un `<textarea>`; se reemplazó por el stack real
 | 2b | No hay store local de cuerpos: el único `localStorage` de contenido es la migración de esquema v1→v2 (Firestore→Firestore) | `src/lib/notes.ts:906-950`, `src/hooks/useFirebase.ts:165-171` |
 | 3 | `localStorage` guarda **solo preferencias**: nota activa, sidebar, paneles, tema, ancho, snap de canvas | `src/AppTree.tsx:185,193,201,211,609-620`, `src/components/Sidebar.tsx:74-164`, `src/components/CanvasSurface.tsx:120,227` |
 | 4 | No hay router: cero `history.pushState` / `location.pathname`; los links compartidos son `/?note=<id>` | `src/components/ShareDialog.tsx:53`; grep sin resultados en `src/` (solo `legacyHost.ts:27` lee `pathname` para el redirect de origen) |
-| 5 | `firebase.json` **no tiene `rewrites`** → una ruta `/planes` daría 404 | `firebase.json` (clave `hosting`, sin `rewrites`) |
+| 5 | `firebase.json` **no tiene `rewrites`** → una ruta `/pricing` daría 404 | `firebase.json` (clave `hosting`, sin `rewrites`) |
 | 6 | SEO: `index.html` con meta genérica; **no hay `robots.txt` ni `sitemap.xml`** en `public/` | `index.html:13-40`, `ls public/` |
 | 7 | `public/llms.txt` existe y describe CLI/MCP, pero **no menciona planes, precios ni cuota** | `public/llms.txt` |
 | 8 | Planes: `entitlements/{uid}` con `plan: 'free' \| 'paid'`; compartir y agentes se cortan por regla | `src/lib/entitlements.ts:1-40`, `firestore.rules:90,99` |
@@ -82,7 +82,7 @@ preferencias; el cuerpo vive en `notes/{id}/body/main` y en el CRDT.
 brief, `UpgradeDialog`, `pricing.md` y `comercial-review.md` dicen cosas distintas. Cualquier
 copy de landing va a prometer algo que el producto no hace.
 
-**G4. `/planes` daría 404.** No hay router y `firebase.json` no reescribe. La ruta del brief
+**G4. `/pricing` daría 404.** No hay router y `firebase.json` no reescribe. La ruta del brief
 no existe como superficie.
 
 ### P1 — la capa de descubrimiento en sí
@@ -130,7 +130,7 @@ desde el principio para no tener que corregirlo después.
 > |---|---|---|
 > | D1 | **Cuota gratuita mensual + créditos prepagos** (pay-per-use + fee; el tiempo real es pago). | `src/lib/quota.ts`, `src/lib/credits.ts`, `docs/prepaid-usage-model.md` |
 > | D2 | **Workspace local-first** en `localStorage` (`firemd-local-store`): notas, carpetas y cuerpos. Se migra al entrar, una sola vez. | `src/lib/localStore.ts`, `src/AppTree.tsx` |
-> | D3 | **Página estática** `public/planes/index.html` con HTML prerenderizado y rewrite en `firebase.json`. | `public/planes/index.html`, `firebase.json` |
+> | D3 | **Página estática** `public/pricing/index.html` con HTML prerenderizado y rewrite en `firebase.json`. | `public/pricing/index.html`, `firebase.json` |
 > | D4 | **El modo visitante solo sin sesión y sin nota compartida.** | `src/lib/guestMode.ts`, `src/AppTree.tsx` |
 | D5 | **El visitante usa el shell completo y el mismo editor** (sidebar, carpetas, pestañas, paneles, Tiptap + Yjs) con transporte local. No hay editor propio ni página aparte: es el mismo `AppTree` con otro store. | `src/AppTree.tsx` (`guest`), `src/lib/localStore.ts`, `src/lib/collab/noteSession.ts` (`local`) |
 | D6 | **Tema por defecto: `nordico`** (azul-gris), no el blanco de fábrica. La apariencia sigue al sistema. | `src/lib/theme.ts` (`DEFAULT_PRESET_ID`) |
@@ -152,15 +152,15 @@ Recomendación: **(a) local-first**. El anónimo agrega una cuenta que hay que e
 `memberIds` en las reglas y complica la revocación; el borrador local no toca Firestore hasta
 que el usuario decide guardar. Costo: hay que escribir el adapter local (G2) y la migración.
 
-**D3 — ¿Cómo existe `/planes`?**
+**D3 — ¿Cómo existe `/pricing`?**
 (a) rewrite a `index.html` + chequeo de `pathname` en `main.tsx` (barato, malo para SEO);
-(b) **página estática propia** generada en build (Vite multi-page o `public/planes/index.html`)
+(b) **página estática propia** generada en build (Vite multi-page o `public/pricing/index.html`)
 con su meta y su HTML prerenderizado (bueno para SEO, un poco más de trabajo).
 Recomendación: **(b)**. El objetivo del brief incluye tráfico de búsqueda; una landing que
 solo existe después de ejecutar React no captura nada.
 
 **D4 — ¿Dónde se muestra la landing?**
-Solo en vista de visitante sin sesión y en `/planes` (brief §3.3). Nunca en nota compartida ni
+Solo en vista de visitante sin sesión y en `/pricing` (brief §3.3). Nunca en nota compartida ni
 en sesión logueada. Se deja escrito en el código como una condición única, no repartida.
 
 ---
@@ -206,19 +206,19 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
 - [x] Tests: `tests/guest-mode.test.tsx` (copy de la nota de bienvenida), `tests/sync-status.test.ts`.
 - [ ] Aceptación en navegador real (requiere deploy).
 
-### Fase 3 — `/planes` + landing informativa (1–2 días)
+### Fase 3 — `/pricing` + landing informativa (1–2 días)
 
-- [x] Según D3: `public/planes/index.html` con `<title>`, meta, canonical y HTML prerenderizado.
+- [x] Según D3: `public/pricing/index.html` con `<title>`, meta, canonical y HTML prerenderizado.
 - [x] Contenido: propuesta de valor, 4 pilares, modelo de cuota + créditos, FAQ corta.
 - [x] Enlazada desde `public/llms.txt` y desde el diálogo de uso; no desde el editor del
       visitante (ya no hay franja).
-- [ ] Aceptación contra producción: `curl -s https://firemd.app/planes | grep -F "..."` y
+- [ ] Aceptación contra producción: `curl -s https://firemd.app/pricing | grep -F "..."` y
       `scripts/check-site.mjs` con el host agregado.
 
 ### Fase 4 — SEO y medición (½–1 día)
 
-- [x] `public/robots.txt` + `public/sitemap.xml` (con `/` y `/planes`).
-- [x] `public/llms.txt` actualizado con planes, cuota y ruta `/planes`.
+- [x] `public/robots.txt` + `public/sitemap.xml` (con `/` y `/pricing`).
+- [x] `public/llms.txt` actualizado con planes, cuota y ruta `/pricing`.
 - [x] Eventos del embudo: `landing_viewed`, `pricing_viewed`, `guest_draft_started`,
       `guest_signin_clicked`, `guest_draft_saved`. Contador local
       (`firemd-guest-events`) y volcado a `analytics` al entrar; reglas actualizadas.
@@ -281,7 +281,7 @@ Archivos nuevos:
 | `src/lib/guestMode.ts` | Condición única D4: `!user && !sharedNote`. |
 | `src/lib/guestAnalytics.ts` | Contador local del embudo y volcado a `analytics` al entrar. |
 | `src/components/GuestDraftDialog.tsx` | Oferta de guardar el borrador suelto al entrar. |
-| `public/planes/index.html` | Landing estática con SEO propio. |
+| `public/pricing/index.html` | Landing estática con SEO propio. |
 | `public/robots.txt`, `public/sitemap.xml` | Indexación. |
 
 Cambios:
@@ -304,8 +304,8 @@ Cambios:
   mismo editor con el placeholder de bienvenida.
 - `firestore.rules`: compartir dejó de exigir plan pago; eventos de embudo agregados a la
   lista validada.
-- `firebase.json`: rewrite `/planes` → `public/planes/index.html`.
-- `public/llms.txt`: planes, cuota y `/planes`.
+- `firebase.json`: rewrite `/pricing` → `public/pricing/index.html`.
+- `public/llms.txt`: planes, cuota y `/pricing`.
 
 Pendiente y por qué:
 
@@ -326,8 +326,8 @@ Pendiente y por qué:
    D1 antes de escribir la landing.
 2. **Duplicar el árbol de datos con el store local** → dos caminos que se desincronizan.
    Mitigación: interfaz mínima (crear/leer/escribir cuerpo/título), no un segundo `notes.ts`.
-3. **Service worker sirviendo el shell cacheado para `/planes`** → la landing estática no se
-   actualiza. Mitigación: excluir `/planes` del precache o versionar el SW.
+3. **Service worker sirviendo el shell cacheado para `/pricing`** → la landing estática no se
+   actualiza. Mitigación: excluir `/pricing` del precache o versionar el SW.
 4. **CSP**: `img-src 'self' data: blob: https:` permite imágenes externas; si la landing usa
    fuentes o scripts externos, hay que ajustar `script-src`/`font-src` en `firebase.json`.
 5. **Analítica del visitante**: `track` exige uid y las reglas validan nombres. Agregar eventos
@@ -366,9 +366,9 @@ grep -n "local ? null : undefined" src/lib/collab/noteSession.ts
 # tema por defecto
 grep -n "DEFAULT_PRESET_ID = 'nordico'" src/lib/theme.ts
 
-# rutas: /planes es estática con rewrite
+# rutas: /pricing es estática con rewrite
 grep -c rewrites firebase.json
-ls public/planes/index.html
+ls public/pricing/index.html
 
 # SEO
 ls public | grep -iE 'robots|sitemap'

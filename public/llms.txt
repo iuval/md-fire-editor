@@ -32,7 +32,7 @@ credenciales de la CLI.
 - Cargo diario: solo el uso que pasa la cuota, con el margen de la app incluido. Las cuentas
   admin no pagan.
 - El tiempo real (presencia y cursores) se paga con saldo; el modo gratuito edita en modo liviano.
-- [Planes y uso](https://firemd.app/planes): detalle de la cuota, los packs y las preguntas
+- [Planes y uso](https://firemd.app/pricing): detalle de la cuota, los packs y las preguntas
   frecuentes.
 - La app muestra el consumo y el costo estimado. El cobro con tarjeta todavía no está
   habilitado: la recarga se solicita desde la app y se acredita al confirmarse.
@@ -40,5 +40,5 @@ credenciales de la CLI.
 ## Sitio
 
 - [Editor](https://firemd.app): la aplicación web.
-- [Planes y uso](https://firemd.app/planes): cuota gratuita, saldo prepago y FAQ.
+- [Planes y uso](https://firemd.app/pricing): cuota gratuita, saldo prepago y FAQ.
 - [Guía para agentes](https://firemd.app/agent.md): CLI y servidor MCP.
