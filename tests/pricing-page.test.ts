@@ -60,7 +60,7 @@ describe('pricing page: language and canonical', () => {
     for (const source of ['/planes', '/planes/:rest*', '/plans', '/plans/:rest*']) {
       const rule = redirects.find((r: { source: string }) => r.source === source)
       expect(rule, `missing redirect for ${source}`).toBeTruthy()
-      expect(rule.destination).toBe('/pricing')
+      expect(rule.destination).toBe('/pricing/')
       expect(rule.type).toBe(301)
     }
     // ...and no rewrite may keep serving the removed directory.
