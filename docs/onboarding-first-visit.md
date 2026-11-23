@@ -131,10 +131,10 @@ desde el principio para no tener que corregirlo después.
 > | D1 | **Cuota gratuita mensual + créditos prepagos** (pay-per-use + fee; el tiempo real es pago). | `src/lib/quota.ts`, `src/lib/credits.ts`, `docs/prepaid-usage-model.md` |
 > | D2 | **Workspace local-first** en `localStorage` (`firemd-local-store`): notas, carpetas y cuerpos. Se migra al entrar, una sola vez. | `src/lib/localStore.ts`, `src/AppTree.tsx` |
 > | D3 | **Página estática** `public/planes/index.html` con HTML prerenderizado y rewrite en `firebase.json`. | `public/planes/index.html`, `firebase.json` |
-> | D4 | **La franja y la landing solo en visitante sin sesión y sin nota compartida.** | `src/lib/guestMode.ts`, `src/AppTree.tsx` |
+> | D4 | **El modo visitante solo sin sesión y sin nota compartida.** | `src/lib/guestMode.ts`, `src/AppTree.tsx` |
 | D5 | **El visitante usa el shell completo y el mismo editor** (sidebar, carpetas, pestañas, paneles, Tiptap + Yjs) con transporte local. No hay editor propio ni página aparte: es el mismo `AppTree` con otro store. | `src/AppTree.tsx` (`guest`), `src/lib/localStore.ts`, `src/lib/collab/noteSession.ts` (`local`) |
 | D6 | **Tema por defecto: `nordico`** (azul-gris), no el blanco de fábrica. La apariencia sigue al sistema. | `src/lib/theme.ts` (`DEFAULT_PRESET_ID`) |
-| D7 | **Una sola franja de 36 px** con la cuota y el CTA; sin popup ni modal al escribir. Se compacta a solo el botón cuando el panel está colapsado. | `src/components/GuestStrip.tsx`, `src/index.css` |
+| D7 | **Sin franja ni diálogo de bienvenida.** El primer contacto es un anotador: una nota vacía con el cursor listo, más la nota «Welcome to FireMD» con el contenido de «¿Qué es FireMD?». Entrar se ofrece desde el menú de la cuenta (⚙). | `src/AppTree.tsx` (seed), `src/i18n/en.ts` (`guest.welcome*`) |
 
 **D1 — Modelo comercial: flat o pay-per-use.**
 Recomendación: **flat ahora, pay-per-use cuando el medidor sea confiable**. Razones:
@@ -194,26 +194,24 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
 
 ### Fase 2 — Capa de descubrimiento no invasiva (1–2 días)
 
-- [x] Franja de 36 px (`GuestStrip`) sobre el panel: cuota gratuita + `¿Qué es FireMD?` +
-      `Entrar con Google`. Sin hero encima del editor y sin modal.
-- [x] CTA: botón en la franja, siempre visible; nunca un popup al escribir. Cuando el panel
-      está colapsado la franja se compacta a solo el botón.
-- [x] Nota de bienvenida: **nota real** sembrada en el store local con los 4 pilares, ya
-      abierta en una pestaña. No es un placeholder: se puede editar, borrar y reabrir.
-- [x] Diálogo `¿Qué es FireMD?` (`GuestInfoDialog`) con pilares y modelo, abierto desde la
-      franja; nunca automático.
+- [x] **Sin franja** (`GuestStrip` retirado): nada de chrome encima del editor. Entrar se
+      ofrece desde el menú de la cuenta (⚙), y la nota de bienvenida dice dónde.
+- [x] Primer contacto = anotador: el seed crea **una nota vacía abierta con el cursor en el
+      título** (el mismo camino que el botón +) y **una nota «Welcome to FireMD»** con el
+      contenido de «¿Qué es FireMD?» (4 pilares + cuota), abierta en su propia pestaña.
+- [x] Ambas son notas reales del store local: se pueden editar, borrar y reabrir.
 - [x] Regla D4 explícita en `shouldShowGuestView()`: solo `!user && !sharedNote`.
 - [x] Estado de sincronización honesto: el proveedor local reporta `Local` en vez de un
       "error de sincronización" falso.
-- [x] Tests: `tests/guest-mode.test.tsx` (franja, diálogo, compacto), `tests/sync-status.test.ts`.
+- [x] Tests: `tests/guest-mode.test.tsx` (copy de la nota de bienvenida), `tests/sync-status.test.ts`.
 - [ ] Aceptación en navegador real (requiere deploy).
 
 ### Fase 3 — `/planes` + landing informativa (1–2 días)
 
 - [x] Según D3: `public/planes/index.html` con `<title>`, meta, canonical y HTML prerenderizado.
 - [x] Contenido: propuesta de valor, 4 pilares, modelo de cuota + créditos, FAQ corta.
-- [x] Enlazada desde la franja y desde el pie de la vista de visitante. Nunca desde el editor
-      en sesión.
+- [x] Enlazada desde `public/llms.txt` y desde el diálogo de uso; no desde el editor del
+      visitante (ya no hay franja).
 - [ ] Aceptación contra producción: `curl -s https://firemd.app/planes | grep -F "..."` y
       `scripts/check-site.mjs` con el host agregado.
 
@@ -250,14 +248,16 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
 - "pay-per-use con auto top-up" → no hay checkout ni medidor server-side (hasta cerrar D1).
 - "cuota gratuita generosa" con cifra → no hay tope definido (G9).
 
-**Nota de bienvenida (10 líneas, borrador)**
-> Esto es FireMD. Escribí acá ahora: no hace falta cuenta.
-> Lo que escribas queda en este navegador hasta que decidas guardarlo.
-> **Colaboración:** dos personas en el mismo párrafo sin pisarse (CRDT).
-> **Carpetas y permisos:** Dueño, Escritura, Lectura, por carpeta y por nota.
-> **Agentes:** `firemd ls`, `firemd cat`, `firemd patch --etag …` y un servidor MCP.
-> **Tu Markdown sigue siendo Markdown:** exportá el vault cuando quieras.
-> Guardá esta nota en tu cuenta cuando quieras compartirla.
+**Nota de bienvenida (copy vigente, `guest.welcomeBody`)**
+> FireMD is a real-time collaborative Markdown editor. What you write here stays in this
+> browser until you sign in.
+> - **Collaboration**: two people in the same paragraph without stepping on each other (CRDT).
+> - **Folders and permissions**: Owner, Can edit, Read only, per folder and per note.
+> - **Agents**: `firemd ls`, `firemd cat`, `firemd patch --etag …` and an MCP server.
+> - **Portable**: your Markdown stays Markdown. Export the vault whenever you want.
+> The free tier is 100 MB of storage and 700 actions a day, no card. Past that, prepaid
+> credits — no subscription.
+> Sign in from the gear menu to keep these notes in your account and share them.
 
 **FAQ corta**
 - ¿Qué pasa con lo que escribo antes de entrar? Queda en tu navegador; al entrar te ofrecemos
@@ -280,7 +280,6 @@ Archivos nuevos:
 | `src/lib/guestMigration.ts` | Crea la nota real con `createNote` + `saveNoteContent`. |
 | `src/lib/guestMode.ts` | Condición única D4: `!user && !sharedNote`. |
 | `src/lib/guestAnalytics.ts` | Contador local del embudo y volcado a `analytics` al entrar. |
-| `src/components/GuestStrip.tsx` | Franja de 36 px: cuota, `¿Qué es FireMD?` y el CTA. Incluye `GuestInfoDialog`. |
 | `src/components/GuestDraftDialog.tsx` | Oferta de guardar el borrador suelto al entrar. |
 | `public/planes/index.html` | Landing estática con SEO propio. |
 | `public/robots.txt`, `public/sitemap.xml` | Indexación. |
