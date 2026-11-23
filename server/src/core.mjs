@@ -42,6 +42,8 @@ export const PRICES = {
 export const OP_WRITES = {
   block: 1,
   body: 3,
+  // Compactar escribe el manifest; cada bloque podado es un borrado aparte.
+  compact: 1,
 }
 
 const MAX_BLOCK_BYTES = 500_000
@@ -57,6 +59,7 @@ export const docPath = {
   folder: (folderId) => `folders/${folderId}`,
   noteBody: (noteId) => `notes/${noteId}/body/main`,
   noteBlock: (noteId, opId) => `notes/${noteId}/updates/${opId}`,
+  noteManifest: (noteId) => `notes/${noteId}/collab/manifest`,
   admin: (uid) => `admins/${uid}`,
   allowance: (uid) => `allowance/${uid}`,
   allowanceDay: (uid, day) => `allowance/${uid}/days/${day}`,
@@ -212,6 +215,36 @@ export function validBody(body) {
   return null
 }
 
+const DOC_ID = /^[A-Za-z0-9_-]{1,64}$/
+/** Máximo de borrados por transacción: 400 deja lugar al manifest y al recibo. */
+export const MAX_COMPACT_BLOCKS = 400
+
+/**
+ * Compactación server-side (E5): el cliente manda el snapshot ya aplicado y los
+ * ids que quedaron plegados en él. Solo se borran esos ids, así que un bloque
+ * escrito mientras se compactaba no se pierde nunca.
+ */
+export function validCompact(payload) {
+  if (!isPlainObject(payload)) return 'invalid-compact'
+  const ids = payload.blockIds
+  if (!Array.isArray(ids) || ids.length === 0) return 'invalid-block-ids'
+  if (ids.length > MAX_COMPACT_BLOCKS) return 'too-many-block-ids'
+  if (ids.some((id) => typeof id !== 'string' || !DOC_ID.test(id))) return 'invalid-block-id'
+  const m = payload.manifest
+  if (!isPlainObject(m)) return 'invalid-manifest'
+  if (m.epoch !== 1) return 'invalid-epoch'
+  if (typeof m.snapshot !== 'string' || !m.snapshot || m.snapshot.length > 900_000) {
+    return 'invalid-snapshot'
+  }
+  if (typeof m.stateVector !== 'string' || !m.stateVector || m.stateVector.length > 4096) {
+    return 'invalid-state-vector'
+  }
+  if (!Number.isInteger(m.jid) || m.jid < 0) return 'invalid-jid'
+  if (!Number.isInteger(m.bytes) || m.bytes < 0) return 'invalid-bytes'
+  if (!Number.isInteger(m.clientId)) return 'invalid-client-id'
+  return null
+}
+
 function byteLength(text) {
   return Buffer.byteLength(String(text ?? ''), 'utf8')
 }
@@ -248,7 +281,8 @@ export async function executeNoteOperation(store, input) {
   if (typeof opId !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(opId)) {
     return failure(400, 'invalid-op-id')
   }
-  const invalid = kind === 'block' ? validBlock(payload) : validBody(payload)
+  const invalid =
+    kind === 'block' ? validBlock(payload) : kind === 'body' ? validBody(payload) : validCompact(payload)
   if (invalid) return failure(400, invalid)
 
   const day = dayKey(now)
@@ -320,13 +354,14 @@ export async function executeNoteOperation(store, input) {
 
     // 4-5. Cuota y saldo.
     const writes = OP_WRITES[kind]
+    const deletes = kind === 'compact' ? payload.blockIds.length : 0
     const allowanceDay = await tx.get(docPath.allowanceDay(payerUid, day))
     const opsUsedBefore = Math.max(0, Number(allowanceDay?.opsUsed ?? 0))
     const credits = (await tx.get(docPath.credits(payerUid))) ?? {}
     const balanceBefore = Math.max(0, Number(credits.balanceUsd ?? 0))
     const charge = admin
       ? { chargeableWrites: 0, chargeableDeletes: 0, costUsd: 0 }
-      : chargeFor({ opsUsed: opsUsedBefore, writes, quota })
+      : chargeFor({ opsUsed: opsUsedBefore, writes, deletes, quota })
 
     if (charge.costUsd > 0 && balanceBefore < charge.costUsd) {
       const state = balanceBefore <= 0
@@ -352,6 +387,17 @@ export async function executeNoteOperation(store, input) {
         clientId: payload.clientId,
         createdAt: now,
       })
+    } else if (kind === 'compact') {
+      tx.set(docPath.noteManifest(noteId), {
+        epoch: payload.manifest.epoch,
+        snapshot: payload.manifest.snapshot,
+        stateVector: payload.manifest.stateVector,
+        jid: payload.manifest.jid,
+        bytes: payload.manifest.bytes,
+        clientId: payload.manifest.clientId,
+        updatedAt: now,
+      })
+      for (const id of payload.blockIds) tx.delete(docPath.noteBlock(noteId, id))
     } else {
       const metadata = {
         markdownBytes: payload.markdown.length,
@@ -375,9 +421,9 @@ export async function executeNoteOperation(store, input) {
       tx.set(docPath.allowance(payerUid), { storageBytes: storageNow + storageDelta }, { merge: true })
     }
 
-    const opsUsed = opsUsedBefore + writes
+    const opsUsed = opsUsedBefore + writes + deletes
     const writesTotal = Math.max(0, Number(allowanceDay?.writes ?? opsUsedBefore)) + writes
-    const deletesTotal = Math.max(0, Number(allowanceDay?.deletes ?? 0))
+    const deletesTotal = Math.max(0, Number(allowanceDay?.deletes ?? 0)) + deletes
     tx.set(
       docPath.allowanceDay(payerUid, day),
       {

@@ -15,12 +15,12 @@ Código: `server/` (JS ESM, sin framework). Tests: `tests/proxy-core.test.ts`,
 
 | Etapa | Estado | Nota |
 |---|---|---|
-| **E1** proxy del canal caliente | **parcial** | `block` (1 escritura) y `body` (3) por HTTP. Presencia y compactación siguen del lado del cliente. |
+| **E1** proxy del canal caliente | **parcial** | `block` (1 escritura), `body` (3) y `compact` (1 + N borrados) por HTTP. Presencia sigue del cliente: cobrarla antes de separar modo liviano rompería la cuota gratuita (§7). |
 | **E2** cerrar escrituras directas | **hecho, apagado** | Interruptor `config/proxy.enforced` en las rules: bloques y `body` update. Se prende después del despliegue. |
 | **E3** cuota + débito + libro | **hecho** | `allowance/{uid}/days/{d}`, débito del saldo, libro inmutable, idempotencia por `opId`, reserva por operación (nunca negativo), auto top-up. |
 | **E6** checkout MoR | **hecho** | Sesión de Lemon Squeezy + webhook firmado que acredita saldo, packs $5/$15/$50 y vencimiento a 24 meses. Falta cargar las claves del MoR. |
 | E4 agents/MCP por el proxy | pendiente | Hoy los agentes escriben por REST con su propio token. |
-| E5 storage exacto + compactación server-side | pendiente | El stock se mueve en cada `body`; la compactación sigue siendo del cliente. |
+| **E5** storage exacto + compactación server-side | **parcial** | El stock se mueve en cada `body` y la compactación (manifest + borrados) ya la escribe el proxy, cobrando los borrados. Falta el cargo mensual por MB extra. |
 | E7 retirar `usage`/copy | pendiente | `usage` sigue siendo el contador de transparencia del cliente. |
 
 ## 2. API
@@ -34,6 +34,7 @@ Todas las rutas salvo el health check y el webhook piden
 | `GET` | `/v1/account` | — | cuota del día, storage, saldo, estado |
 | `POST` | `/v1/notes/{noteId}/blocks` | `{ opId, block }` | recibo de la operación |
 | `POST` | `/v1/notes/{noteId}/body` | `{ opId, body }` | recibo de la operación |
+| `POST` | `/v1/notes/{noteId}/compact` | `{ opId, compact: { blockIds, manifest } }` | recibo (hasta 400 borrados por mensaje) |
 | `POST` | `/v1/billing/checkout` | `{ packUsd, successUrl? }` | `{ url, id, packUsd }` |
 | `POST` | `/v1/billing/webhook` | evento del MoR (crudo) | `{ ok, idempotent }` |
 
@@ -79,8 +80,9 @@ remitente; `404 note-not-found`; `400` = payload inválido (no se cobra).
    una orden `credits/{uid}/topups/{id}` pendiente para el MoR.
 
 Escrituras por operación (`OP_WRITES`): `block` = 1, `body` = 3 (body + nota +
-recibo de idempotencia). El cargo se calcula con el precio publicado
-(`$0,50/100k` escrituras, `$0,10/100k` borrados) sobre lo que cruza la cuota.
+recibo de idempotencia), `compact` = 1 (manifest) + 1 por bloque podado. El cargo
+se calcula con el precio publicado (`$0,50/100k` escrituras, `$0,10/100k`
+borrados) sobre lo que cruza la cuota.
 
 ## 4. Datos que escribe
 
@@ -176,10 +178,9 @@ npm run test:proxy:store
 
 ## 7. Lo que falta para cerrar E1/E5
 
-- **Presencia**: hoy se escribe directo (`presence/{uid}`), no se cobra.
-- **Compactación**: el cliente sigue borrando bloques con un batch directo; con
-  E2 prendido esos deletes fallan. Antes de prender el interruptor hay que
-  mover `maybeCompact()` al proxy (`kind: 'compact'`, 1 borrado por bloque).
+- **Presencia**: se escribe directo (`presence/{uid}`) y no se cobra. Cobrarla
+  hoy agotaría la cuota gratuita en minutos (una escritura cada pocos segundos),
+  así que primero hay que separar modo liviano (sin presencia) de modo live (D1).
 - **Agentes CLI/MCP**: escriben por REST con el token del agente; siguen fuera
   del medidor hasta E4.
 - **Escritorio**: sigue con pull/push cada 15 s contra Firestore (D4).

@@ -389,3 +389,117 @@ describe('lectura del estado', () => {
     })
   })
 })
+
+describe('compactación por el proxy (E5)', () => {
+  const manifest = {
+    epoch: 1,
+    snapshot: 'AAAA',
+    stateVector: 'BBBB',
+    jid: 3,
+    bytes: 3,
+    clientId: 9,
+  }
+  const blockDoc = (jid: number) => ({
+    v: 1,
+    jid,
+    hash: '0123456789ab',
+    bytes: 3,
+    data: 'AQID',
+    clientId: 1,
+    createdAt: now,
+  })
+
+  const compact = (store: ReturnType<typeof seed>, input: Record<string, unknown> = {}) =>
+    executeNoteOperation(store, {
+      senderUid: 'owner',
+      noteId: 'n1',
+      kind: 'compact',
+      opId: 'op_compactaaaaa',
+      payload: { blockIds: ['b1', 'b2'], manifest },
+      now,
+      ...input,
+    })
+
+  it('escribe el manifest y borra solo los ids plegados en el snapshot', async () => {
+    const store = seed({
+      'notes/n1/updates/b1': blockDoc(1),
+      'notes/n1/updates/b2': blockDoc(2),
+      'notes/n1/updates/b3': blockDoc(3),
+    })
+    const result = await compact(store)
+
+    expect(result.ok).toBe(true)
+    // 1 escritura (manifest) + 2 borrados.
+    expect(result.allowance.opsUsed).toBe(3)
+    expect(result.chargeUsd).toBe(0)
+    expect(store.docs.has('notes/n1/updates/b1')).toBe(false)
+    expect(store.docs.has('notes/n1/updates/b2')).toBe(false)
+    expect(store.docs.has('notes/n1/updates/b3')).toBe(true)
+    expect(store.docs.get('notes/n1/collab/manifest')).toMatchObject({
+      epoch: 1,
+      snapshot: 'AAAA',
+      jid: 3,
+    })
+  })
+
+  it('pasada la cuota cobra los borrados a $0,10/100k', async () => {
+    const store = seed({
+      'notes/n1/updates/b1': blockDoc(1),
+      'notes/n1/updates/b2': blockDoc(2),
+      [`allowance/owner/days/${DAY}`]: { day: DAY, opsUsed: 699, writes: 699, deletes: 0 },
+      'credits/owner': { balanceUsd: 1 },
+    })
+    const result = await compact(store)
+
+    expect(result.ok).toBe(true)
+    // Quedaba 1 op gratis: la paga el manifest, los 2 borrados se cobran.
+    expect(result.chargeUsd).toBe(roundUsd(2 * PRICES.delete))
+    expect(result.allowance).toMatchObject({ opsUsed: 702, writes: 700, deletes: 2 })
+  })
+
+  it('rechaza más de 400 ids y no borra nada', async () => {
+    const store = seed({ 'notes/n1/updates/b1': blockDoc(1) })
+    const ids = Array.from({ length: 401 }, (_, i) => `b${i + 1}`)
+    const result = await compact(store, { payload: { blockIds: ids, manifest } })
+
+    expect(result).toMatchObject({ ok: false, status: 400, error: 'too-many-block-ids' })
+    expect(store.docs.has('notes/n1/updates/b1')).toBe(true)
+  })
+
+  it('un manifest inválido no borra ni cobra', async () => {
+    const store = seed({ 'notes/n1/updates/b1': blockDoc(1) })
+    const result = await compact(store, {
+      payload: { blockIds: ['b1'], manifest: { ...manifest, epoch: 2 } },
+    })
+
+    expect(result).toMatchObject({ ok: false, status: 400, error: 'invalid-epoch' })
+    expect(store.docs.has('notes/n1/updates/b1')).toBe(true)
+    expect(store.docs.has(`allowance/owner/days/${DAY}`)).toBe(false)
+  })
+
+  it('un viewer no compacta: borra datos', async () => {
+    const store = seed({
+      'notes/n1': noteDoc({ access: 'link-view' }),
+      'notes/n1/updates/b1': blockDoc(1),
+    })
+    const result = await compact(store, { senderUid: 'lector' })
+
+    expect(result).toMatchObject({ ok: false, status: 403, error: 'forbidden' })
+    expect(store.docs.has('notes/n1/updates/b1')).toBe(true)
+  })
+
+  it('el mismo opId no vuelve a borrar ni a cobrar', async () => {
+    const store = seed({
+      'notes/n1/updates/b1': blockDoc(1),
+      'notes/n1/updates/b2': blockDoc(2),
+      [`allowance/owner/days/${DAY}`]: { day: DAY, opsUsed: 700 },
+      'credits/owner': { balanceUsd: 1 },
+    })
+    const first = await compact(store)
+    const second = await compact(store)
+
+    expect(first.ok).toBe(true)
+    expect(second).toMatchObject({ ok: true, idempotent: true, chargeUsd: 0 })
+    expect(store.docs.get(`allowance/owner/days/${DAY}`)).toMatchObject({ opsUsed: 703 })
+  })
+})

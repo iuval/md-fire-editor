@@ -201,3 +201,25 @@ describe('proxy sin checkout configurado', () => {
     expect((await post('/v1/billing/checkout', { packUsd: 5 })).status).toBe(503)
   })
 })
+
+describe('compactación por HTTP', () => {
+  it('acepta el manifest y borra los bloques pedidos', async () => {
+    await start({
+      'notes/n1/updates/b1': { v: 1, jid: 1, hash: '0123456789ab', bytes: 3, data: 'AQID', clientId: 1 },
+      'notes/n1/updates/b2': { v: 1, jid: 2, hash: '0123456789ac', bytes: 3, data: 'AQID', clientId: 1 },
+    })
+    const response = await post('/v1/notes/n1/compact', {
+      opId: 'op_compactaaaaa',
+      compact: {
+        blockIds: ['b1', 'b2'],
+        manifest: { epoch: 1, snapshot: 'AAAA', stateVector: 'BBBB', jid: 2, bytes: 3, clientId: 1 },
+      },
+    })
+    const receipt = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(receipt.allowance).toMatchObject({ opsUsed: 3, writes: 1, deletes: 2 })
+    expect(store.docs.has('notes/n1/updates/b1')).toBe(false)
+    expect(store.docs.get('notes/n1/collab/manifest')).toMatchObject({ snapshot: 'AAAA' })
+  })
+})

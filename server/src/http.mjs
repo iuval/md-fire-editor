@@ -138,15 +138,16 @@ export function createProxyHandler({
         return
       }
 
-      const noteRoute = /^\/v1\/notes\/([^/]+)\/(blocks|body)$/.exec(path)
+      const noteRoute = /^\/v1\/notes\/([^/]+)\/(blocks|body|compact)$/.exec(path)
       if (noteRoute) {
         if (req.method !== 'POST') throw new HttpError(405, 'method-not-allowed')
         const noteId = decodeURIComponent(noteRoute[1])
-        const kind = noteRoute[2] === 'blocks' ? 'block' : 'body'
+        const kind = noteRoute[2] === 'blocks' ? 'block' : noteRoute[2]
         const raw = await readBody(req)
         const payload = parseJson(raw)
         const opId = payload.opId ?? req.headers['x-op-id']
-        const opPayload = kind === 'block' ? payload.block : payload.body
+        const opPayload =
+          kind === 'block' ? payload.block : kind === 'body' ? payload.body : payload.compact
         const result = await executeNoteOperation(store, {
           senderUid: identity.uid,
           noteId,

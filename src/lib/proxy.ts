@@ -32,7 +32,7 @@ export interface Allowance {
 
 export interface Receipt {
   id: string
-  kind: 'block' | 'body'
+  kind: 'block' | 'body' | 'compact'
   idempotent: boolean
   chargeUsd: number
   balanceUsd: number
@@ -118,6 +118,31 @@ export function postBody(
   return call<Receipt>(`/v1/notes/${encodeURIComponent(noteId)}/body`, {
     method: 'POST',
     body: JSON.stringify({ opId: newOpId(), body }),
+  })
+}
+
+export interface Manifest {
+  epoch: number
+  snapshot: string
+  stateVector: string
+  jid: number
+  bytes: number
+  clientId: number
+}
+
+/**
+ * Compactación server-side: manda el snapshot ya aplicado y los ids que quedaron
+ * plegados en él. El proxy escribe el manifest y borra esos bloques, cobrando
+ * los borrados. Un bloque escrito mientras tanto no está en la lista, así que
+ * no se pierde.
+ */
+export function postCompact(
+  noteId: string,
+  compaction: { blockIds: string[]; manifest: Manifest }
+): Promise<Receipt> {
+  return call<Receipt>(`/v1/notes/${encodeURIComponent(noteId)}/compact`, {
+    method: 'POST',
+    body: JSON.stringify({ opId: newOpId(), compact: compaction }),
   })
 }
 

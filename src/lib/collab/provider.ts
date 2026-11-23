@@ -15,7 +15,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db as defaultDb } from '../../firebase'
-import { postBlock, proxyEnabled } from '../proxy'
+import { postBlock, postCompact, proxyEnabled } from '../proxy'
 import { base64ToBytes, bytesToBase64, sha256Hex } from './encoding'
 import { openLocalChannel, type LocalChannel, type LocalChannelFactory } from './localChannel'
 import { classifyTransportError } from './transportError'
@@ -445,28 +445,42 @@ export class FirestoreYjsProvider {
     this.compacting = true
     const prune = [...this.appliedIds]
     const snapshot = Y.encodeStateAsUpdate(this.doc)
+    const manifest = {
+      epoch: BLOCK_VERSION,
+      snapshot: bytesToBase64(snapshot),
+      stateVector: bytesToBase64(Y.encodeStateVector(this.doc)),
+      jid: this.maxJid,
+      bytes: snapshot.byteLength,
+      clientId: this.doc.clientID,
+    }
     try {
-      await setDoc(doc(this.fs, 'notes', this.noteId, 'collab', 'manifest'), {
-        epoch: BLOCK_VERSION,
-        snapshot: bytesToBase64(snapshot),
-        stateVector: bytesToBase64(Y.encodeStateVector(this.doc)),
-        jid: this.maxJid,
-        bytes: snapshot.byteLength,
-        clientId: this.doc.clientID,
-        updatedAt: serverTimestamp(),
-      })
-      this.stats.manifestWrites++
-
-      // Prune exactly the ids folded into the snapshot: a block written while
-      // we were compacting is not in that list, so it can never be dropped.
-      for (let i = 0; i < prune.length; i += 400) {
-        const batch = writeBatch(this.fs)
-        const chunk = prune.slice(i, i + 400)
-        chunk.forEach((id) => {
-          batch.delete(doc(this.fs!, 'notes', this.noteId, 'updates', id))
+      if (proxyEnabled) {
+        // El proxy escribe el manifest y borra los bloques en una transacción,
+        // cobrando los borrados (E5). Mismo límite de 400 por mensaje.
+        for (let i = 0; i < prune.length; i += 400) {
+          const chunk = prune.slice(i, i + 400)
+          await postCompact(this.noteId, { blockIds: chunk, manifest })
+          this.stats.manifestWrites++
+          this.stats.blocksDeleted += chunk.length
+        }
+      } else {
+        await setDoc(doc(this.fs, 'notes', this.noteId, 'collab', 'manifest'), {
+          ...manifest,
+          updatedAt: serverTimestamp(),
         })
-        await batch.commit()
-        this.stats.blocksDeleted += chunk.length
+        this.stats.manifestWrites++
+
+        // Prune exactly the ids folded into the snapshot: a block written while
+        // we were compacting is not in that list, so it can never be dropped.
+        for (let i = 0; i < prune.length; i += 400) {
+          const batch = writeBatch(this.fs)
+          const chunk = prune.slice(i, i + 400)
+          chunk.forEach((id) => {
+            batch.delete(doc(this.fs!, 'notes', this.noteId, 'updates', id))
+          })
+          await batch.commit()
+          this.stats.blocksDeleted += chunk.length
+        }
       }
 
       // Drop the v1 snapshot once its content is folded into the manifest.
