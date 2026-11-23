@@ -37,7 +37,8 @@ export interface SidebarProps {
   folders: FolderType[]
   activeId: string | null
   onSelect: (id: string) => void
-  onNewNote: (folder?: FolderType) => void
+  /** No folder: which one a new note lands in is the panel's decision. */
+  onNewNote: () => void
   onNewFolder: () => void
   onNewCanvas: () => void
   /** Per-note actions (share, order, export, move, delete) live on the row. */

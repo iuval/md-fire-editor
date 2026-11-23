@@ -1594,7 +1594,6 @@ body.tab-dragging .pane-drop {
    the one the + buttons answer to, without turning the row into a button. */
 .folder-row--target {
   background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.06));
-  box-shadow: inset 2px 0 0 light-dark(var(--color-accent), var(--color-accent-dark));
 }
 
 .folder-row--target .folder-name {

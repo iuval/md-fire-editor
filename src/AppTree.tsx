@@ -1834,7 +1834,7 @@ function AppTree() {
           openNote(id)
           setSidebarOpen(false)
         }}
-        onNewNote={(folder) => void handleNewNote(folder)}
+        onNewNote={() => void handleNewNote(targetFolder ?? undefined)}
         onNewFolder={() => void handleNewFolder(targetFolder?.id ?? null)}
         onNewCanvas={() => handleNewCanvas(targetFolder ?? undefined)}
         onNoteMenu={(note, pos) => setNoteMenu({ note, ...pos })}

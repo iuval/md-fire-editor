@@ -149,6 +149,17 @@ describe('sidebar head', () => {
     expect(calls).toEqual(['note', 'folder', 'canvas'])
   })
 
+  it('says nothing about where to create: the panel decides that', () => {
+    // The + buttons used to take an optional folder that no caller ever passed,
+    // so a note created right after a folder landed at the root instead of in
+    // that folder. The decision lives in AppTree (`targetFolder`), not here.
+    const args: unknown[][] = []
+    const el = render({ onNewNote: (...rest: unknown[]) => args.push(rest) })
+    const head = el.querySelector('.sidebar-head')!
+    act(() => head.querySelector<HTMLButtonElement>('[aria-label="New note"]')!.click())
+    expect(args).toEqual([[]])
+  })
+
   it('closes the drawer on a phone instead of collapsing it', () => {
     const calls: string[] = []
     const el = render({
