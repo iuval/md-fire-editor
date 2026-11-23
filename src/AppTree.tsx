@@ -1174,7 +1174,7 @@ function AppTree() {
       )
       track('note_shared', uid, { kind: 'tag-rename' })
     },
-    [notes, uid]
+    [notes, uid, t]
   )
 
   const toggleFolder = useCallback((id: string) => {
