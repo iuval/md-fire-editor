@@ -684,20 +684,39 @@ export const en = {
   },
   guest: {
     /**
-     * The note a visitor finds on their first visit: what FireMD is, written as
-     * a note they can read, keep and delete — not as a popup over their work.
+     * The note a visitor finds on their first visit: everything the marketing
+     * page used to say, written as a note they can read, keep and delete — not as
+     * a popup over their work and not as a page in front of the editor.
+     *
+     * It is the second tab, never the first: the empty note is the one on screen,
+     * so this only gets read by someone who chooses to open it. Kept in one
+     * string so the copy and the code that seeds it cannot drift apart.
      */
     welcomeTitle: 'Welcome to FireMD',
     welcomeBody:
-      'FireMD is a real-time collaborative Markdown editor. What you write here ' +
-      'stays in this browser until you sign in.\n\n' +
-      '- **Collaboration**: two people in the same paragraph without stepping on each other (CRDT).\n' +
-      '- **Folders and permissions**: Owner, Can edit, Read only, per folder and per note.\n' +
-      '- **Agents**: `firemd ls`, `firemd cat`, `firemd patch --etag …` and an MCP server.\n' +
-      '- **Portable**: your Markdown stays Markdown. Export the vault whenever you want.\n\n' +
-      'The free tier is 100 MB of storage and 700 actions a day, no card. Past that, ' +
-      'prepaid credits — no subscription.\n\n' +
-      'Sign in from the gear menu to keep these notes in your account and share them.',
+      'FireMD is a real-time collaborative Markdown editor: notes that behave like ' +
+      'files, not like a proprietary document. What you write here stays in this ' +
+      'browser until you sign in.\n\n' +
+      '**What it does**\n\n' +
+      '- **Collaboration**: two people type in the same paragraph without stepping on each other (CRDT). Cursors and selections are shared.\n' +
+      '- **Folders and permissions**: Owner, Can edit, Read only — per folder and per note. Revoking access takes effect immediately.\n' +
+      '- **Agents, on your terms**: `firemd ls`, `firemd cat`, `firemd patch --etag …` and an MCP server, with exactly the permissions you grant.\n' +
+      '- **Portable**: your Markdown stays Markdown. Headings, lists, tables, code blocks, properties. Export the vault whenever you want.\n\n' +
+      '**Who it is for**\n\n' +
+      'People who already write in Markdown, small teams sharing a notes folder, and ' +
+      'anyone who wants an agent to work on their notes without handing over an ' +
+      'account. It is a web app, and the notes you have already opened keep working ' +
+      'offline.\n\n' +
+      '**What it costs**\n\n' +
+      'The free tier is 100 MB of storage and 700 actions a day, humans and agents, ' +
+      'no card required. Past that you pay from a prepaid balance bought in packs of ' +
+      '1, 5 or 20 dollars, at published per-unit prices. No subscription.\n\n' +
+      '**Where to read more**\n\n' +
+      '- Plans and the per-unit tariff: `/pricing`\n' +
+      '- The agent guide, CLI and MCP server: `/agent.md`\n' +
+      '- Terms, privacy and refunds: `/terms`, `/privacy`, `/refund`\n\n' +
+      'Sign in from the gear menu to keep these notes in your account and share them. ' +
+      'You can delete this note whenever you like; the free quota is yours either way.',
     storeSaved: 'Saved {notes} notes and {folders} folders in your account.',
     storeSaveFailed: 'I could not save your local workspace. It is still in this browser.',
     save: 'Save to my account',

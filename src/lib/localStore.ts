@@ -21,11 +21,36 @@ export const LOCAL_UID = 'local'
 export const LOCAL_STORE_KEY = 'firemd-local-store'
 export const LOCAL_ROOT_SORT_KEY = 'firemd-local-root-sort'
 
+/**
+ * The id of the visitor's tour note: the "Welcome to FireMD" note that carries
+ * what the marketing site says.
+ *
+ * Fixed, not generated. A generated id makes the note anonymous: "the welcome
+ * note" would only be a title, and a title is editable, so a reload cannot tell
+ * "this note is already here" from "this is a new visit" and seeds a second one.
+ * With a fixed id the app asks a question it can answer: is note `local-welcome`
+ * in the store? If it is, the tour is already here — however the visitor has
+ * renamed it, moved it, or edited it.
+ *
+ * The id is local-only on purpose: on sign-in the tour becomes a normal note in
+ * the account with a Firestore id, like everything else the visitor wrote.
+ */
+export const WELCOME_NOTE_ID = 'local-welcome'
+
 /** A note as this store keeps it: metadata plus the body text. */
 interface LocalData {
   notes: Note[]
   folders: Folder[]
   bodies: Record<string, string>
+  /**
+   * Ids whose seed has already run, whether or not the note is still here.
+   *
+   * Existence is the wrong question: the visitor may delete the tour, and a
+   * note that is gone would read as "never seeded" and come back on every
+   * reload. A separate marker survives the delete, so "seeded once" means once
+   * per browser, not once per visit.
+   */
+  seeded: string[]
 }
 
 let localMode = false
@@ -56,7 +81,7 @@ function defaultStorage(): Storage | null {
  * clearing anything in memory.
  */
 function empty(): LocalData {
-  return { notes: [], folders: [], bodies: {} }
+  return { notes: [], folders: [], bodies: {}, seeded: [] }
 }
 
 function read(store: Storage | null = defaultStorage()): LocalData {
@@ -69,6 +94,7 @@ function read(store: Storage | null = defaultStorage()): LocalData {
       notes: Array.isArray(parsed.notes) ? parsed.notes : [],
       folders: Array.isArray(parsed.folders) ? parsed.folders : [],
       bodies: parsed.bodies && typeof parsed.bodies === 'object' ? parsed.bodies : {},
+      seeded: Array.isArray(parsed.seeded) ? parsed.seeded : [],
     }
   } catch {
     return empty()
@@ -231,10 +257,53 @@ export async function createLocalNote(
 ): Promise<Note> {
   const data = read()
   const noteId = id ?? newId('note')
+  // A supplied id is an identity, not a slot: asking twice for the same id
+  // returns the note that is already there instead of pushing a second copy.
+  // The tour note depends on this — its id is fixed, and a reload can race two
+  // mounts into the same seed. A generated id has no such meaning, so it always
+  // creates.
+  const existing = id ? data.notes.find((note) => note.id === noteId) : undefined
+  if (existing) return existing
   const note = buildNote(uid, folder, noteId, kind, '', '')
   const body = kind === 'canvas' ? EMPTY_CANVAS : ''
   data.notes.push(note)
   data.bodies[noteId] = body
+  write(data)
+  notify()
+  return note
+}
+
+/**
+ * Writes the visitor's tour note once, under its fixed id, and returns it.
+ *
+ * Returns `null` when the seed already ran, so the caller opens a tab only on
+ * the first visit: a returning visitor's tour stays exactly as they left it —
+ * edited, renamed, moved, or deleted — instead of being refilled from the copy.
+ *
+ * "Already ran" is tracked in `seeded`, not inferred from the note's existence.
+ * The distinction matters for deletes: a visitor who removes the tour and keeps
+ * one note of their own would otherwise look like a first visit and get the tour
+ * back on every reload. A note that is present but was never seeded (a store
+ * written by an older build) is adopted instead of duplicated.
+ */
+export function seedLocalNote(
+  uid: string,
+  id: string,
+  title: string,
+  markdown: string
+): Note | null {
+  const data = read()
+  if (data.seeded.includes(id)) return null
+  const existing = data.notes.find((note) => note.id === id)
+  if (existing) {
+    data.seeded.push(id)
+    write(data)
+    return null
+  }
+  const note = buildNote(uid, null, id, 'note', title, markdown)
+  data.notes.push(note)
+  data.bodies[id] = markdown.slice(0, MAX_LOCAL_MARKDOWN)
+  data.seeded.push(id)
   write(data)
   notify()
   return note

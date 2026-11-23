@@ -12,8 +12,11 @@ import {
   LOCAL_UID,
   clearLocalStore,
   createLocalFolder,
+  WELCOME_NOTE_ID,
   createLocalNote,
   deleteLocalNote,
+  getLocalNote,
+  seedLocalNote,
   isLocalMode,
   localStoreSummary,
   migrateLocalStore,
@@ -79,6 +82,38 @@ describe('local workspace', () => {
     await deleteLocalNote(note.id)
     expect(localStoreSummary().notes).toBe(0)
     expect(localStorage.getItem(LOCAL_STORE_KEY)).not.toContain(note.id)
+  })
+
+  it('seeds the tour note under its fixed id, once', () => {
+    const first = seedLocalNote(LOCAL_UID, WELCOME_NOTE_ID, 'Welcome to FireMD', 'Hola')
+    expect(first?.id).toBe(WELCOME_NOTE_ID)
+    expect(getLocalNote(WELCOME_NOTE_ID)?.title).toBe('Welcome to FireMD')
+    expect(localStoreSummary().notes).toBe(1)
+
+    // A reload asks again: the note is already here, so nothing is written and
+    // nothing is refilled over whatever the visitor did to it.
+    const second = seedLocalNote(LOCAL_UID, WELCOME_NOTE_ID, 'Welcome to FireMD', 'Otro texto')
+    expect(second).toBeNull()
+    expect(localStoreSummary().notes).toBe(1)
+    expect(getLocalNote(WELCOME_NOTE_ID)?.title).toBe('Welcome to FireMD')
+  })
+
+  it('keeps the tour deleted once the visitor deletes it', () => {
+    seedLocalNote(LOCAL_UID, WELCOME_NOTE_ID, 'Welcome to FireMD', 'Hola')
+    void deleteLocalNote(WELCOME_NOTE_ID)
+
+    // The next reload must not resurrect it, even though the store is empty:
+    // that is what "seeded once" means. The shell seeds the empty note too, so
+    // in practice the store is not empty at this point.
+    expect(seedLocalNote(LOCAL_UID, WELCOME_NOTE_ID, 'Welcome to FireMD', 'Hola')).toBeNull()
+    expect(localStoreSummary().notes).toBe(0)
+  })
+
+  it('treats a supplied id as an identity, not a slot', async () => {
+    const first = await createLocalNote(LOCAL_UID, undefined, 'note-fixed')
+    const second = await createLocalNote(LOCAL_UID, undefined, 'note-fixed')
+    expect(second.id).toBe(first.id)
+    expect(localStoreSummary().notes).toBe(1)
   })
 
   it('reports the mode it is in', () => {

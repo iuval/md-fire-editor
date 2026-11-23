@@ -134,7 +134,7 @@ desde el principio para no tener que corregirlo después.
 > | D4 | **El modo visitante solo sin sesión y sin nota compartida.** | `src/lib/guestMode.ts`, `src/AppTree.tsx` |
 | D5 | **El visitante usa el shell completo y el mismo editor** (sidebar, carpetas, pestañas, paneles, Tiptap + Yjs) con transporte local. No hay editor propio ni página aparte: es el mismo `AppTree` con otro store. | `src/AppTree.tsx` (`guest`), `src/lib/localStore.ts`, `src/lib/collab/noteSession.ts` (`local`) |
 | D6 | **Tema por defecto: `nordico`** (azul-gris), no el blanco de fábrica. La apariencia sigue al sistema. | `src/lib/theme.ts` (`DEFAULT_PRESET_ID`) |
-| D7 | **Sin franja ni diálogo de bienvenida.** El primer contacto es un anotador: una nota vacía con el cursor listo, más la nota «Welcome to FireMD» con el contenido de «¿Qué es FireMD?». Entrar se ofrece desde el menú de la cuenta (⚙). | `src/AppTree.tsx` (seed), `src/i18n/en.ts` (`guest.welcome*`) |
+| D7 | **Sin franja ni diálogo de bienvenida.** El primer contacto es un anotador: la nota vacía va **delante**, con el cursor listo. La nota «Welcome to FireMD» queda como segunda pestaña y lleva todo lo que decía la home (qué es, los cuatro pilares, para quién, cuota y precios, enlaces). Se lee si se quiere. Entrar se ofrece desde el menú de la cuenta (⚙). | `src/AppTree.tsx` (seed), `src/i18n/en.ts` (`guest.welcome*`) |
 
 **D1 — Modelo comercial: flat o pay-per-use.**
 Recomendación: **flat ahora, pay-per-use cuando el medidor sea confiable**. Razones:
@@ -200,6 +200,18 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
       título** (el mismo camino que el botón +) y **una nota «Welcome to FireMD»** con el
       contenido de «¿Qué es FireMD?» (4 pilares + cuota), abierta en su propia pestaña.
 - [x] Ambas son notas reales del store local: se pueden editar, borrar y reabrir.
+- [x] **Identidad de la nota de bienvenida**: id fijo `local-welcome` (`WELCOME_NOTE_ID`),
+      no uno generado. Con un id generado «la nota de bienvenida» sería solo un título, y
+      un título se edita: al recargar no habría forma de distinguir «ya está» de «primera
+      visita» y se sembraría otra. El seed pregunta algo que sí puede responder: ¿existe
+      `local-welcome`?
+- [x] **Marca de sembrado separada de la existencia** (`LocalData.seeded`): si el visitante
+      borra la nota de bienvenida y conserva la suya, el borrado no debe resucitar en cada
+      recarga. La existencia sola no sirve como marca; se guarda el id en `seeded` y se
+      siembra una vez por navegador. Una nota presente pero sin marca (store de una versión
+      anterior) se adopta en vez de duplicarse.
+- [x] **La nota vacía sigue otra regla**: se crea solo si el store está vacío. Antes el
+      guard era «¿hay notas?», que al recargar añadía otro «Untitled» en cada visita.
 - [x] Regla D4 explícita en `shouldShowGuestView()`: solo `!user && !sharedNote`.
 - [x] Estado de sincronización honesto: el proveedor local reporta `Local` en vez de un
       "error de sincronización" falso.
@@ -249,15 +261,19 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
 - "cuota gratuita generosa" con cifra → no hay tope definido (G9).
 
 **Nota de bienvenida (copy vigente, `guest.welcomeBody`)**
-> FireMD is a real-time collaborative Markdown editor. What you write here stays in this
-> browser until you sign in.
-> - **Collaboration**: two people in the same paragraph without stepping on each other (CRDT).
-> - **Folders and permissions**: Owner, Can edit, Read only, per folder and per note.
-> - **Agents**: `firemd ls`, `firemd cat`, `firemd patch --etag …` and an MCP server.
+> FireMD is a real-time collaborative Markdown editor: notes that behave like files, not like
+> a proprietary document. What you write here stays in this browser until you sign in.
+> - **Collaboration**: two people type in the same paragraph without stepping on each other (CRDT).
+> - **Folders and permissions**: Owner, Can edit, Read only, per folder and per note. Revoking
+>   takes effect immediately, because the rules run on the server.
+> - **Agents on your terms**: `firemd ls`, `firemd cat`, `firemd patch --etag …` and an MCP
+>   server. Plain text in, plain text out, permissions you grant.
 > - **Portable**: your Markdown stays Markdown. Export the vault whenever you want.
-> The free tier is 100 MB of storage and 700 actions a day, no card. Past that, prepaid
-> credits — no subscription.
-> Sign in from the gear menu to keep these notes in your account and share them.
+> The free tier is 100 MB of storage and 700 operations a day, no card. Past that, prepaid
+> credits in packs of 1, 5 or 20 dollars, at published per-unit prices — no subscription.
+> Where to read more: `/pricing` (plans and tariff), `/agent.md` (CLI and MCP), `/terms`,
+> `/privacy`, `/refund`. Sign in from the gear menu to keep these notes in your account and
+> share them.
 
 **FAQ corta**
 - ¿Qué pasa con lo que escribo antes de entrar? Queda en tu navegador; al entrar te ofrecemos
@@ -317,6 +333,18 @@ Pendiente y por qué:
    colección anónima con reglas propias es la alternativa si se quiere medir sin login.
 5. ~~Shell completo para el visitante~~ **hecho**: el visitante corre el mismo `AppTree` con
    `localStore`. Queda pendiente la aceptación en navegador real y contra producción.
+6. **Primer frame y orden del seed**: la nota vacía tiene que quedar delante. `openTab`
+   activa lo que abre, así que la nota de bienvenida se abre **primero** y la vacía después;
+   si la de bienvenida falla, su error se captura y la vacía se abre igual. Verificado en
+   navegador: pestaña activa «Untitled» con el cursor, «Welcome to FireMD» al lado.
+7. **Crash del primer visitante**: `markdownOf` serializaba un editor destruido. El adapter de
+   Tiptap destruye la instancia con un timer de 1 ms y `destroy()` deja `extensionStorage` en
+   `{}`, así que `storage.markdown` era `undefined` y `getMarkdown()` tiraba
+   `TypeError: Cannot read properties of undefined`. Con el seed abriendo dos pestañas, el
+   editor del panel se desmonta mientras llega el cuerpo: la carrera se disparaba en **cada**
+   primera visita y la app mostraba «Something broke». Ahora `markdownOf` devuelve `''` para
+   un editor destruido o sin storage, y hay un test que lo fija
+   (`tests/editor.test.tsx`, «serialises a destroyed editor to empty»).
 
 ---
 

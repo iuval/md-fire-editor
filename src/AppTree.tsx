@@ -102,8 +102,10 @@ import { shouldShowGuestView } from './lib/guestMode'
 import { flushGuestEvents } from './lib/guestAnalytics'
 import {
   LOCAL_UID,
+  WELCOME_NOTE_ID,
   localStoreSummary,
   migrateLocalStore,
+  seedLocalNote,
   setLocalMode,
 } from './lib/localStore'
 import { plural, useT } from './i18n/index.ts'
@@ -1309,21 +1311,33 @@ function AppTree() {
   useEffect(() => {
     if (!guest || guestSeeded.current) return
     guestSeeded.current = true
-    if (localStoreSummary().notes > 0) return
+    // Two separate questions, because the two seeds have different rules.
+    //
+    // The tour is one note with a fixed id and its own "already seeded" marker,
+    // so "is it here?" is answered by the store, not by counting notes: a
+    // visitor who deleted the tour and kept one note must not get it back on
+    // every reload. The empty page follows the opposite rule — it is only
+    // created when there is nothing to write on, so a returning visitor's
+    // workspace does not grow a fresh "Untitled" on each visit.
+    const needsEmptyNote = localStoreSummary().notes === 0
     void (async () => {
       try {
-        const welcome = await createNote(LOCAL_UID)
-        await saveNoteContent(welcome.id, {
-          title: t('guest.welcomeTitle'),
-          markdown: t('guest.welcomeBody'),
-        })
-        setWorkspace((ws) => ({
-          layout: openTab(ws.layout, ws.focusedPaneId, welcome.id, newId('tab')),
-          focusedPaneId: ws.focusedPaneId,
-        }))
+        const welcome = seedLocalNote(
+          LOCAL_UID,
+          WELCOME_NOTE_ID,
+          t('guest.welcomeTitle'),
+          t('guest.welcomeBody')
+        )
+        if (welcome) {
+          setWorkspace((ws) => ({
+            layout: openTab(ws.layout, ws.focusedPaneId, welcome.id, newId('tab')),
+            focusedPaneId: ws.focusedPaneId,
+          }))
+        }
       } catch {
         // The tour is optional; the page to write on is not.
       }
+      if (!needsEmptyNote) return
       // The empty note goes through the app's own "new note" path: it opens on
       // top with the caret in its title, exactly like pressing + does.
       try {
