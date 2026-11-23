@@ -112,6 +112,24 @@ describe('sesión de checkout', () => {
     expect(body.success_url).toBe('https://app.test/ok')
   })
 
+  it('usa un producto por pack cuando están configurados', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ url: 'https://x.test/c' }) }))
+    const polar = createPolar({
+      ...config,
+      productId: undefined,
+      products: { 1: 'prod-1', 5: 'prod-5', 20: 'prod-20' },
+      fetchImpl,
+    })
+
+    await polar.createSession({ uid: 'owner', packUsd: 5 })
+    const body = JSON.parse(String((fetchImpl.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.products).toEqual(['prod-5'])
+    // El precio sale del catálogo: no se manda precio ad-hoc.
+    expect(body.prices).toBeUndefined()
+
+    await expect(polar.createSession({ uid: 'owner', packUsd: 7 })).rejects.toThrow('pack 7')
+  })
+
   it('usa el sandbox cuando se pide', async () => {
     const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ url: 'https://x.test/c' }) }))
     await createPolar({ ...config, server: 'sandbox', fetchImpl }).createSession({ uid: 'o', packUsd: 1 })

@@ -15,9 +15,16 @@ const port = Number(process.env.PORT ?? 8080)
 function buildCheckout() {
   const { POLAR_ACCESS_TOKEN, POLAR_PRODUCT_ID, POLAR_WEBHOOK_SECRET, POLAR_SERVER } = process.env
   if (!POLAR_ACCESS_TOKEN) return null
+  // Un producto por pack: así el dashboard de Polar muestra los tres.
+  const products = Object.fromEntries(
+    [1, 5, 20]
+      .map((pack) => [pack, process.env[`POLAR_PRODUCT_${pack}`]])
+      .filter(([, id]) => Boolean(id))
+  )
   return createPolar({
     accessToken: POLAR_ACCESS_TOKEN,
     productId: POLAR_PRODUCT_ID,
+    products,
     webhookSecret: POLAR_WEBHOOK_SECRET,
     server: POLAR_SERVER === 'sandbox' ? 'sandbox' : 'production',
   })

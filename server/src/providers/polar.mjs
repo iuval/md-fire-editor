@@ -3,13 +3,14 @@
 // Cobra, factura y liquida (Stripe Connect Express), y acepta comercios en
 // Uruguay. Lemon Squeezy cerró las altas nuevas y apaga el 31-mar-2027.
 //
-// El checkout se crea contra un único producto y el monto del pack se manda
-// como precio ad-hoc (`prices`), así que no hace falta un producto por pack:
+// Un producto por pack (`POLAR_PRODUCT_1/5/20`) es el modo normal: cada pack se
+// ve y se edita en el dashboard de Polar como cualquier producto.
+// Si en cambio se pasa un solo `productId`, el monto va como precio ad-hoc:
 //   products: [PRODUCT_ID]
 //   prices:   { [PRODUCT_ID]: [{ amount_type: 'fixed', price_amount: cents }] }
 //
-// Variables: POLAR_ACCESS_TOKEN (polar_oat_…), POLAR_PRODUCT_ID,
-// POLAR_WEBHOOK_SECRET y POLAR_SERVER (production | sandbox).
+// Variables: POLAR_ACCESS_TOKEN (polar_oat_…), POLAR_PRODUCT_1/5/20 (o
+// POLAR_PRODUCT_ID para el modo ad-hoc), POLAR_WEBHOOK_SECRET y POLAR_SERVER.
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
 const BASE_URLS = {
@@ -65,13 +66,19 @@ export function verifySignature({ rawBody, headers, secret, now = Date.now }) {
 export function createPolar({
   accessToken,
   productId,
+  products = {},
   webhookSecret,
   server = 'production',
   fetchImpl = globalThis.fetch,
   now = Date.now,
 } = {}) {
-  if (!accessToken || !productId) {
-    throw new Error('polar: faltan POLAR_ACCESS_TOKEN / POLAR_PRODUCT_ID')
+  const byPack = Object.fromEntries(
+    Object.entries(products)
+      .filter(([, id]) => typeof id === 'string' && id)
+      .map(([pack, id]) => [Number(pack), id])
+  )
+  if (!accessToken || (!productId && Object.keys(byPack).length === 0)) {
+    throw new Error('polar: faltan POLAR_ACCESS_TOKEN y POLAR_PRODUCT_1/5/20 (o POLAR_PRODUCT_ID)')
   }
   if (!webhookSecret) throw new Error('polar: falta POLAR_WEBHOOK_SECRET')
   const apiBase = BASE_URLS[server]
@@ -80,10 +87,14 @@ export function createPolar({
   return {
     name: 'polar',
 
-    /** Sesión de checkout hospedada con el monto del pack como precio ad-hoc. */
+    /** Sesión de checkout hospedada para el pack pedido. */
     async createSession({ uid, packUsd, email, successUrl }) {
-      const cents = Math.round(Number(packUsd) * 100)
+      const pack = Number(packUsd)
+      const cents = Math.round(pack * 100)
       if (!Number.isInteger(cents) || cents <= 0) throw new Error('polar: pack inválido')
+
+      const product = byPack[pack]
+      if (!product && !productId) throw new Error(`polar: no hay producto para el pack ${pack}`)
 
       const response = await fetchImpl(`${apiBase}/checkouts/`, {
         method: 'POST',
@@ -93,8 +104,10 @@ export function createPolar({
           Accept: 'application/json',
         },
         body: JSON.stringify({
-          products: [productId],
-          prices: { [productId]: [{ amount_type: 'fixed', price_amount: cents }] },
+          // Con un producto por pack el precio sale del catálogo; sin producto
+          // propio, el monto viaja como precio ad-hoc del producto único.
+          products: [product ?? productId],
+          ...(product ? {} : { prices: { [productId]: [{ amount_type: 'fixed', price_amount: cents }] } }),
           // Sin descuentos: el saldo acreditado tiene que ser exactamente el pack.
           allow_discount_codes: false,
           metadata: { uid },

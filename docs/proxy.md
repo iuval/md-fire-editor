@@ -120,7 +120,8 @@ Variables:
 | `GOOGLE_CLOUD_PROJECT` | proyecto de Firestore (o el default de Cloud Run) |
 | `ALLOWED_ORIGINS` | lista separada por comas para CORS (`https://md-sync-app.web.app`) |
 | `POLAR_ACCESS_TOKEN` | OAT de Polar (`polar_oat_…`), scope `checkouts:write` (E6) |
-| `POLAR_PRODUCT_ID` | producto "Firemd Credits" (un precio nominal; el pack va como precio ad-hoc) |
+| `POLAR_PRODUCT_1` / `_5` / `_20` | un producto por pack en Polar (`Firemd Credits — $1`, `— $5`, `— $20`) |
+| `POLAR_PRODUCT_ID` | opcional: un solo producto + precio ad-hoc por checkout (fallback) |
 | `POLAR_WEBHOOK_SECRET` | secreto del endpoint (`whsec_…`), firma Standard Webhooks |
 | `POLAR_SERVER` | `production` (default) o `sandbox` |
 
@@ -133,9 +134,11 @@ Lemon Squeezy ya no acepta altas nuevas y cierra el 31-mar-2027; el adaptador es
 
 ```bash
 polar auth login --production
-# Un producto con un precio nominal: el pack se manda como precio ad-hoc ($1/$5/$20)
-polar products create --name "Firemd Credits" --visibility private \
-  --prices '[{"amount_type":"fixed","price_amount":2000}]' --json
+# Un producto por pack: así los tres se ven y se editan en el dashboard
+for pack in 1 5 20; do
+  polar products create --name "Firemd Credits — \$$pack" --visibility private \
+    --prices "[{\"amount_type\":\"fixed\",\"price_amount\":$((pack*100))}]" --json
+done
 # Webhook: solo order.paid, formato raw, a la ruta del proxy
 polar webhooks create_webhook_endpoint \
   --url https://firemd-proxy-XXX.southamerica-east1.run.app/v1/billing/webhook \
@@ -151,8 +154,13 @@ printf %s "$OAT"    | gcloud secrets create polar-access-token --data-file=-
 printf %s "$WHSEC"  | gcloud secrets create polar-webhook-secret --data-file=-
 gcloud run services update firemd-proxy --region southamerica-east1 \
   --set-secrets POLAR_ACCESS_TOKEN=polar-access-token:latest,POLAR_WEBHOOK_SECRET=polar-webhook-secret:latest \
-  --update-env-vars POLAR_PRODUCT_ID=<product_id>,POLAR_SERVER=production
+  --update-env-vars POLAR_PRODUCT_1=<id_$1>,POLAR_PRODUCT_5=<id_$5>,POLAR_PRODUCT_20=<id_$20>,POLAR_SERVER=production
 ```
+
+Cada pack es un producto del catálogo (precio fijo), así que cambiar un precio es
+editar el producto en el dashboard, sin tocar código ni redeployar. Si en cambio
+se configura un único `POLAR_PRODUCT_ID`, el monto viaja como precio ad-hoc en
+cada checkout.
 
 El saldo se acredita con el **neto** de la orden (`net_amount`), sin impuestos ni
 descuentos, para que el saldo sea exactamente el valor del pack. `allow_discount_codes`
