@@ -212,6 +212,10 @@ en sesión logueada. Se deja escrito en el código como una condición única, n
       anterior) se adopta en vez de duplicarse.
 - [x] **La nota vacía sigue otra regla**: se crea solo si el store está vacío. Antes el
       guard era «¿hay notas?», que al recargar añadía otro «Untitled» en cada visita.
+- [x] **Adopción del store de una versión anterior**: el build previo sembró la bienvenida
+      con un id generado, así que el id fijo no la reconoce. El seed cae al título: si ya
+      hay una nota con el título de la bienvenida, la adopta y marca el sembrado en vez de
+      duplicarla. Quien visitó durante la ventana rota ve una sola bienvenida.
 - [x] Regla D4 explícita en `shouldShowGuestView()`: solo `!user && !sharedNote`.
 - [x] Estado de sincronización honesto: el proveedor local reporta `Local` en vez de un
       "error de sincronización" falso.

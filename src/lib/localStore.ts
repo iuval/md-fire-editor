@@ -284,7 +284,8 @@ export async function createLocalNote(
  * The distinction matters for deletes: a visitor who removes the tour and keeps
  * one note of their own would otherwise look like a first visit and get the tour
  * back on every reload. A note that is present but was never seeded (a store
- * written by an older build) is adopted instead of duplicated.
+ * written by an older build) is adopted instead of duplicated: by id when the
+ * old build already used the fixed one, by title when it generated its own.
  */
 export function seedLocalNote(
   uid: string,
@@ -294,8 +295,18 @@ export function seedLocalNote(
 ): Note | null {
   const data = read()
   if (data.seeded.includes(id)) return null
+  // The fixed id is already here: a reload can race two mounts into the same
+  // seed. Adopt it and remember that the seed ran.
   const existing = data.notes.find((note) => note.id === id)
   if (existing) {
+    data.seeded.push(id)
+    write(data)
+    return null
+  }
+  // An older build seeded the same tour under a generated id. Adopt it by title
+  // rather than leaving the visitor with two copies of the same note; the id
+  // cannot be the signal there, because the old build never had a fixed one.
+  if (data.notes.some((note) => note.title === title)) {
     data.seeded.push(id)
     write(data)
     return null

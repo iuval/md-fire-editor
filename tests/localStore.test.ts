@@ -109,6 +109,20 @@ describe('local workspace', () => {
     expect(localStoreSummary().notes).toBe(0)
   })
 
+  it('adopts the tour an older build seeded under a generated id', async () => {
+    // The previous build created the welcome note with a generated id, so the
+    // fixed id cannot find it. Adopting by title keeps the visitor from getting
+    // a second copy of the same note after the upgrade.
+    const old = await createLocalNote(LOCAL_UID)
+    await saveLocalNoteContent(old.id, { title: 'Welcome to FireMD', markdown: 'Hola' })
+
+    const seeded = seedLocalNote(LOCAL_UID, WELCOME_NOTE_ID, 'Welcome to FireMD', 'Hola')
+
+    expect(seeded).toBeNull()
+    expect(localStoreSummary().notes).toBe(1)
+    expect(getLocalNote(old.id)?.title).toBe('Welcome to FireMD')
+  })
+
   it('treats a supplied id as an identity, not a slot', async () => {
     const first = await createLocalNote(LOCAL_UID, undefined, 'note-fixed')
     const second = await createLocalNote(LOCAL_UID, undefined, 'note-fixed')
