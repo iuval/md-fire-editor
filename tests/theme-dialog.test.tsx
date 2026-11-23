@@ -9,6 +9,7 @@ import {
   PRESETS,
   THEME_TOKENS,
   derivePalette,
+  designAppearance,
   findPreset,
   loadThemeState,
   presetState,
@@ -71,6 +72,27 @@ describe('theme dialog', () => {
       expect(squares[0].style.background).not.toBe('')
       expect(squares[1].style.background).not.toBe('')
       expect(card.querySelector('.theme-card-name')?.textContent).toBeTruthy()
+      // A card is the two colours and the name, nothing else.
+      expect(card.querySelector('.theme-card-hint')).toBeNull()
+    }
+  })
+
+  it('offers no appearance switch: the two columns are the choice', () => {
+    mount(<ThemeDialog onClose={() => {}} />)
+    expect(document.querySelector('.theme-appearance')).toBeNull()
+    for (const label of ['System', 'Day', 'Night']) {
+      expect(() => buttonByText(label), label).toThrow()
+    }
+    const columns = [...document.querySelectorAll<HTMLElement>('.theme-column')]
+    expect(columns).toHaveLength(2)
+    for (const [index, appearance] of (['light', 'dark'] as const).entries()) {
+      const inColumn = [...columns[index].querySelectorAll('.theme-card-name')].map(
+        (name) => name.textContent,
+      )
+      const expected = PRESETS.filter((preset) => designAppearance(preset.seeds) === appearance).map(
+        (preset) => t(preset.nameKey),
+      )
+      expect(inColumn).toEqual(expected)
     }
   })
 
@@ -122,7 +144,7 @@ describe('theme dialog', () => {
     expect(cssVar('--color-bg-dark')).toMatch(/^#[0-9a-f]{6}$/)
   })
 
-  it('edits the design even when the screen is in the other appearance', () => {
+  it('lands a colour tweak on the palette that is on screen', () => {
     // jsdom reports no dark support, so force the OS into dark for this test.
     const original = window.matchMedia
     Object.defineProperty(window, 'matchMedia', {
@@ -143,8 +165,9 @@ describe('theme dialog', () => {
         paneles!.dispatchEvent(new Event('input', { bubbles: true }))
       })
       expect(cssVar('--color-bg-2')).toBe('#123456')
-      // The mirrored half stays derived from the design instead of copying the tweak.
-      expect(cssVar('--color-bg-2-dark')).not.toBe('#123456')
+      // Both halves carry the same palette now, so the tweak shows in both. One
+      // palette on screen is what makes an appearance change interpolable.
+      expect(cssVar('--color-bg-2-dark')).toBe('#123456')
     } finally {
       Object.defineProperty(window, 'matchMedia', {
         configurable: true,
@@ -152,6 +175,26 @@ describe('theme dialog', () => {
         value: original,
       })
     }
+  })
+
+  it('keeps the title and Done pinned in a bar that never scrolls away', () => {
+    mount(<ThemeDialog onClose={() => {}} />)
+    const bar = document.querySelector('.theme-bar')
+    expect(bar, 'title bar').not.toBeNull()
+    expect(bar?.querySelector('#theme-heading'), 'title inside the bar').not.toBeNull()
+    // Done has to travel with the bar, so it is reachable without scrolling.
+    expect(bar?.contains(buttonByText(t('themeDialog.done')))).toBe(true)
+  })
+
+  it('folds Reset into the Advanced section, with no footer row', () => {
+    mount(<ThemeDialog onClose={() => {}} />)
+    const preset = findPreset(DEFAULT_PRESET_ID)
+    const reset = buttonByText(t('themeDialog.reset', { name: t(preset.nameKey) }))
+    const advanced = document.querySelector('details.theme-advanced')
+    expect(advanced, 'advanced section').not.toBeNull()
+    // Reset undoes a customisation: it belongs inside the section that makes
+    // one, not loose at the bottom of the dialog.
+    expect(advanced!.contains(reset), 'reset inside Advanced').toBe(true)
   })
 
   it('restores the preset after the colors were touched', () => {
@@ -179,7 +222,7 @@ describe('theme dialog', () => {
     })
     expect(cssVar('--color-bg-2')).toBe('#123456')
 
-    act(() => buttonByText('Quitar mis ajustes de color').click())
+    act(() => buttonByText(t('themeDialog.clearOverrides')).click())
     expect(cssVar('--color-bg-2')).toBe(original)
   })
 
@@ -188,8 +231,18 @@ describe('theme dialog', () => {
     mount(<ThemeDialog onClose={onClose} />)
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     expect(document.getElementById('theme-heading')?.textContent).toContain('Appearance')
-    expect(document.querySelector('.theme-thumb')).not.toBeNull()
     act(() => buttonByText('Done').click())
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops the preview and keeps the colour editor folded away', () => {
+    mount(<ThemeDialog onClose={() => {}} />)
+    expect(document.querySelector('.theme-thumb')).toBeNull()
+    expect(document.querySelector('.theme-preview-wrap')).toBeNull()
+
+    const advanced = document.querySelector<HTMLDetailsElement>('details.theme-advanced')
+    expect(advanced, 'advanced section').not.toBeNull()
+    expect(advanced?.open, 'collapsed by default').toBe(false)
+    expect(advanced?.querySelector('summary')?.textContent?.trim()).toBe('Advanced')
   })
 })

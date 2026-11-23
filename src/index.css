@@ -22,6 +22,189 @@
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/*
+ * The palette, registered so it can be interpolated.
+ *
+ * An unregistered custom property is a token, not a colour: the browser has no
+ * idea how to get from one to the other, so it snaps. `@property` gives each
+ * token a type and a default, which makes it animatable — and because every
+ * painted colour is `light-dark(var(--color-x), var(--color-x-dark))` and both
+ * halves are inherited from <html>, one transition on the root fades the whole
+ * app. No per-selector list to keep in sync.
+ *
+ * The fade is only switched on while a *design* changes (`data-theme-fade`,
+ * set by applyTheme). Dragging a colour picker must stay instant, or the value
+ * on screen trails the value under the cursor.
+ */
+@property --color-bg {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --color-bg-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1e1e1e;
+}
+@property --color-bg-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #f4f4f5;
+}
+@property --color-bg-2-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #262626;
+}
+@property --color-bg-3 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ececee;
+}
+@property --color-bg-3-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2a2a2a;
+}
+@property --color-page {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --color-page-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #181818;
+}
+@property --color-text {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #22222a;
+}
+@property --color-text-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #dadada;
+}
+@property --color-muted {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #5c5c66;
+}
+@property --color-muted-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #a8a8a8;
+}
+@property --color-border {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #e3e3e6;
+}
+@property --color-border-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #3a3a3a;
+}
+@property --color-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #6f5ce0;
+}
+@property --color-accent-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #8b7cf8;
+}
+@property --color-accent-ink {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #4a37c4;
+}
+@property --color-accent-ink-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c3b9ff;
+}
+@property --color-accent-solid {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #6f5ce0;
+}
+@property --color-accent-solid-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #5b48d6;
+}
+@property --color-danger {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #b3271f;
+}
+@property --color-danger-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ff9b94;
+}
+@property --color-success {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1f7a45;
+}
+@property --color-success-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #6ee7a0;
+}
+@property --color-warning {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #8a5a00;
+}
+@property --color-warning-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #e8b45a;
+}
+
+html[data-theme-fade] {
+  transition:
+    --color-bg 160ms ease,
+    --color-bg-dark 160ms ease,
+    --color-bg-2 160ms ease,
+    --color-bg-2-dark 160ms ease,
+    --color-bg-3 160ms ease,
+    --color-bg-3-dark 160ms ease,
+    --color-page 160ms ease,
+    --color-page-dark 160ms ease,
+    --color-text 160ms ease,
+    --color-text-dark 160ms ease,
+    --color-muted 160ms ease,
+    --color-muted-dark 160ms ease,
+    --color-border 160ms ease,
+    --color-border-dark 160ms ease,
+    --color-accent 160ms ease,
+    --color-accent-dark 160ms ease,
+    --color-accent-ink 160ms ease,
+    --color-accent-ink-dark 160ms ease,
+    --color-accent-solid 160ms ease,
+    --color-accent-solid-dark 160ms ease,
+    --color-danger 160ms ease,
+    --color-danger-dark 160ms ease,
+    --color-success 160ms ease,
+    --color-success-dark 160ms ease,
+    --color-warning 160ms ease,
+    --color-warning-dark 160ms ease,
+    color-scheme 0s;
+}
+
+/* Reduced motion: the palette still changes, it just does not travel. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-fade] {
+    transition: none;
+  }
+}
+
 /* Obsidian-like palette: calm neutrals, single purple accent, no shadows. */
 @theme {
   --color-bg: #ffffff;
@@ -3084,10 +3267,27 @@ body.tab-dragging .pane-drop {
 
 .theme-dialog {
   width: min(560px, calc(100vw - 32px));
+  /* No top padding: the sticky bar has to meet the dialog's top edge. */
+  padding: 0 18px 18px;
   gap: 16px;
 }
 
-.theme-preview-wrap,
+/* Title and Done, pinned while the preset list scrolls. The negative margin lets
+   the bar span the dialog's full width; the padding puts the text back in line. */
+.theme-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 -18px;
+  padding: 14px 18px;
+  background: light-dark(var(--color-bg), var(--color-bg-2-dark));
+  border-bottom: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+}
+
 .theme-section {
   display: flex;
   flex-direction: column;
@@ -3105,17 +3305,61 @@ body.tab-dragging .pane-drop {
   color: light-dark(var(--color-muted), var(--color-muted-dark));
 }
 
+.theme-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* A disclosure, not a section title: the colour editor is one click away and
+   closed until someone asks for it. */
+.theme-advanced > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.theme-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.theme-advanced > summary::after {
+  content: '▾';
+  font-size: 9px;
+  transition: transform 120ms ease;
+}
+
+.theme-advanced[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-advanced > summary::after {
+    transition: none;
+  }
+}
+
 .theme-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+  align-items: start;
+}
+
+/* Left column: designs written light. Right column: written dark. */
+.theme-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .theme-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 10px 8px;
   border-radius: 9px;
   border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
   background: none;
@@ -3124,19 +3368,36 @@ body.tab-dragging .pane-drop {
   cursor: pointer;
 }
 
+/* The two colours of a design, stacked: the canvas underneath, the accent on
+   top, offset so both read as one object. A ring in the dialog's own colour
+   separates them where they overlap. */
 .theme-card-colors {
-  display: flex;
-  gap: 4px;
+  position: relative;
+  width: 50px;
+  height: 50px;
   flex: none;
 }
 
 /* The two colors of the design, as squares. No miniature: a preset is exactly
    these two, and everything else is derived from them. */
 .theme-card-square {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
   border: 1px solid light-dark(var(--color-border), var(--color-border-dark));
+}
+
+.theme-card-square:first-child {
+  top: 0;
+  left: 0;
+}
+
+.theme-card-square:last-child {
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  box-shadow: 0 0 0 2px light-dark(var(--color-bg), var(--color-bg-2-dark));
 }
 
 .theme-card:hover {
@@ -3151,33 +3412,20 @@ body.tab-dragging .pane-drop {
 .theme-card-text {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 1px;
+  width: 100%;
   min-width: 0;
 }
 
 .theme-card-name {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.theme-card-hint {
-  font-size: 10.5px;
-  line-height: 1.3;
-  color: light-dark(var(--color-muted), var(--color-muted-dark));
-}
-
-.theme-disclosure {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  align-self: flex-start;
-  padding: 4px 2px;
-  border: none;
-  background: none;
-  color: light-dark(var(--color-accent-ink), var(--color-accent-ink-dark));
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
+  font-weight: 600;
+  text-align: center;
 }
 
 .theme-advanced {
@@ -3285,169 +3533,6 @@ body.tab-dragging .pane-drop {
 .color-swatch[aria-pressed='true'] {
   box-shadow: 0 0 0 2px light-dark(var(--color-bg), var(--color-bg-dark)),
     0 0 0 3px light-dark(var(--color-accent), var(--color-accent-dark));
-}
-
-/* ---------- the miniature ---------- */
-
-.theme-thumb {
-  display: flex;
-  overflow: hidden;
-  border-radius: 7px;
-  border: 1px solid;
-}
-
-.theme-thumb {
-  height: 210px;
-}
-
-.theme-thumb-side {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  width: 26%;
-  padding: 7px 6px;
-  border-right: 1px solid;
-}
-
-.theme-thumb-brand {
-  height: 4px;
-  width: 62%;
-  border-radius: 2px;
-  margin-bottom: 3px;
-}
-
-.theme-thumb-row {
-  height: 5px;
-  border-radius: 2px;
-}
-
-.theme-thumb-row--short {
-  width: 68%;
-}
-
-.theme-thumb-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-}
-
-.theme-thumb-bar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 16px;
-  padding: 0 6px;
-  border-bottom: 1px solid;
-}
-
-.theme-thumb-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-  border: 1px solid;
-}
-
-.theme-thumb-toolbar-pill {
-  margin-left: auto;
-  width: 22%;
-  height: 5px;
-  border-radius: 2px;
-}
-
-.theme-thumb-sheet {
-  flex: 1;
-  min-height: 0;
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.theme-thumb-title {
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.1;
-}
-
-.theme-thumb-line {
-  height: 4px;
-  width: 82%;
-  border-radius: 2px;
-}
-
-.theme-thumb-line--short {
-  width: 48%;
-}
-
-.theme-thumb-hero {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  gap: 5px;
-  margin-top: 2px;
-}
-
-.theme-thumb-hero-title {
-  height: 6px;
-  width: 58%;
-  border-radius: 2px;
-}
-
-.theme-thumb-hero-line {
-  height: 4px;
-  width: 88%;
-  border-radius: 2px;
-}
-
-.theme-thumb-hero-line--short {
-  width: 64%;
-}
-
-.theme-thumb-pills {
-  display: flex;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.theme-thumb-pill {
-  font-size: 7px;
-  line-height: 1;
-  padding: 3px 5px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-
-.theme-thumb-actions {
-  display: flex;
-  gap: 5px;
-  margin-top: auto;
-}
-
-.theme-thumb-button {
-  font-size: 8px;
-  line-height: 1;
-  padding: 4px 7px;
-  border-radius: 4px;
-  color: #fff;
-  font-weight: 600;
-}
-
-.theme-thumb-button--ghost {
-  background: none;
-  border: 1px solid;
-  color: inherit;
-}
-
-@media (max-width: 520px) {
-  /* One column: two square-swatch cards plus hint text do not survive 170px. */
-  .theme-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .color-swatches {
-    padding-left: 0;
-  }
 }
 
 /* ---------- canvas (JSON Canvas, Obsidian's .canvas) ---------- */

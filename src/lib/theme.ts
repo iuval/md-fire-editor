@@ -16,6 +16,8 @@ import { useSyncExternalStore } from 'react'
 import type { MessageKey } from '../i18n/index.ts'
 
 export type Appearance = 'light' | 'dark'
+/** Which half to paint: a fixed appearance, or whatever the OS is doing. */
+export type AppearanceChoice = Appearance | 'system'
 
 /** Every color the stylesheet reads. Keep in sync with the tokens in index.css. */
 export const THEME_TOKENS = [
@@ -48,14 +50,18 @@ export interface ThemeState {
   overrides: TokenOverrides
   /** True once a seed or a token moved away from the preset. */
   edited: boolean
+  /**
+   * Which appearance to paint. `system` follows the OS, which was the only
+   * option for a long time — and meant that on a dark machine a design written
+   * light was never visible in its own colours, only as its mirror.
+   */
+  appearance: AppearanceChoice
 }
 
 export interface ThemePreset {
   id: string
   /** Catalogue key, resolved with `t()` where the card is drawn. */
   nameKey: MessageKey
-  /** One line for the card, never a color code. Also a catalogue key. */
-  hintKey: MessageKey
   /** The design itself: fondo + acento. The other appearance is mirrored. */
   seeds: Seeds
 }
@@ -79,7 +85,7 @@ interface Oklch {
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 
 /** Accepts #rgb and #rrggbb, and nothing else: no color names, no functions. */
-export function normalizeHex(value: unknown): string | null {
+function normalizeHex(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const input = value.trim().toLowerCase()
   if (!HEX.test(input)) return null
@@ -352,9 +358,8 @@ export function derivePalette(seeds: Seeds, appearance: Appearance): Palette {
 const preset = (
   id: string,
   nameKey: MessageKey,
-  hintKey: MessageKey,
   seeds: Seeds
-): ThemePreset => ({ id, nameKey, hintKey, seeds })
+): ThemePreset => ({ id, nameKey, seeds })
 
 /**
  * Twelve designs ready to use. Each one is fondo + acento; the eleven other
@@ -362,53 +367,58 @@ const preset = (
  * design, so a preset is never "half a theme".
  */
 export const PRESETS: readonly ThemePreset[] = [
-  preset('obsidiana', 'theme.obsidiana.name', 'theme.obsidiana.hint', {
+  // Six designs written on a light canvas. The column is not six variations of
+  // white: four of them sit between L 0.90 and 0.93, so the surface has body.
+  preset('obsidiana', 'theme.obsidiana.name', {
     canvas: '#ffffff',
     accent: '#6f5ce0',
   }),
-  preset('grafito', 'theme.grafito.name', 'theme.grafito.hint', {
-    canvas: '#fbfbfc',
-    accent: '#55606f',
-  }),
-  preset('papel', 'theme.papel.name', 'theme.papel.hint', {
-    canvas: '#faf6ee',
-    accent: '#a35a2a',
-  }),
-  preset('bosque', 'theme.bosque.name', 'theme.bosque.hint', {
-    canvas: '#f4f8f3',
-    accent: '#2f7d4f',
-  }),
-  preset('oceano', 'theme.oceano.name', 'theme.oceano.hint', {
-    canvas: '#f2f7fb',
-    accent: '#1f6fb2',
-  }),
-  preset('iris', 'theme.iris.name', 'theme.iris.hint', {
-    canvas: '#faf6ff',
-    accent: '#7b3fe4',
-  }),
-  preset('atardecer', 'theme.atardecer.name', 'theme.atardecer.hint', {
-    canvas: '#fff5ec',
-    accent: '#b8490f',
-  }),
-  preset('menta', 'theme.menta.name', 'theme.menta.hint', {
-    canvas: '#f0fbf9',
-    accent: '#0f766e',
-  }),
-  preset('cereza', 'theme.cereza.name', 'theme.cereza.hint', {
-    canvas: '#fff6f8',
-    accent: '#c2255c',
-  }),
-  preset('nordico', 'theme.nordico.name', 'theme.nordico.hint', {
+  preset('nordico', 'theme.nordico.name', {
     canvas: '#eef1f6',
     accent: '#4c6a92',
   }),
-  preset('sepia', 'theme.sepia.name', 'theme.sepia.hint', {
-    canvas: '#f6efdf',
-    accent: '#8a6a2f',
+  preset('niebla', 'theme.niebla.name', {
+    canvas: '#dde3ec',
+    accent: '#4f6480',
   }),
-  preset('consola', 'theme.consola.name', 'theme.consola.hint', {
+  preset('lino', 'theme.lino.name', {
+    canvas: '#e9e1d2',
+    accent: '#7d6440',
+  }),
+  preset('salvia', 'theme.salvia.name', {
+    canvas: '#dde7da',
+    accent: '#457050',
+  }),
+  preset('miel', 'theme.miel.name', {
+    canvas: '#f2e7c9',
+    accent: '#8c6d24',
+  }),
+  // Six designs written dark, climbing off black. A mirror is always the same
+  // L 0.19 canvas (see mirrorSeeds), so only a design authored dark gives the
+  // dark appearance a background of its own.
+  preset('consola', 'theme.consola.name', {
     canvas: '#080d09',
     accent: '#4ade80',
+  }),
+  preset('tinta', 'theme.tinta.name', {
+    canvas: '#0f1420',
+    accent: '#8fb3ff',
+  }),
+  preset('pizarra', 'theme.pizarra.name', {
+    canvas: '#1c2027',
+    accent: '#7fa0c9',
+  }),
+  preset('bruma', 'theme.bruma.name', {
+    canvas: '#2a2f38',
+    accent: '#a8bdd9',
+  }),
+  preset('oliva', 'theme.oliva.name', {
+    canvas: '#2f342c',
+    accent: '#b9c99a',
+  }),
+  preset('tabaco', 'theme.tabaco.name', {
+    canvas: '#423b31',
+    accent: '#dcbb8c',
   }),
 ]
 
@@ -432,10 +442,11 @@ export function presetState(presetId: string): ThemeState {
     seeds: { ...chosen.seeds },
     overrides: {},
     edited: false,
+    appearance: 'system',
   }
 }
 
-export const DEFAULT_THEME_STATE: ThemeState = presetState(DEFAULT_PRESET_ID)
+const DEFAULT_THEME_STATE: ThemeState = presetState(DEFAULT_PRESET_ID)
 
 /**
  * The palette actually painted. Both appearances come from the one design: the
@@ -443,9 +454,15 @@ export const DEFAULT_THEME_STATE: ThemeState = presetState(DEFAULT_PRESET_ID)
  */
 export function resolvePalette(state: ThemeState, appearance: Appearance): Palette {
   const written = designAppearance(state.seeds)
-  if (appearance !== written) return derivePalette(mirrorSeeds(state.seeds), appearance)
+  const base =
+    appearance === written
+      ? derivePalette(state.seeds, appearance)
+      : derivePalette(mirrorSeeds(state.seeds), appearance)
 
-  const merged = { ...derivePalette(state.seeds, appearance) }
+  // Overrides land on the palette that is painted, whichever half that is: with
+  // one palette on screen at a time, a tweak made while looking at the mirrored
+  // half would otherwise be written nowhere the person can see.
+  const merged = { ...base }
   for (const token of THEME_TOKENS) {
     const value = normalizeHex(state.overrides[token])
     if (value) merged[token] = value
@@ -472,9 +489,19 @@ export function clearOverrides(state: ThemeState): ThemeState {
   return { ...state, overrides: {}, edited: state.edited }
 }
 
-/** Back to the preset exactly as shipped. */
+/** Back to the preset exactly as shipped, keeping the chosen appearance. */
 export function resetToPreset(state: ThemeState): ThemeState {
-  return presetState(state.presetId)
+  return { ...presetState(state.presetId), appearance: state.appearance }
+}
+
+/**
+ * Picks a design and paints it in the appearance it was written in. The preset
+ * grid is two columns, light on the left and dark on the right, so the column
+ * the person picks *is* the appearance choice.
+ */
+export function selectPreset(_state: ThemeState, presetId: string): ThemeState {
+  const chosen = presetState(presetId)
+  return { ...chosen, appearance: designAppearance(chosen.seeds) }
 }
 
 /* ----------------------------------------------------------------- painting */
@@ -496,27 +523,73 @@ const CSS_NAMES: Record<ThemeToken, string> = {
 }
 
 /** Both halves of every token, as CSS custom properties. */
+/**
+ * The appearance actually on screen: the chosen one, or the OS when the person
+ * left it on `system`.
+ */
+export function paintedAppearance(state: ThemeState): Appearance {
+  if (state.appearance !== 'system') return state.appearance
+  if (typeof window === 'undefined' || !window.matchMedia) return 'light'
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
 export function themeCssVars(state: ThemeState): Record<string, string> {
+  const palette = resolvePalette(state, paintedAppearance(state))
   const vars: Record<string, string> = {}
-  for (const appearance of ['light', 'dark'] as const) {
-    const palette = resolvePalette(state, appearance)
-    const suffix = appearance === 'dark' ? '-dark' : ''
-    for (const token of THEME_TOKENS) {
-      vars[`--color-${CSS_NAMES[token]}${suffix}`] = palette[token]
-    }
+  for (const token of THEME_TOKENS) {
+    const name = `--color-${CSS_NAMES[token]}`
+    // Both halves carry the same colour. One palette is on screen at a time, so
+    // a theme change is a single colour change — and a single colour change is
+    // something the browser can interpolate. With two different halves,
+    // `light-dark()` would switch discretely and the change would jump.
+    vars[name] = palette[token]
+    vars[`${name}-dark`] = palette[token]
   }
   return vars
+}
+
+/** How long the palette takes to travel between designs, in ms. */
+const THEME_FADE_MS = 220
+
+const fadeTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>()
+
+/**
+ * Switches the palette transition on for one design change, then off again.
+ * The attribute is what `html[data-theme-fade]` in index.css keys off; leaving
+ * it on would make every later colour edit lag behind its own picker.
+ */
+function startFade(target: HTMLElement): void {
+  target.dataset.themeFade = 'true'
+  const pending = fadeTimers.get(target)
+  if (pending !== undefined) clearTimeout(pending)
+  fadeTimers.set(
+    target,
+    setTimeout(() => {
+      delete target.dataset.themeFade
+      fadeTimers.delete(target)
+    }, THEME_FADE_MS),
+  )
 }
 
 export function applyTheme(state: ThemeState, root?: HTMLElement | null): void {
   const target = root ?? (typeof document === 'undefined' ? null : document.documentElement)
   if (!target?.style) return
+
+  const painted = paintedAppearance(state)
+
+  // Remembered on the element, not in module state, so a fresh <html> (a test,
+  // a second document) cannot inherit a stale idea of what is painted.
+  const previousKey = target.dataset.themeKey
+  const key = `${state.presetId}|${painted}`
+  target.dataset.themeKey = key
+  if (previousKey !== undefined && previousKey !== key) startFade(target)
+
   for (const [name, value] of Object.entries(themeCssVars(state))) {
     target.style.setProperty(name, value)
   }
-  // Both appearances are always painted; `light-dark()` picks one from the OS,
-  // which is the only switch the app has ever had.
-  target.style.setProperty('color-scheme', 'light dark')
+  // One appearance, so native widgets (scrollbars, form controls, the caret)
+  // agree with the palette instead of following the OS on their own.
+  target.style.setProperty('color-scheme', painted)
 }
 
 /* -------------------------------------------------------- storage & React API */
@@ -549,6 +622,10 @@ function parseOverrides(value: unknown): TokenOverrides {
   return parsed
 }
 
+function parseAppearance(value: unknown): AppearanceChoice {
+  return value === 'light' || value === 'dark' ? value : 'system'
+}
+
 export function parseThemeState(raw: string | null): ThemeState {
   if (!raw) return DEFAULT_THEME_STATE
   let parsed: unknown
@@ -568,6 +645,7 @@ export function parseThemeState(raw: string | null): ThemeState {
     seeds: parseSeeds(record.seeds, base.seeds),
     overrides: parseOverrides(record.overrides),
     edited: record.edited === true,
+    appearance: parseAppearance(record.appearance),
   }
 }
 
@@ -594,7 +672,7 @@ export function saveThemeState(state: ThemeState): void {
 let current: ThemeState | null = null
 const listeners = new Set<() => void>()
 
-export function getThemeState(): ThemeState {
+function getThemeState(): ThemeState {
   current ??= loadThemeState()
   return current
 }
@@ -606,7 +684,7 @@ export function setThemeState(next: ThemeState): void {
   for (const listener of [...listeners]) listener()
 }
 
-export function subscribeTheme(listener: () => void): () => void {
+function subscribeTheme(listener: () => void): () => void {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
@@ -618,30 +696,27 @@ export function useTheme(): ThemeState {
   return useSyncExternalStore(subscribeTheme, getThemeState, getThemeState)
 }
 
-/**
- * The appearance the OS is painting right now. Both halves are always applied,
- * so nothing needs to be switched — only the preview has to know which one the
- * person is looking at.
- */
-function systemAppearanceSnapshot(): Appearance {
-  if (typeof window === 'undefined' || !window.matchMedia) return 'light'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-function subscribeSystemAppearance(listener: () => void): () => void {
-  if (typeof window === 'undefined' || !window.matchMedia) return () => {}
-  const query = window.matchMedia('(prefers-color-scheme: dark)')
-  query.addEventListener('change', listener)
-  return () => query.removeEventListener('change', listener)
-}
-
-export function useSystemAppearance(): Appearance {
-  return useSyncExternalStore(subscribeSystemAppearance, systemAppearanceSnapshot, () => 'light')
-}
-
 /** Paints the stored theme before the first render, so nothing flashes. */
+let watchingSystemAppearance = false
+
+/**
+ * While the choice is `system`, the OS decides which palette is painted — so a
+ * change there has to repaint. It goes through applyTheme like any other theme
+ * change, which means it fades too.
+ */
+function watchSystemAppearance(): void {
+  if (watchingSystemAppearance) return
+  if (typeof window === 'undefined' || !window.matchMedia) return
+  watchingSystemAppearance = true
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const state = getThemeState()
+    if (state.appearance === 'system') applyTheme(state)
+  })
+}
+
 export function startTheme(): ThemeState {
   const state = getThemeState()
   applyTheme(state)
+  watchSystemAppearance()
   return state
 }

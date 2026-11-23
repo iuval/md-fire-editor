@@ -1,21 +1,20 @@
 import { useT, type MessageKey } from '../i18n/index.ts'
 import { useMemo } from 'react'
-import { Palette as PaletteIcon, X } from 'lucide-react'
+import { Palette as PaletteIcon } from 'lucide-react'
 import { Modal } from './Modal'
 import { ColorField } from './ColorField'
-import { SeedSquares, ThemeThumb } from './ThemeThumb'
+import { SeedSquares } from './SeedSquares'
 import {
   PRESETS,
   clearOverrides,
   findPreset,
-  presetState,
   resetToPreset,
   resolvePalette,
+  selectPreset,
   setThemeState,
   setTokenOverride,
   designAppearance,
   updateSeed,
-  useSystemAppearance,
   useTheme,
   type ThemeToken,
 } from '../lib/theme'
@@ -60,6 +59,9 @@ const TOKEN_HINT_KEYS: Partial<Record<ThemeToken, MessageKey>> = {
   warning: 'themeDialog.tokenHints.warning',
 }
 
+/** The two columns of the preset grid, left to right. */
+const COLUMNS = ['light', 'dark'] as const
+
 const FAMILIES: Array<{ titleKey: MessageKey; tokens: ThemeToken[] }> = [
   { titleKey: 'themeDialog.families.surfaces', tokens: ['bg2', 'bg3', 'page'] },
   { titleKey: 'themeDialog.families.text', tokens: ['text', 'muted'] },
@@ -71,64 +73,60 @@ const FAMILIES: Array<{ titleKey: MessageKey; tokens: ThemeToken[] }> = [
 export function ThemeDialog({ onClose }: { onClose: () => void }) {
   const t = useT()
   const state = useTheme()
-  const appearance = useSystemAppearance()
-  // Two palettes on purpose: the fields edit the design (so a tweak always
-  // lands somewhere), while the preview shows what the OS will actually paint —
-  // the mirrored half when the design and the screen disagree.
+  // The fields edit the design itself, so a tweak always lands somewhere.
   const design = designAppearance(state.seeds)
   const palette = useMemo(() => resolvePalette(state, design), [state, design])
-  const preview = useMemo(
-    () => (appearance === design ? palette : resolvePalette(state, appearance)),
-    [state, appearance, design, palette],
-  )
   const chosen = findPreset(state.presetId)
   const seeds = state.seeds
 
-  const choose = (presetId: string) => setThemeState(presetState(presetId))
+  const choose = (presetId: string) => setThemeState(selectPreset(state, presetId))
 
   return (
     <Modal labelledBy="theme-heading" onClose={onClose} className="share theme-dialog">
-      <div className="row" style={{ justifyContent: 'space-between' }}>
+      {/* Sticky: the title and Done stay reachable however far the list
+          scrolls. Escape and the scrim still close the dialog. */}
+      <div className="theme-bar">
         <h2 id="theme-heading" className="row" style={{ gap: 7 }}>
           <PaletteIcon size={15} />
           {t('themeDialog.heading')}
         </h2>
-        <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>
-          <X size={15} />
+        <button type="button" className="btn" onClick={onClose}>
+          {t('themeDialog.done')}
         </button>
-      </div>
-
-      <div className="theme-preview-wrap">
-        <span className="theme-section-title">{t('themeDialog.preview')}</span>
-        <ThemeThumb palette={preview} />
-        <p className="hint">
-          {state.edited ? t('theme.adjusted', { name: t(chosen.nameKey) }) : t(chosen.hintKey)}
-        </p>
       </div>
 
       <div className="theme-section">
         <span className="theme-section-title">{t('themeDialog.presets')}</span>
+        {/* Two columns, one per appearance the design was written in: the left
+            column is the light designs, the right the dark ones. Same count on
+            both sides, so the grid is a choice between two worlds. */}
         <div className="theme-grid" role="group" aria-label={t('themeDialog.presetsGroup')}>
-          {PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              className="theme-card"
-              aria-pressed={preset.id === state.presetId && !state.edited}
-              onClick={() => choose(preset.id)}
-            >
-              <SeedSquares canvas={preset.seeds.canvas} accent={preset.seeds.accent} />
-              <span className="theme-card-text">
-                <span className="theme-card-name">{t(preset.nameKey)}</span>
-                <span className="theme-card-hint">{t(preset.hintKey)}</span>
-              </span>
-            </button>
+          {COLUMNS.map((column) => (
+            <div key={column} className="theme-column">
+              {PRESETS.filter((preset) => designAppearance(preset.seeds) === column).map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="theme-card"
+                  aria-pressed={preset.id === state.presetId && !state.edited}
+                  onClick={() => choose(preset.id)}
+                >
+                  <SeedSquares canvas={preset.seeds.canvas} accent={preset.seeds.accent} />
+                  <span className="theme-card-text">
+                    <span className="theme-card-name">{t(preset.nameKey)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       </div>
 
-      <div className="theme-section">
-        <span className="theme-section-title">{t('themeDialog.own')}</span>
+      {/* Folded by default: picking a ready-made theme is the common path, and
+          every token is still one click away. */}
+      <details className="theme-advanced">
+        <summary className="theme-section-title">{t('themeDialog.advanced')}</summary>
+        <div className="theme-section">
         <ColorField
           label={t('themeDialog.background')}
           hint={t('themeDialog.backgroundHint')}
@@ -160,27 +158,25 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
           </div>
         ))}
 
-        <p className="hint">
-          Todo lo que no toques se recalcula solo para que texto, bordes y avisos se sigan leyendo.
-          La otra claridad (día o noche) sale del mismo diseño.
-        </p>
+        <p className="hint">{t('themeDialog.advancedHint')}</p>
         <button
           type="button"
           className="btn ghost"
           onClick={() => setThemeState(clearOverrides(state))}
         >
-          Quitar mis ajustes de color
+          {t('themeDialog.clearOverrides')}
         </button>
-      </div>
-
-      <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
-        <button type="button" className="btn ghost" onClick={() => setThemeState(resetToPreset(state))}>
+        {/* Last in Advanced on purpose: it undoes a customisation, and this is
+            the section that makes one. Folded away with everything else. */}
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => setThemeState(resetToPreset(state))}
+        >
           {t('themeDialog.reset', { name: t(chosen.nameKey) })}
         </button>
-        <button type="button" className="btn" onClick={onClose}>
-          {t('themeDialog.done')}
-        </button>
-      </div>
+        </div>
+      </details>
     </Modal>
   )
 }
